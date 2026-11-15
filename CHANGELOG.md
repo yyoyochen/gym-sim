@@ -1,126 +1,48 @@
 # Changelog
 
-All money is in NT dollars and shown as `$`.
+Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). All money is in NT dollars.
 
-## 2026-11-15: running the gym
+## [0.3.0] - 2026-11-16
 
-- Cleaners are hired on the Staff tab and paid a wage (just above the minimum wage, plus insurance, pension and bonus). Mess counts against a visit: stripping someone's loaded bar, or hunting for dumbbells among strays; two hassles make a bad visit, which raises churn.
+### Added
+- Cleaners on the Staff tab, paid a wage. Mess (a loaded bar to strip, strewn dumbbells) now makes visits worse.
+- A new README with an animated hero shot and screenshots.
+
+### Changed
+- With no cleaner, the receptionist cleans when it's quiet and paces by reception.
+- Closing a week early pops each day's takings; closing a month pops the month's once. Pops glow only for an all-time best.
+
+### Fixed
 - The desk hint no longer sits under the receptionist's speech bubble.
-- New README with a hero animation of members training and fresh screenshots.
-- Closing a week early pops each closed day's takings as that day closes; closing the month pops the month's takings once at the end, with no day-by-day messages. A pop glows only for an all-time best day or month.
-- No cleaner by default: the receptionist steps out to clean when it's quiet (or paces by reception) and is back behind the desk for check-ins. The Cleaners slider still hires dedicated cleaners.
-- Your gym is saved in this browser: a reload carries on from the morning of the current day (paused, with a welcome-back note). Build a gym starts a new one. Changes made since that morning, like a rearrange or the day's visits so far, are not kept.
-- Closing early ends with one big money pop for the closed days' takings, then the summary opens.
-- The "Day closed" stamp sits straight.
-- Members don't all change: about a third come dressed and go straight to the floor (most leave the same way), and some take a washroom break mid-workout.
-- The person at the desk is the Receptionist: tap them for a line about the gym and its members; the counter still opens the P&L.
-- The opening's member starts with a squat.
-- Rearrange: hovering a piece shows its dotted outline and name; the selected piece has a solid yellow frame.
-- The build grid stays inside the plot, with a solid yellow border, so no specks on the empty lot or the floor.
-- The selection mark sits above platforms and turf.
-- The drinking fountain by the entrance is gone; Goal sits with Build a gym and Rearrange, and More is gone.
-- Staff: hire or let go full-time desk staff, part-time desk hours and in-house coaches; the roster cost follows. Each coach carries up to 15 PT clients, and more coaches sell more PT over the coming months.
-- Rearrange: the cost and closed days stay at the top; the selected piece gets a yellow outline and a card with Sell; equipment to add is a grid of in-game buttons by group, with prices.
-- Closing a week early lists every day's takings and profit; closing the month lists the closed days by category, revenue and costs.
-- The archetype mix applies from the next morning, without Setup.
-- The opening runs at 10× and the member it follows goes straight to the floor, without the changing room; the desk hint stays until you open the P&L.
-- A dumbbell rack's two pick-up spots both outline the rack itself.
-- The panel is simpler: no seed, no Copy results, no money and loan sliders (set when building), no month chooser (the calendar runs), no equipment sliders (use Rearrange); weather is picked with buttons.
 
-## 2026-11-15: clearer view and layout
+## [0.2.0] - 2026-11-15
 
-- Benches stand beside the dumbbell racks instead of across the room.
-- Corner posts, the entrance frame and the low walls on the camera's side turn see-through, whichever way the view is turned.
-- Adding equipment in the builder no longer makes the walls and windows pop up and down.
-- One grid only, shown in Build and Rearrange; the finer sub-grid is gone.
-- Build overlays sit clear of the floor so they do not flicker.
-- Bigger text everywhere, with more room between the P&L rows.
-- The date under Run shows just the day, without a day count.
-- The books are called P&L everywhere; the phone tab reads P&L with no emoji, like the other tabs.
-- On phones the plots side by side line up, whatever their titles and legends wrap to.
-- The game opens on the size screen every time. The sample gym is hidden for now: no "Take over a running gym" and no Sample size in the builder.
+### Added
+- Run the gym as a business: open a Small, Medium or Large gym with your own money and a bank loan, then trade month after month.
+- The P&L at the front desk: today, the month and the year, plus bank, members, pricing, staff and facility.
+- Members who join, lapse and return. Prices, crowding, staffing and retention actions all change how many stay.
+- Gyms laid out by rules, and Rearrange to move, buy or sell equipment; the gym closes while the work is done.
+- A staff roster: desk staff and coaches. More coaches sell more PT.
+- Starting goals, a receptionist who talks, and progress saved in the browser.
 
-## 2026-11-15: rearrange your gym
+### Changed
+- The game opens on the size screen, and the gym opens on today's date.
+- Members don't all use the changing room; some take a washroom break.
+- Bigger text, clearer digits, see-through walls and posts near the camera, and one grid in Build and Rearrange.
+- "Books" are now called the P&L.
 
-You can change the floor of a running gym at any time. The gym closes while the work is done.
+### Removed
+- The sample gym ("Take over a running gym") for now, the seed, Copy results and several developer sliders.
 
-### Rearrange
-- Press Rearrange to pause and see your gym as pieces on the grid. Drag a piece to move it; the game picks which way it faces and refuses a spot without room for it and its clear floor.
-- Add any piece at its catalogue price, or tap a piece to sell it for 40% of its price.
-- The sheet shows the running cost and the days closed before you apply. Cancel changes nothing.
-- Movers cost $3,000 per heavy piece moved; light pieces move free.
-- The gym closes for 1 day per 4 heavy pieces moved, plus 1 day if anything new is installed. The days start tomorrow and can run into the next month. Today finishes on the old layout.
-- The sample gym converts to grid pieces the first time you apply a rearrange; its rent area and deal stay the same, including after Setup.
+### Fixed
+- Flicker and stray specks in Build view, walls popping up when adding equipment, and misaligned plots on phones.
 
-### Books
-- New P&L lines: "Rearranging (movers)", and "Loss on equipment sold" below EBITDA (book value less what the sale brought).
-- Equipment bought later is depreciated over 5 years from the month it was bought; closed months keep the figures they were booked with.
-- The Bank tab shows equipment bought and sold since opening; the Today tab says when the gym is closed for rearranging.
+## [0.1.0] - 2026-11-13
 
-## 2026-11-15: gyms laid out by rules
+### Added
+- First release: a pixel-art isometric strength gym, simulated person by person over a day, with visit fees, PT packs, outside-coach rentals and money pops.
+- English and Traditional Chinese.
 
-Built gyms are now planned piece by piece on a finer grid, by the same rules a real gym follows.
-
-### Layout
-- Every piece of equipment has its real footprint on a 0.455 m sub-grid (each 1.82 m cell split 4 × 4); the builder draws the sub-grid in lighter lines.
-- Auto-layout follows general rules: racks and platforms along the back wall, dumbbells on the left wall with benches beside them, the turf and sled lane across the middle, cardio facing the windows, machines in rows. The game picks which way each piece faces.
-- Every piece keeps clear floor for the lifter, a rest spot and a short queue, and stays reachable from the door.
-- The washrooms move to the back corner, away from reception.
-- No more pillars inside built gyms.
-
-### Builder
-- "+" adds exactly one piece where it fits, or says the floor is full; it never moves or removes anything else. "−" takes away the newest piece of that kind.
-- Changing the plot size re-plans the layout.
-- The turf and sled lane has an In / Out switch. Where it does not fit, switching it In re-plans the gym with the lane placed first and says what no longer fits; Out gives that equipment back.
-- Equipment is priced per piece.
-
-### Other
-- The gym opens on today's date; the first month is the rest of this month, with costs, the loan payment and depreciation for those days only.
-- Digits everywhere use a clearer pixel font, so a 5 no longer reads as an S or an 8.
-- The browser tab reads "gym-sim".
-
-## The gym as a business
-
-The day simulation becomes a business you run month after month: money, members, a builder, and a first session that starts by opening your own gym.
-
-### First session
-- The game opens on a three-step builder: pick a size (Small 80 坪, Medium 160 坪, Large 320 坪), see the setup cost, then decide your own money and bank loan. Opening overdrawn is allowed and shown in orange.
-- "Take over a running gym" skips the build and runs the established sample gym.
-- A built gym opens as a new business: about 145 members who signed up before opening, growing month by month (the researched new-gym ramp: 15% of the area's demand at opening, most of it within about 6 months).
-- When the doors open, the camera follows the first member in, then hands control to you.
-- Pick a starting goal, or skip: reach 500 members by the end of month 3, don't run out of cash in year 1, or keep at least 92% of members every month. Progress shows under the clock and in the books.
-- The intro shows once; "Show intro again" and "Change goal" live under More.
-
-### The books at the front desk
-- Tap the desk (or 📒 Books on phones) to open the books: Today, Books (P&L), Bank, Members, Pricing, Staff and Facility.
-- A full itemised profit and loss for today, month to date, the projected month and the year, with a plain line on top: "The gym made / lost $X today".
-- Below EBITDA: depreciation, loan interest, tax and net profit.
-- Bank: your own money, a bank loan with monthly instalments, and cash day by day.
-- Close the day, the week or the month early; the business carries into the next month.
-- Prices are published at the desk and apply the next morning.
-
-### Members and demand
-- A member base that persists across the month: joins, lapses, returns, member cards and PT packs.
-- Prices move visits, joins and evening demand; a long door queue turns people away, and crowded visits raise churn.
-- Staffing affects retention; the rental policy for outside coaches affects PT.
-- Retention actions for members drifting away: a check-in message, a PT taster, a voucher, or a win-back SMS, each with its chance, cost and effect.
-- Typhoon days close the gym; rain dampens visits.
-
-### Gym builder
-- Build from a plot size: walls, floor, door, desk, washrooms, lights and structural columns follow the plot.
-- Researched equipment and fit-out prices, a three-month deposit and a rent-free first month; each item shows its unit price.
-- Equipment fits its zones along the walls, and you pay only for what is placed.
-
-### Look and feel
-- The price board sits on the reception desk; men's and women's washrooms with M and W plaques.
-- Hovering outlines equipment in yellow with an expand icon; the person you follow gets an animated floor marker.
-- Money pops when members pay on the way out; a bigger one for a PT sale.
-- Figures use a clearer pixel font; rotate, zoom, language and sound sit at the top right.
-- Seed and Copy results moved under More; the Go button says "Start the day" before opening.
-
-### Fixes
-- A member who reaches the stop after the last bus goes home another way.
-- Many smaller fixes found by self-tests, scripted playtests and reviews.
-
-### Tests
-- Node tests for the pure model (P&L, demand, month, builder), and 172 headless self-tests run in Chrome.
+[0.3.0]: https://github.com/yyoyochen/gym-sim/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/yyoyochen/gym-sim/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/yyoyochen/gym-sim/releases/tag/v0.1.0
