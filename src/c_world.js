@@ -75,21 +75,24 @@ const winMat = new THREE.MeshLambertMaterial({ color: '#74abe0', emissive: '#000
 const wallSides = [];
 function wallSide(name, nx, nz, segs) {   // segs: [x0,z0,x1,z1, door?]
   const lower = new THREE.Group(), upper = new THREE.Group(); world.add(lower); world.add(upper);
-  const lb = new Builder(), ub = new Builder();
+  const lb = new Builder(), ub = new Builder(), lowMats = ['#959bab', '#6b7182'].map(c => new THREE.MeshLambertMaterial({ color: c, transparent: true }));   /* the side's own low-wall materials, so it can turn see-through on its own (owner 2026-11-15) */
   for (const [x0, z0, x1, z1, opt] of segs) {
     const len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, ry = Math.atan2(-(z1 - z0), x1 - x0);
     const glass = opt === 'glass';
-    lb.add(place(new THREE.BoxGeometry(len, CUT_H, 0.25), cx, CUT_H / 2, cz, ry), L('#959bab'));
-    lb.add(place(new THREE.BoxGeometry(len + 0.02, 0.08, 0.3), cx, CUT_H, cz, ry), L('#6b7182'));
+    lb.add(place(new THREE.BoxGeometry(len, CUT_H, 0.25), cx, CUT_H / 2, cz, ry), lowMats[0]);
+    lb.add(place(new THREE.BoxGeometry(len + 0.02, 0.08, 0.3), cx, CUT_H, cz, ry), lowMats[1]);
     if (glass) { ub.add(place(new THREE.BoxGeometry(len, 1.7, 0.08), cx, CUT_H + 0.85, cz, ry), winMat); ub.add(place(new THREE.BoxGeometry(len, WALL_H - CUT_H - 1.7, 0.25), cx, CUT_H + 1.7 + (WALL_H - CUT_H - 1.7) / 2, cz, ry), L('#c4c9d4')); for (let k = 0; k <= Math.floor(len / 2.5); k++) { const t = len ? k * 2.5 / len : 0; ub.add(place(new THREE.BoxGeometry(0.12, 1.7, 0.14), x0 + (x1 - x0) * t, CUT_H + 0.85, z0 + (z1 - z0) * t, ry), L('#474c5c')); } }
     else ub.add(place(new THREE.BoxGeometry(len, WALL_H - CUT_H, 0.25), cx, CUT_H + (WALL_H - CUT_H) / 2, cz, ry), L(opt === 'mirror' ? '#c4c9d4' : '#e8dcc0'));
   }
   lb.flush(lower); ub.flush(upper);
   upper.position.y = CUT_H; upper.children.forEach(m => { m.position.y = -CUT_H; m.matrixAutoUpdate = true; });
-  wallSides.push({ name, nx, nz, upper, lower, h: 1 });
+  const was = WALL_KEEP[name] || { h: 1, lowOp: 1 };   /* owner 2026-11-15: a rebuild (adding a piece) keeps the walls as the camera had them: no windows popping up and down */
+  const w = { name, nx, nz, upper, lower, lowMats, h: was.h, lowOp: was.lowOp }; wallSides.push(w); applyWall(w);
 }
+const WALL_KEEP = {};
+function applyWall(w) { w.upper.scale.y = Math.max(0.0001, w.h); w.upper.visible = w.h > 0.01; for (const m of w.lowMats) { m.opacity = w.lowOp; m.depthWrite = w.lowOp > 0.99; } }
 function buildWalls() {
-  for (const w of wallSides) { for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } }
+  for (const w of wallSides) { WALL_KEEP[w.name] = { h: w.h, lowOp: w.lowOp }; for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } w.lowMats.forEach(m => m.dispose()); }
   wallSides.length = 0;
   const { x0, x1, zb } = HALL;
   wallSide('front', 0, 1, [[x0 + 1.2, HZ, DOOR.x - 2, HZ, 'glass'], [DOOR.x + 2, HZ, x1 - 1.2, HZ, 'glass']]);
@@ -99,11 +102,13 @@ function buildWalls() {
 }
 function updateWalls(dt) {
   const ox = Math.sin(view.az), oz = Math.cos(view.az);
+  const k = Math.min(1, dt * 6);
   for (const w of wallSides) {
     const near = w.nx * ox + w.nz * oz > 0.2;
-    const tgt = near ? 0.0001 : 1; w.h += (tgt - w.h) * Math.min(1, dt * 6);
-    w.upper.scale.y = Math.max(0.0001, w.h); w.upper.visible = w.h > 0.01;
+    w.h += ((near ? 0.0001 : 1) - w.h) * k; w.lowOp += ((near ? LOW_FADE : 1) - w.lowOp) * k; if (w.lowOp > 0.995) w.lowOp = 1;
+    applyWall(w);
   }
+  for (const p of HALL_POSTS) { p.op += (postTarget(p) - p.op) * k; if (p.op > 0.995) p.op = 1; p.mat.opacity = p.op; p.mat.depthWrite = p.op > 0.99; }
   for (const n in ENV) for (const k in ENV[n].sides) {
     const S_ = ENV[n].sides[k], near = S_.nx * ox + S_.nz * oz > 0.2;
     S_.h += ((near ? 0.0001 : 1) - S_.h) * Math.min(1, dt * 5);
@@ -148,17 +153,26 @@ const hourHand = new THREE.Group(), minHand = new THREE.Group();
 // two washrooms with changing space (Plan 7b, owner: every gym has a men's and a women's): men's to the north, women's to the south,
 // a divider wall between them, each with its own door on the west wall, a toilet cubicle, a shower, a bench and lockers
 const HALLG = { g: null, u: null };   // the hall's fixtures (its own groups, so a new build can replace them)
+// owner 2026-11-15: full-height posts (the hall's corners and the entrance frame) and the low walls turn see-through when they stand between the camera and the gym,
+// whichever way the view is turned; the far ones stay solid
+const HALL_POSTS = [], POST_FADE = 0.15, LOW_FADE = 0.35;
+function postTarget(p) { const cx = (HALL.x0 + HALL.x1) / 2, cz = (HALL.zb + HZ) / 2; return (p.x - cx) * Math.sin(view.az) + (p.z - cz) * Math.cos(view.az) > 1 ? POST_FADE : 1; }
+function post(w, h, d, c, x, y, z) {
+  const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true }), m = new THREE.Mesh(place(new THREE.BoxGeometry(w, h, d), x, y + h / 2, z), mat);
+  m.castShadow = m.receiveShadow = true; HALLG.g.add(m); const p = { mesh: m, mat, x, z, op: 1 }; p.op = postTarget(p); mat.opacity = p.op; mat.depthWrite = p.op > 0.99; HALL_POSTS.push(p);   /* starts as the camera has it: no pop on a rebuild */
+}
 function buildHallFixtures() {
   for (const k of ['g', 'u']) if (HALLG[k]) { HALLG[k].parent.remove(HALLG[k]); HALLG[k].traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.userData.sign) { o.material[0].map.dispose(); o.material[0].dispose(); o.material[2].dispose(); } }); }
+  for (const p of HALL_POSTS) p.mat.dispose(); HALL_POSTS.length = 0;
   HALLG.g = new THREE.Group(); world.add(HALLG.g); HALLG.u = new THREE.Group(); under.add(HALLG.u);
   const keepSB = SB, HB = new Builder(), HU = new Builder(); SB = HB;   /* box() builds into SB: point it at the hall's own builder while building */
   const { R, Lf, Bk } = hallShift(), { x0, x1, zb } = HALL;
   LOCKERS_M.length = LOCKERS_F.length = LOCKERS.length = 0;
   // full-height corners and entrance portal
-  for (const [x, z] of [[x0, zb], [x1, zb], [x0, HZ], [x1, HZ]]) box(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);
-  box(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
-  for (const dx of [-1.25, 1.25]) box(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
-  box(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
+  for (const [x, z] of [[x0, zb], [x1, zb], [x0, HZ], [x1, HZ]]) post(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);   /* owner 2026-11-15: posts fade when they block the view */
+  post(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
+  for (const dx of [-1.25, 1.25]) post(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
+  post(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
   box(1.0, 2.3, 0.04, '#74abe0', DOOR.x - 0.4, 0, HZ + 0.02, 0.0); // open door leaf (glass)
   box(1.8, 0.03, 9, '#c4c9d4', DOOR.x, 0, 15.4, 0, { b: HU });     // entrance walk
   const c = '#c4c9d4', dw = 0.6;   // half the door gap

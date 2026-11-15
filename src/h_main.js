@@ -1358,10 +1358,36 @@ const SELFTESTS = {
       return { ok: JSON.stringify(S.layout) === before && kept && added === JSON.parse(before).pieces.length + 1, detail: { added, kept, same: JSON.stringify(S.layout) === before } }; }
     finally { if (BUILD.on) cancelBuild(); setLang('en'); Object.assign(S, keep); setupRun(); }
   },
-  subGridDrawn() {   // owner: a finer sub-grid in lighter lines under the main 1.82 m grid
-    try { setupRun(); openBuild(); buildPick('M'); const lines = BUILD_GRID.children.filter(o => o.isLineSegments), main = lines.find(o => o.userData.main), sub = lines.find(o => o.userData.sub);
-      return { ok: !!main && !!sub && sub.material.opacity < main.material.opacity && sub.geometry.attributes.position.count > main.geometry.attributes.position.count, detail: { n: lines.length } }; }
-    finally { if (BUILD.on) cancelBuild(); }
+  gridOnlyWhenBuilding() {   // owner 2026-11-15: no sub-grid; the main grid shows in Build and Rearrange only
+    try { setupRun(); const off = BUILD_GRID.visible; openBuild(); buildPick('M'); const lines = BUILD_GRID.children.filter(o => o.isLineSegments), inBuild = BUILD_GRID.visible; cancelBuild();
+      const after = BUILD_GRID.visible; openRearrange(); const inRe = BUILD_GRID.visible; cancelBuild();
+      return { ok: !off && inBuild && inRe && !BUILD_GRID.visible && !after && lines.length === 1 && lines[0].userData.main, detail: { off, inBuild, inRe, after, n: lines.length } }; }
+    finally { if (BUILD.on) cancelBuild(); setupRun(); }
+  },
+  windowsStayDown() {   // owner 2026-11-15: adding equipment never brings the near walls and their windows back up
+    const az = view.az;
+    try { setupRun(); view.az = view.azT = Math.PI / 4; openBuild(); buildPick('M'); updateWalls(10); const near = wallSides.filter(w => w.upper.scale.y < 0.01).map(w => w.name);
+      buildCount('cardio', 1); const now = wallSides.filter(w => near.includes(w.name)).map(w => +w.upper.scale.y.toFixed(3));
+      return { ok: near.length >= 1 && now.length === near.length && now.every(s => s < 0.01), detail: { near, now } }; }
+    finally { if (BUILD.on) cancelBuild(); view.az = view.azT = az; setupRun(); updateWalls(10); }
+  },
+  postsFadeNearCamera() {   // owner 2026-11-15: corner posts, the door frame and low walls between the camera and the gym turn see-through, at any rotation
+    const az = view.az;
+    try { setupRun(); const cx = (HALL.x0 + HALL.x1) / 2, cz = (HALL.zb + HZ) / 2, res = {};
+      for (const a of [Math.PI / 4, Math.PI * 5 / 4]) { view.az = view.azT = a; updateWalls(10); const ox = Math.sin(a), oz = Math.cos(a);
+        const near = HALL_POSTS.filter(p => (p.x - cx) * ox + (p.z - cz) * oz > 1), far = HALL_POSTS.filter(p => (p.x - cx) * ox + (p.z - cz) * oz < -1);
+        const lowNear = wallSides.filter(w => w.nx * ox + w.nz * oz > 0.2), lowFar = wallSides.filter(w => w.nx * ox + w.nz * oz < -0.2);
+        res[a.toFixed(2)] = { near: near.length, far: far.length, nearOp: Math.max(...near.map(p => p.mat.opacity)), farOp: Math.min(...far.map(p => p.mat.opacity)), lowNear: Math.max(...lowNear.map(w => w.lowOp)), lowFar: Math.min(...lowFar.map(w => w.lowOp)) }; }
+      const ok = Object.values(res).every(r => r.near >= 1 && r.far >= 1 && r.nearOp <= 0.3 && r.farOp === 1 && r.lowNear <= 0.5 && r.lowFar === 1);
+      return { ok, detail: res }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { view.az = view.azT = az; updateWalls(10); }
+  },
+  overlaysClearOfFloor() {   // owner 2026-11-15: no flicker: build overlays sit well above the floor and the turf, on separate levels, and are drawn with a depth offset
+    const plot = BUILD_GRID.userData.plot, lines = BUILD_GRID.children.filter(o => o.isLineSegments), ys = [plot.position.y, ...lines.map(o => o.position.y + o.geometry.attributes.position.array[1]), RGHOST.position.y];
+    const floorTop = 0.045;   /* the turf's lane marks, the highest thing on the floor */
+    const ok = ys.every(y => y - floorTop >= 0.02) && new Set(ys.map(y => y.toFixed(3))).size === ys.length && [plot, ...lines, RGHOST].every(o => o.material.polygonOffset);
+    return { ok, detail: { ys } };
   },
   minusRemovesLast() {   // Plan 11: − takes away the newest piece of that kind and leaves every other piece where it was
     try { setupRun(); openBuild(); buildPick('L'); buildCount('racks', 1); const last = BUILD.layout.pieces[BUILD.layout.pieces.length - 1], others = JSON.stringify(BUILD.layout.pieces.filter(p => p !== last));
@@ -1574,7 +1600,7 @@ const SELFTESTS = {
       const dl = document.getElementById('dayLbl'); if (!dl) return { ok: false, why: 'no day label' };
       const want = money(projectMonth().total.ebitda), cell = bkCell('Books', 'ebitda', 'month'); BOOKS.period = 'today';
       openBooks('Members'); const mb = document.getElementById('bkBody').textContent; closeBooks();
-      return { ok: !/NaN|undefined/.test(mb) && dl.textContent.includes('2/30') && cell === want, day: dl.textContent, cell, want };
+      return { ok: !/NaN|undefined/.test(mb) && !dl.textContent.includes('/') && dl.textContent.includes(lang === 'zh' ? '2日' : ' 2 ') && cell === want   /* owner 2026-11-15: no "day 2/30" counter, just the date */, day: dl.textContent, cell, want };
     };
     try { out.en = check('en'); out.zh = check('zh'); } finally { setLang(was); }
     return { ok: out.en.ok && out.zh.ok, detail: out };

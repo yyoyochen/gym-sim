@@ -2,6 +2,16 @@
 
 All money is in NT dollars and shown as `$`.
 
+## 2026-11-15: clearer view and layout
+
+- Benches stand beside the dumbbell racks instead of across the room.
+- Corner posts, the entrance frame and the low walls on the camera's side turn see-through, whichever way the view is turned.
+- Adding equipment in the builder no longer makes the walls and windows pop up and down.
+- One grid only, shown in Build and Rearrange; the finer sub-grid is gone.
+- Build overlays sit clear of the floor so they do not flicker.
+- Bigger text everywhere, with more room between the P&L rows.
+- The date under Run shows just the day, without a day count.
+
 ## 2026-11-15: rearrange your gym
 
 You can change the floor of a running gym at any time. The gym closes while the work is done.

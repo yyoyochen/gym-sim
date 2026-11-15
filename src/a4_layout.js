@@ -12,9 +12,9 @@ const KINDS = (() => {
   add(['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl'], { cat: 'machines', w: 3, d: 5, use: { f: 5, b: 0, l: 1, r: 2 }, heavy: true, rots: [0, 1, 2, 3] });
   add(['legpress', 'hack', 'hipthrust', 'beltsquat'], { cat: 'plates', w: 3, d: 6, use: { f: 4, b: 0, l: 1, r: 2 }, heavy: true, rots: [0, 1, 2, 3] });
   add(['bench'], { cat: 'benches', w: 3, d: 1, use: { f: 3, b: 2, l: 3, r: 1 }, heavy: false, rots: [0, 1] });
-  add(['dbrack'], { cat: 'kit', w: 2, d: 8, use: { f: 0, b: 0, l: 0, r: 6 }, heavy: false, rots: [0, 2], price: 90000 });
+  add(['dbrack'], { cat: 'kit', w: 2, d: 8, use: { f: 0, b: 0, l: 0, r: 4 }, heavy: false, rots: [0, 2], price: 90000 });   /* owner 2026-11-15: 1.8 m to pick up dumbbells and queue, then the benches */
   add(['cable'], { cat: 'kit', w: 10, d: 3, use: { f: 5, b: 0, l: 0, r: 0 }, heavy: true, rots: [0, 1, 2, 3], price: 200000 });
-  add(['pullup'], { cat: 'kit', w: 3, d: 3, use: { f: 4, b: 0, l: 1, r: 0 }, heavy: true, rots: [0, 1, 2, 3], price: 20000 });
+  add(['pullup'], { cat: 'kit', w: 3, d: 3, use: { f: 5, b: 0, l: 2, r: 0 }, heavy: true, rots: [0, 1, 2, 3], price: 20000 });
   add(['mat'], { cat: 'kit', w: 2, d: 4, use: { f: 4, b: 0, l: 0, r: 1 }, heavy: false, rots: [0, 1], price: 15000 });
   add(['turf'], { cat: 'kit', w: 24, d: 4, use: { f: 2, b: 3, l: 0, r: 0 }, heavy: false, rots: [0], price: 35000 });   /* the sled runs along x only */
   return K;
@@ -85,7 +85,7 @@ function placeScore(kind, f, rot, G, L, db) {
   if (cat === 'cardio') return (D - f.z1) * 100 + f.x0 + (rot ? 5000 : 0);
   if (cat === 'machines' || cat === 'plates' || kind === 'cable' || kind === 'pullup') return Math.round(Math.abs(cz - D * 0.6)) * 100 + f.x0 + (rot === 0 ? 0 : rot === 2 ? 300 : 5000);
   if (kind === 'dbrack') return f.x0 * 100 + Math.abs(cz - D / 2) + rot * 5000;
-  if (kind === 'bench') { if (!db.length) return f.x0 * 100 + f.z0; let m = Infinity; for (const [x, z] of db) m = Math.min(m, Math.hypot(cx - x, cz - z)); return m * 10 + rot * 50; }   /* db: dumbbell-rack centres, worked out once per search */
+  if (kind === 'bench') { if (!db.length) return f.x0 * 100 + f.z0; let m = Infinity; for (const d of db) m = Math.min(m, (Math.max(0, f.x0 - d.x1, d.x0 - f.x1) + Math.max(0, f.z0 - d.z1, d.z0 - f.z1)) * 10 + Math.abs(cz - (d.z0 + d.z1) / 2)); return m + rot * 3; }   /* owner 2026-11-15: floor between the bench and the nearest dumbbell rack (db: rack footprints), so benches line the rack's length before spreading out */
   if (kind === 'mat') return f.x0 + f.z0 + rot * 50;
   return f.x0 + f.z0;
 }
@@ -93,7 +93,7 @@ function placeScore(kind, f, rot, G, L, db) {
 function sums(G, bad) { const W = G.W + 1, S = new Int32Array(W * (G.D + 1)); for (let z = 0; z < G.D; z++) for (let x = 0; x < G.W; x++) S[(z + 1) * W + x + 1] = (bad(G.cells[z * G.W + x]) ? 1 : 0) + S[z * W + x + 1] + S[(z + 1) * W + x] - S[z * W + x]; return (r) => S[r.z1 * W + r.x1] - S[r.z0 * W + r.x1] - S[r.z1 * W + r.x0] + S[r.z0 * W + r.x0]; }
 function bestSpot(L, kind, Wc, Dc) {
   const G = gridFor(L, Wc, Dc), banned = new Set(), notFree = sums(G, c => c !== 0 && c !== 5), solid = sums(G, c => c === 1 || c === 2 || c === 4 || c === 5);
-  const db = L.pieces.filter(q => q.kind === 'dbrack').map(footprint).map(r => [(r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2]);
+  const db = L.pieces.filter(q => q.kind === 'dbrack').map(footprint);
   const fits = (p) => { const u = useRect(p); return u.x0 >= 0 && u.z0 >= 0 && u.x1 <= G.W && u.z1 <= G.D && notFree(footprint(p)) === 0 && solid(u) === 0; };
   for (let tries = 0; tries < 12; tries++) {
     let best = null, bs = Infinity;
@@ -115,10 +115,11 @@ function removeLast(L, kind) { for (let i = L.pieces.length - 1; i >= 0; i--) if
 function autoBuild(Wc, Dc, counts, opts = {}) {
   const L = { pieces: [], nextId: 0 }, refused = [], want = [];
   const cat = (c) => { for (let i = 0; i < (counts[c] || 0); i++) want.push(CYCLE[c][i % CYCLE[c].length]); };
-  if (opts.turfFirst) { cat('racks'); want.push('turf', 'dbrack', 'dbrack'); cat('plats'); }   /* owner: the player chose the turf lane over equipment */
-  else { cat('racks'); cat('plats'); want.push('dbrack', 'dbrack'); if (opts.turf !== false) want.push('turf'); }   /* wall-bound pieces first: the back row, then the dumbbells on the left wall */
+  const benches = () => { for (let i = 0; i < (counts.benches || 0); i++) want.push('bench'); };   /* owner 2026-11-15: benches go right after the dumbbells, before anything can take the floor beside them */
+  if (opts.turfFirst) { cat('racks'); want.push('turf', 'dbrack', 'dbrack'); benches(); cat('plats'); }   /* owner: the player chose the turf lane over equipment */
+  else { cat('racks'); cat('plats'); want.push('dbrack', 'dbrack'); if (opts.turf !== false) want.push('turf'); benches(); }   /* wall-bound pieces first: the back row, then the dumbbells on the left wall */
   cat('cardio'); cat('plates'); cat('machines'); want.push('cable', 'pullup');
-  for (let i = 0; i < (counts.benches || 0); i++) want.push('bench'); want.push('mat', 'mat', 'mat', 'mat');
+  want.push('mat', 'mat', 'mat', 'mat');
   for (const k of want) if (!addPiece(L, k, Wc, Dc)) refused.push(k);
   L.refused = refused; if (opts.turfFirst) L.turfFirst = true; return L;
 }

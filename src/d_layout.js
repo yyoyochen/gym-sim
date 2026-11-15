@@ -332,7 +332,7 @@ const DRAW = {
           z += 2 * r + 0.015; }
         w += 2.5; } }
     F.obst(-0.45, z0, 0.4, z1);
-    for (const z of [-0.8, 0.8]) F.st('dbspot', 'dumbbells', 1.0, z, Math.PI, { rest: P2(1.6, z + 0.45), waitBase: P2(1.7, z + 0.2), waitDir: P2(0.4, 0) });
+    for (const z of [-0.8, 0.8]) F.st('dbspot', 'dumbbells', 1.0, z, Math.PI, { rest: P2(1.6, z + 0.45), waitBase: P2(1.35, z + 0.2), waitDir: P2(0.2, 0.15) });   /* owner 2026-11-15: a short queue that stays inside the rack's 1.8 m of clear floor */
   },
   cable(F) {
     for (const dx of [-1.8, 1.8]) { stackTowerF(F.sub(dx, -0.3), 2.45); const U = F.sub(dx, 0); for (const ddx of [-0.32, 0.32]) U.box(0.076, 2.45, 0.076, STEEL, ddx, 0, 0.2); U.obst(-0.4, -0.6, 0.4, 0.3); F.cyl(0.075, 0.075, 0.05, 12, CHROME, dx * 0.92, 2.1, 0.2, { rx: Math.PI / 2 }); }
@@ -345,7 +345,7 @@ const DRAW = {
     for (const dx of [-0.28, 0.28]) { F.box(0.045, 0.045, 0.6, '#c4c9d4', dx, 1.23, 0.55); for (const dz of [0.28, 0.82]) F.box(0.06, 1.23, 0.06, '#1c1f2a', dx * 1.15, 0, dz); F.box(0.06, 0.06, 0.6, '#1c1f2a', dx * 1.15, 0.0, 0.55); }
     F.st('pullup', 'other', 0, 0, Z_FRONT, { rest: P2(-1.0, 0.9), waitBase: P2(-1.1, 1.5), waitDir: P2(0, 0.55) });
   },
-  mat(F, type, i) { F.box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i % 4], 0, 0.0, 0); F.st('mat', 'other', 0, -0.35, Z_FRONT, { rest: P2(0.6, 0), waitBase: P2(0.7, 0.9), waitDir: P2(0, 0.5) }); },
+  mat(F, type, i) { F.box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i % 4], 0, 0.0, 0); F.st('mat', 'other', 0, -0.35, Z_FRONT, { rest: P2(0.6, 0), waitBase: P2(0.3, 1.2), waitDir: P2(0, 0.45) }); },   /* owner 2026-11-15: the queue stands in front of the mat, inside its clear floor */
   turf(F) {   /* the sled lane runs along local x (facing 0 only: the sled moves along world x) */
     const L = 24 * SUB, a = -L / 2;
     F.box(L, 0.04, 1.6, '#317033', 0, 0.0, 0); F.box(0.1, 0.045, 1.6, '#f2f1ea', a + 0.4, 0.0, 0); F.box(0.1, 0.045, 1.6, '#f2f1ea', -a - 0.4, 0.0, 0);

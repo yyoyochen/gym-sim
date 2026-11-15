@@ -224,10 +224,10 @@ function refreshPending() {
   document.getElementById('runNote').textContent = tr(any ? 'Some settings change the building or the day: press Setup to apply them.' : 'Behaviour sliders apply immediately.');
 }
 const ZONES = [['cardio', 'Cardio', '#4a8acb', 'Cardio'], ['machines', 'Machines', '#63a845', 'Machine'], ['dumbbells', 'Dumbbells', '#e08f5a', 'DB'], ['racks', 'Racks', '#d6403a', 'Rack'], ['platforms', 'Platforms', '#dfe03a', 'Platform']];
-function dayLabel() {   // e.g. Tue 1 Jun · day 1/30  ·  6月1日 週二 · 第1/30天
+function dayLabel() {   // e.g. Tue 1 Jun  ·  6月1日 週二 (owner 2026-11-15: no "day 1/30" counter)
   if (!A || !M) return '';
-  const mi = MONTH_NAMES.indexOf(M.cfg.month) + 1, n = M.cal.length;
-  return zh() ? `${mi}月${A.date}日 ${tr(A.dow)} · 第${A.dayI + 1}/${n}天` : `${A.dow} ${A.date} ${M.cfg.month} · day ${A.dayI + 1}/${n}`;
+  const mi = MONTH_NAMES.indexOf(M.cfg.month) + 1;
+  return zh() ? `${mi}月${A.date}日 ${tr(A.dow)}` : `${A.dow} ${A.date} ${M.cfg.month}`;
 }
 function resultsText() {
   const nt = (n) => money(n);   // a missing figure shows as $–, never as $0

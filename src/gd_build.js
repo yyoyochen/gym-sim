@@ -6,17 +6,14 @@ const BUILD_KEYS = [['cardio', 'Cardio machines', '有氧器材'], ['machines', 
 const BUILD_GRID = new THREE.Group(); BUILD_GRID.visible = false; world.add(BUILD_GRID);
 { // the buildable grid: 24 x 18 cells of 1.82 m, centred on x = 0, front row on the street wall
   const W = BUILD_LIMITS.maxW * CELL, D = BUILD_LIMITS.maxD * CELL, pts = [];
-  for (let i = 0; i <= BUILD_LIMITS.maxW; i++) { const x = -W / 2 + i * CELL; pts.push(x, 0.06, HZ, x, 0.06, HZ - D); }
-  for (let k = 0; k <= BUILD_LIMITS.maxD; k++) { const z = HZ - k * CELL; pts.push(-W / 2, 0.06, z, W / 2, 0.06, z); }
+  /* owner 2026-11-15: one grid only (no sub-grid), shown in Build and Rearrange; overlays sit on their own levels well above the floor and the turf (0.045 m), with a depth offset, so nothing flickers */
+  const OFF = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false, fog: false };
+  for (let i = 0; i <= BUILD_LIMITS.maxW; i++) { const x = -W / 2 + i * CELL; pts.push(x, 0.085, HZ, x, 0.085, HZ - D); }
+  for (let k = 0; k <= BUILD_LIMITS.maxD; k++) { const z = HZ - k * CELL; pts.push(-W / 2, 0.085, z, W / 2, 0.085, z); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  const main = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.35, fog: false })); main.userData.main = true; BUILD_GRID.add(main);
-  const sp = [], n = 4;   /* owner: the 0.455 m sub-grid in lighter lines (the main lines are drawn above) */
-  for (let i = 0; i <= BUILD_LIMITS.maxW * n; i++) if (i % n) { const x = -W / 2 + i * CELL / n; sp.push(x, 0.055, HZ, x, 0.055, HZ - D); }
-  for (let k = 0; k <= BUILD_LIMITS.maxD * n; k++) if (k % n) { const z = HZ - k * CELL / n; sp.push(-W / 2, 0.055, z, W / 2, 0.055, z); }
-  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
-  const sub = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.12, fog: false })); sub.userData.sub = true; BUILD_GRID.add(sub);
-  const plot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.18, depthWrite: false, fog: false }));
-  plot.position.y = 0.05; plot.renderOrder = 4; BUILD_GRID.add(plot); BUILD_GRID.userData.plot = plot;
+  const main = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.35, ...OFF })); main.userData.main = true; main.renderOrder = 5; BUILD_GRID.add(main);
+  const plot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.18, ...OFF }));
+  plot.position.y = 0.07; plot.renderOrder = 4; BUILD_GRID.add(plot); BUILD_GRID.userData.plot = plot;
 }
 const buildEl = () => document.getElementById('build');
 const buildPlan = () => ({ w: BUILD.w, d: BUILD.d, counts: BUILD.counts, layout: BUILD.layout });
@@ -190,8 +187,8 @@ const RNAME = { rack: ['Power rack', '深蹲架'], olyplat: ['Olympic platform',
   legpress: ['Leg press', '腿推機'], hack: ['Hack squat', '哈克深蹲'], hipthrust: ['Hip thrust', '臀推機'], beltsquat: ['Belt squat', '腰帶深蹲'], bench: ['Adjustable bench', '可調式訓練椅'], dbrack: ['Dumbbell rack', '啞鈴架'],
   cable: ['Cable tower', '滑輪架'], pullup: ['Pull-up station', '引體向上架'], mat: ['Stretch mat', '伸展墊'], turf: ['Turf and sled lane', '草皮與雪橇道'] };
 const rname = (k) => tx(...(RNAME[k] || [k, k]));
-const RGHOST = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#5ee08a', transparent: true, opacity: 0.4, depthWrite: false, fog: false }));
-RGHOST.position.y = 0.07; RGHOST.renderOrder = 5; RGHOST.visible = false; BUILD_GRID.add(RGHOST);
+const RGHOST = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#5ee08a', transparent: true, opacity: 0.4, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+RGHOST.position.y = 0.1; RGHOST.renderOrder = 6; RGHOST.visible = false; BUILD_GRID.add(RGHOST);
 function openRearrange() {
   if ((typeof closing !== 'undefined' && closing) || BUILD.on) return false;
   if (BIZ && (BIZ.pending || (A && A.closed && A.closedWhy === 'rearrange'))) { showToast(tx('A rearrange is already booked: wait until the gym reopens.', '已經安排重新擺設：請等健身房重新開門。')); return false; }

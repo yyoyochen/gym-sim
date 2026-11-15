@@ -10,8 +10,8 @@
 <style>
 /* text sizes (owner, 2026-11-15: the type read too small): every UI size is one of these, named by its old desktop size.
    Desktop: nothing under 11px, body 13px. Phone (<860px): nothing under 13px, body 14px, buttons and tabs 15px. Change these to rescale it all. */
-:root{--f9:11px;--f10:11px;--f11:11px;--f12:13px;--f13:14px;--f14:15px;--f15:16px;--f16:17px}
-@media (max-width:859px){:root{--f9:13px;--f10:13px;--f11:13px;--f12:14px;--f13:15px;--f14:16px;--f15:17px;--f16:18px}}
+:root{--f9:13px;--f10:13px;--f11:14px;--f12:15px;--f13:16px;--f14:17px;--f15:18px;--f16:19px}
+@media (max-width:859px){:root{--f9:14px;--f10:14px;--f11:15px;--f12:16px;--f13:16px;--f14:17px;--f15:18px;--f16:19px}}
 @font-face{font-family:"Digits";src:url(https://fonts.gstatic.com/s/pressstart2p/v16/e3t4euO8T-267oIAQAu6jDQyK3nVivNm4I81.woff2) format("woff2");unicode-range:U+0030-0039;size-adjust:72%;font-display:swap}   /* owner (option D): digits from Press Start 2P everywhere; letters and symbols keep their pixel fonts */
 /* Traditional Chinese pixel font (Cubic 11, SIL OFL), only fetched when Chinese text is on screen */
 @font-face{font-family:"Cubic 11";src:url(https://cdn.jsdelivr.net/gh/ACh-K/Cubic-11@main/fonts/web/Cubic_11.woff2) format("woff2");unicode-range:U+2E80-2FFF,U+3000-303F,U+3100-312F,U+3400-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF;font-display:swap}
@@ -73,7 +73,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #books .bkbody{flex:1;overflow-y:auto;padding:4px 10px 12px;scrollbar-width:thin}
 #books .grp>h2 .pend{display:inline;color:var(--muted)}
 #books table{width:100%;border-collapse:collapse;font-size:var(--f12)}
-#books td{padding:2px 4px;border-bottom:1px solid var(--edge);vertical-align:top}
+#books td{padding:5px 6px;line-height:1.35;border-bottom:1px solid var(--edge);vertical-align:top}
 #books td.n{text-align:right;font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f11);white-space:nowrap}
 #books td.p{text-align:right;color:var(--muted);font-size:var(--f10);white-space:nowrap;width:44px}
 #books tr.sub td{color:var(--muted);padding-left:12px}
@@ -177,7 +177,7 @@ select,input[type=number]{width:100%;font-family:Digits,"Pixelify Sans","Cubic 1
 #books td.n{font-size:var(--f12)}#books table.yr td.n{font-size:var(--f11)}#books .step b{font-size:var(--f13)}.w .lab b{font-size:var(--f12)}.mon b{font-size:var(--f15)}#build td.n,#build .bstep b{font-size:var(--f14)}
 @media (max-width:859px){.mon b{font-size:var(--f13)}}
 /* phone books (owner, 2026-11-15): read, not glanced at, so notes and figures go to 14px; tabs keep to one row where they fit, else wrap */
-@media (max-width:859px){#books{--f11:14px}#books .bktabs{flex-wrap:wrap;row-gap:2px}#books .bktabs button{padding:6px 4px}}
+@media (max-width:859px){#books{--f11:16px}#books .bktabs{flex-wrap:wrap;row-gap:2px}#books .bktabs button{padding:6px 4px}}
 </style>
 </head>
 <body>
