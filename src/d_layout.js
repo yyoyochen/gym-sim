@@ -1,7 +1,7 @@
 
 // ================================================================ equipment layout (rebuilt on Setup) + navigation grid
 let EQUIP = new THREE.Group(); world.add(EQUIP);
-let STATIONS = [], OBST = [], BACKROW = { z: -7.6, rows: 1 }, CHALK = { x: 0, z: -5 };
+let STATIONS = [], OBST = [], BACKROW = { z: -7.6, rows: 1 }, CHALK = { x: 0, z: -5 }, DBZONE = { x: -13.6, zc: -1.0, span: 4 };
 const PLATE = { 25: ['#d6403a', 0.45, 0.054], 20: ['#2f68ab', 0.45, 0.046], 15: ['#dfe03a', 0.40, 0.04], 10: ['#448c3a', 0.325, 0.035], 5: ['#2f3340', 0.228, 0.03], 2.5: ['#9b2226', 0.19, 0.025], 1.25: ['#c4c9d4', 0.16, 0.02] };
 const PLATE_KG = [25, 20, 15, 10, 5, 2.5, 1.25];
 function platesFor(total, bar = 20) { let side = Math.max(0, (total - bar) / 2); const out = []; for (const p of PLATE_KG) while (side >= p - 1e-6) { out.push(p); side -= p; } return out; }
@@ -19,6 +19,12 @@ function addStation(type, zone, x, z, yaw, o = {}) {
   s.waitDir = s.waitDir || { x: Math.cos(s.yaw) * 0.6, z: Math.sin(s.yaw) * 0.6 };
   STATIONS.push(s); return s;
 }
+// what a layout actually placed: counts per kind and which fixed-kit zones exist (Plan 8: a built gym pays for these)
+function placedCounts() {
+  const n = (f) => STATIONS.filter(f).length, MT = ['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl'], PL = ['legpress', 'hack', 'hipthrust', 'beltsquat'], has = (t) => STATIONS.some(s => s.type === t);
+  return { counts: { cardio: n(s => s.zone === 'cardio'), machines: n(s => MT.includes(s.type)), racks: n(s => s.type === 'rack'), plats: n(s => s.type === 'olyplat'), benches: n(s => s.type === 'bench'), plates: n(s => PL.includes(s.type)) },
+    kit: { dumbbells: has('dbspot'), cable: has('cable'), turf: has('sled'), pullup: has('pullup'), mats: has('mat') } };
+}
 function waitSpot(s, i) { return { x: s.waitBase.x + s.waitDir.x * i, z: s.waitBase.z + s.waitDir.z * i }; }
 function obst(x0, z0, x1, z1) { OBST.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]); }
 const Z_FRONT = Math.PI / 2;   // facing +z
@@ -28,16 +34,33 @@ function buildLayout(cfg) {
   world.remove(EQUIP); EQUIP = new THREE.Group(); world.add(EQUIP);
   STATIONS = []; OBST = [];
   const EB = new Builder(); const B = { b: EB };
+  // Plan 8: zones keep to their wall — cardio and machines to the street wall, racks and platforms to the back wall, dumbbells, mats and the bar
+  // holder to the left wall — at today's coordinates plus that wall's shift; counts come from cfg and are clipped to what fits a built hall.
+  // The sample hall (HALL.w == null) keeps today's hand-tuned layout exactly.
+  const { R, Lf, Bk } = hallShift(), sample = HALL.w == null;
+  const colIn = (x0, z0, x1, z1) => COLUMNS.some(c => c.x + 0.35 > Math.min(x0, x1) && c.x - 0.35 < Math.max(x0, x1) && c.z + 0.35 > Math.min(z0, z1) && c.z - 0.35 < Math.max(z0, z1));   /* a piece (with its rest and queue spots) would hit a column: leave it out */
+  const items = []; for (let i = 0; i < cfg.racks; i++) items.push('rack'); for (let i = 0; i < cfg.plats; i++) items.push('olyplat');
+  const bx0 = Lf - 10.6, rowZ = [Bk - 7.6, Bk - 4.25], all = items.length;
+  let bx1 = R + 14.2, perCap = 0, twoRows = false;
+  const fitRows = () => { perCap = Math.max(1, Math.floor((bx1 - bx0) / 2.6)); twoRows = cfg.racks + cfg.plats > 9 || (!sample && all > perCap); };
+  fitRows();
+  if (!sample && rowZ[twoRows ? 1 : 0] + 2.6 > CHG.z0 - 0.3) { bx1 = Math.min(bx1, CHG.x0 - 1.4); fitRows(); }   /* a shallow hall: the back row stops short of the washrooms */
+  if (!sample) items.length = Math.min(all, perCap * (twoRows ? 2 : 1) * (twoRows ? 1 : 1), perCap * 2);
+  const backEdge = rowZ[twoRows ? 1 : 0] + 1.2, backWait = rowZ[twoRows ? 1 : 0] + 1.8 + 0.55;
   // ---------------- cardio strip along the windows (facing the windows, +z)
   const cz = 8.0;
-  const cardio = [['treadmill', -13.2], ['treadmill', -11.6], ['treadmill', -10.0], ['treadmill', -8.4], ['rower', -6.6], ['rower', -5.0], ['bike', -3.3], ['bike', -1.9], ['airbike', -0.3]];
+  const CARDIO = [['treadmill', -13.2], ['treadmill', -11.6], ['treadmill', -10.0], ['treadmill', -8.4], ['rower', -6.6], ['rower', -5.0], ['bike', -3.3], ['bike', -1.9], ['airbike', -0.3]], nC = cfg.cardio ?? 9;
+  const cardio = (nC === 9 ? CARDIO : Array.from({ length: nC }, (_, i) => [CARDIO[i % 9][0], -13.2 + i * 1.65])).map(([t, x]) => [t, Lf + x]).filter(([, x]) => sample || (x <= DOOR.x - 6.3 && !colIn(x - 0.5, cz - 2.6, x + 1.0, cz + 1.2)));
   for (const [type, x] of cardio) {
     if (type === 'treadmill') { box(0.85, 0.18, 1.9, '#565c6c', x, 0, cz, 0, B); box(0.6, 0.02, 1.5, '#0d0f14', x, 0.18, cz - 0.1, 0, B); for (const dx of [-0.38, 0.38]) box(0.06, 1.2, 0.06, '#959bab', x + dx, 0.18, cz + 0.8, 0, B); box(0.8, 0.3, 0.2, '#7a8090', x, 1.3, cz + 0.82, 0, B); box(0.5, 0.18, 0.04, '#13305a', x, 1.36, cz + 0.71, 0, B); addStation(type, 'cardio', x, cz - 0.15, Z_FRONT, { rest: { x: x + 0.8, z: cz - 1.6 }, waitBase: { x: x + 0.8, z: cz - 2.2 }, waitDir: { x: 0, z: -0.6 } }); obst(x - 0.42, cz + 0.6, x + 0.42, cz + 1.0); }
     if (type === 'rower') { box(0.18, 0.12, 2.4, '#959bab', x, 0.05, cz, 0, B); box(0.5, 0.5, 0.4, '#1c1f2a', x, 0.1, cz + 1.0, 0, B); disc(0.24, 0.12, '#7a8090', x, 0.45, cz + 1.0, 'x', EB); box(0.5, 0.06, 0.2, '#1c1f2a', x, 0.15, cz + 0.6, 0, B); addStation(type, 'cardio', x, cz - 0.3, Z_FRONT, { rest: { x: x + 0.7, z: cz - 1.8 }, waitBase: { x: x + 0.7, z: cz - 2.4 }, waitDir: { x: 0, z: -0.6 } }); obst(x - 0.3, cz + 0.7, x + 0.3, cz + 1.25); }
     if (type === 'bike' || type === 'airbike') { box(0.12, 0.08, 1.1, '#7a8090', x, 0, cz, 0, B); box(0.08, 0.85, 0.08, '#7a8090', x, 0, cz - 0.25, 0, B); box(0.25, 0.08, 0.3, '#1c1f2a', x, 0.88, cz - 0.25, 0, B); box(0.08, 1.05, 0.08, '#7a8090', x, 0, cz + 0.35, 0, B); box(0.5, 0.06, 0.08, '#1c1f2a', x, 1.05, cz + 0.4, 0, B); if (type === 'airbike') disc(0.4, 0.2, '#565c6c', x, 0.45, cz + 0.55, 'x', EB); else disc(0.2, 0.1, '#6b7182', x, 0.35, cz + 0.4, 'x', EB); addStation(type, 'cardio', x, cz - 0.25, Z_FRONT, { rest: { x: x + 0.6, z: cz - 1.6 }, waitBase: { x: x + 0.6, z: cz - 2.2 }, waitDir: { x: 0, z: -0.6 } }); obst(x - 0.25, cz + 0.2, x + 0.25, cz + 0.75); }
   }
   // ---------------- pin-loaded machines, Rogue-style: 3x3 black steel, shrouded stacks, 6" pulleys (user sits facing +z)
-  const mz = 4.6, machines = ['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl'], MX0 = -13.1, MP = 2.15;
+  const mz = 4.6, MTYPES = ['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl'], MX0 = Lf - 13.1, MP = 2.15;
+  const cableX = (n) => Lf + 3.8 + (n - 7) * MP; let nM = cfg.machines ?? 7;
+  if (!sample) while (nM > 1 && cableX(nM) + 2.2 > CHG.x0 - 1.5) nM--;   /* leave a corridor to the washroom doors */
+  const machines = Array.from({ length: nM }, (_, i) => MTYPES[i % 7]);
   const STEEL = '#1c1f2a', PAD = '#2f3340', CHROME = '#c4c9d4', SHROUD = '#565c6c';
   const stackTower = (x, z, h = 2.3) => {
     for (const dx of [-0.32, 0.32]) box(0.076, h, 0.076, STEEL, x + dx, 0, z, 0, B);
@@ -49,6 +72,7 @@ function buildLayout(cfg) {
   };
   machines.forEach((type, i) => {
     const x = MX0 + i * MP, sz = mz - 0.95;
+    if (colIn(x - 1.0, mz - 1.4, x + 1.1, mz + 2.2)) return;
     stackTower(x, sz);
     box(0.1, 0.1, 1.3, STEEL, x, 0, mz - 0.35, 0, B);                                         // spine to the stack
     box(0.6, 0.012, 0.012, '#0d0f14', x, 2.2, sz, 0, B);
@@ -85,19 +109,25 @@ function buildLayout(cfg) {
     obst(x - 0.4, sz - 0.3, x + 0.4, sz + 0.3);
   });
   { // functional trainer / cable crossover: two shrouded towers, adjustable pulleys, pull-up crossmember
-    const x = 3.8;
+    const x = cableX(nM);
+    if (!colIn(x - 2.3, mz - 0.8, x + 2.3, mz + 2.0)) {
     for (const dx of [-1.8, 1.8]) { stackTower(x + dx, mz - 0.3, 2.45); for (const ddx of [-0.32, 0.32]) box(0.076, 2.45, 0.076, STEEL, x + dx + ddx, 0, mz + 0.2, 0, B); obst(x + dx - 0.4, mz - 0.6, x + dx + 0.4, mz + 0.3); cyl(0.075, 0.075, 0.05, 12, CHROME, x + dx * 0.92, 2.1, mz + 0.2, { b: EB, rx: Math.PI / 2 }); }
     box(3.9, 0.076, 0.076, STEEL, x, 2.42, mz + 0.2, 0, B); box(2.2, 0.05, 0.05, CHROME, x, 2.3, mz + 0.35, 0, B);
     addStation('cable', 'machines', x, mz - 0.1, Z_FRONT, { rest: { x: x, z: mz + 1.2 }, waitBase: { x: x + 0.7, z: mz + 1.4 }, waitDir: { x: 0, z: 0.55 }, stackAt: { x: x - 1.8, z: mz - 0.3 }, stackAt2: { x: x + 1.8, z: mz - 0.3 } });
+    }
   }
   // ---------------- dumbbell racks: two-tier, dumbbells lie across the rack in pairs, heavier to the right
+  const segs = [[-4.8, -1.5], [-0.7, 2.6]].filter(([z0, z1]) => sample || (z0 > Bk - 6.25 && !colIn(Lf - 14.8, z0, Lf - 11.3, z1 + 1.0)));   /* rack runs clear of the stretch corner */
+  DBZONE = { x: Lf - 13.6, zc: -1.0, span: 4 };   /* where cleaners put stray dumbbells back; a built hall narrows it below */
   {
     let w = 2.5;
-    for (const [z0, z1] of [[-4.8, -1.5], [-0.7, 2.6]]) {
+    if (!sample && !segs.length) DBZONE = { x: HALL.x0 + 1.4, zc: (HALL.zb + HZ) / 2, span: 1 };   /* no dumbbell runs: somewhere on the floor by the left wall */
+    if (!sample && segs.length) DBZONE = { x: Lf - 13.6, zc: (segs[0][0] + segs[segs.length - 1][1]) / 2, span: Math.min(4, segs[segs.length - 1][1] - segs[0][0]) };
+    for (const [z0, z1] of segs) {
       const zc = (z0 + z1) / 2, len = z1 - z0;
-      for (const zz of [z0 + 0.05, z1 - 0.05]) { box(0.06, 0.9, 0.06, STEEL, -14.55, 0, zz, 0, B); box(0.06, 0.6, 0.06, STEEL, -13.95, 0, zz, 0, B); box(0.7, 0.06, 0.06, STEEL, -14.25, 0, zz, 0, B); }
-      box(0.36, 0.04, len, STEEL, -14.08, 0.5, zc, 0, B, { rz: -0.12 }); box(0.36, 0.04, len, STEEL, -14.45, 0.86, zc, 0, B, { rz: -0.12 });
-      for (const [tier, cx] of [[0.9, -14.45], [0.54, -14.08]]) {
+      for (const zz of [z0 + 0.05, z1 - 0.05]) { box(0.06, 0.9, 0.06, STEEL, Lf - 14.55, 0, zz, 0, B); box(0.06, 0.6, 0.06, STEEL, Lf - 13.95, 0, zz, 0, B); box(0.7, 0.06, 0.06, STEEL, Lf - 14.25, 0, zz, 0, B); }
+      box(0.36, 0.04, len, STEEL, Lf - 14.08, 0.5, zc, 0, B, { rz: -0.12 }); box(0.36, 0.04, len, STEEL, Lf - 14.45, 0.86, zc, 0, B, { rz: -0.12 });
+      for (const [tier, cx] of [[0.9, Lf - 14.45], [0.54, Lf - 14.08]]) {
         const slot = (len - 0.2) / 5;
         for (let p = 0; p < 5; p++) {
           const r = 0.065 + w * 0.0012, hl = 0.05 + w * 0.0016;
@@ -114,21 +144,24 @@ function buildLayout(cfg) {
           w += 2.5;
         }
       }
-      obst(-14.7, z0, -13.85, z1);
+      obst(Lf - 14.7, z0, Lf - 13.85, z1);
     }
   }
-  [-4.0, -2.2, -0.4, 1.4].forEach(z => addStation('dbspot', 'dumbbells', -12.75, z, Math.PI, { rest: { x: -11.95, z: z + 0.65 }, waitBase: { x: -11.7, z: z + 0.9 }, waitDir: { x: 0.5, z: 0 } }));
-  for (let i = 0; i < cfg.benches; i++) {
+  [-4.0, -2.2, -0.4, 1.4].filter(z => segs.some(([z0, z1]) => z >= z0 && z <= z1)).forEach(z => addStation('dbspot', 'dumbbells', Lf - 12.75, z, Math.PI, { rest: { x: Lf - 11.95, z: z + 0.65 }, waitBase: { x: Lf - 11.7, z: z + 0.9 }, waitDir: { x: 0.5, z: 0 } }));
+  const bz0 = sample ? -4.0 : Math.max(-4.0, backWait + 0.7), nB = sample ? cfg.benches : Math.min(cfg.benches, 2 * Math.max(0, Math.floor((2.0 - bz0) / 1.6) + 1));
+  for (let i = 0; i < nB; i++) {
     const col = i % 2, row = Math.floor(i / 2);
-    const x = -10.6 + col * 1.75, z = -4.0 + row * 1.6;   // second column tucked toward the dumbbell racks, clear of the sled turf
+    const x = Lf + (-10.6 + col * 1.75), z = bz0 + row * 1.6;   // second column tucked toward the dumbbell racks, clear of the sled turf
+    if (colIn(x - 0.8, z - 0.4, x + 0.8, z + 1.1)) continue;
     box(1.2, 0.1, 0.32, '#1c1f2a', x, 0.38, z, 0, B); box(0.06, 0.38, 0.06, '#7a8090', x - 0.45, 0, z, 0, B); box(0.06, 0.38, 0.06, '#7a8090', x + 0.45, 0, z, 0, B); box(0.1, 0.06, 0.4, '#7a8090', x - 0.5, 0, z, 0, B); box(0.1, 0.06, 0.4, '#7a8090', x + 0.5, 0, z, 0, B);
     addStation('bench', 'dumbbells', x, z, 0, { rest: { x: x + 0.3, z: z + 0.7 }, waitBase: { x: x - 0.45, z: z + 0.8 }, waitDir: { x: -0.5, z: 0 } });
     obst(x - 0.55, z - 0.12, x + 0.55, z + 0.12);
   }
   // ---------------- plate-loaded machines + turf lane + pull-up station
-  const twoRows = cfg.racks + cfg.plats > 9;
   const pz = twoRows ? 1.0 : 0.5, turfZ = twoRows ? -1.6 : -2.6;
-  const plate = [['legpress', -4.6], ['hack', -1.6], ['hipthrust', 1.4], ['beltsquat', 4.4]];
+  const keepMid = sample || pz - 1.0 > backWait + 0.3, keepTurf = sample || (turfZ - 0.8 > backEdge + 0.2 && (R + 7.0) - (Lf - 6.2) >= 8 && !colIn(Lf - 7.8, turfZ - 1.3, R + 8.1, turfZ + 1.3));
+  const PLATE_M = [['legpress', -4.6], ['hack', -1.6], ['hipthrust', 1.4], ['beltsquat', 4.4]], nP = keepMid ? cfg.plates ?? 4 : 0;
+  const plate = (nP === 4 ? PLATE_M : Array.from({ length: nP }, (_, i) => [PLATE_M[i % 4][0], i < 4 ? PLATE_M[i][1] : 4.4 + (i - 3) * 3.0])).map(([t, x]) => [t, Lf + x]).filter(([, x]) => sample || (x + 1.35 <= R + 7.9 && !colIn(x - 0.7, pz - 1.2, x + 1.6, pz + 1.7)));
   for (const [type, x] of plate) {
     if (type === 'legpress') { box(1.1, 0.1, 2.3, '#565c6c', x, 0, pz, 0, B); box(0.6, 0.1, 0.6, '#1c1f2a', x, 0.4, pz - 0.6, 0, B); box(0.6, 0.7, 0.12, '#1c1f2a', x, 0.45, pz - 0.95, 0, { b: EB, rx: -0.6 }); for (const dx of [-0.45, 0.45]) box(0.08, 0.08, 1.6, '#959bab', x + dx, 0.6, pz + 0.45, 0, { b: EB, rx: -0.75 }); obst(x - 0.5, pz + 0.1, x + 0.5, pz + 1.2); }
     if (type === 'hack') { box(1.1, 0.1, 1.9, '#565c6c', x, 0, pz, 0, B); for (const dx of [-0.45, 0.45]) box(0.08, 2.0, 0.08, '#959bab', x + dx, 0, pz - 0.75, 0, { b: EB, rx: 0.35 }); box(0.55, 0.9, 0.1, '#1c1f2a', x, 0.6, pz - 0.6, 0, { b: EB, rx: 0.35 }); obst(x - 0.5, pz - 1.0, x + 0.5, pz - 0.6); }
@@ -136,22 +169,22 @@ function buildLayout(cfg) {
     if (type === 'beltsquat') { box(1.1, 0.12, 1.8, '#565c6c', x, 0, pz, 0, B); box(0.1, 1.0, 0.1, '#7a8090', x, 0, pz + 0.75, 0, B); box(0.8, 0.06, 0.06, '#959bab', x, 1.0, pz + 0.75, 0, B); box(0.14, 0.14, 1.4, '#7a8090', x, 0.12, pz - 0.3, 0, B); obst(x - 0.1, pz + 0.65, x + 0.1, pz + 0.85); }
     addStation(type, 'machines', x, pz, Z_FRONT, { rest: { x: x + 1.3, z: pz + 0.8 }, waitBase: { x: x + 1.35, z: pz + 1.4 }, waitDir: { x: 0, z: 0.55 } });
   }
-  box(15, 0.04, 1.6, '#317033', 0.5, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', -6.6, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', 7.6, 0.0, turfZ, 0, B);
-  addStation('sled', 'other', -6.2, turfZ, 0, { lane: [-6.2, 7.0], sledX: -5.4, rest: { x: -7.6, z: turfZ + 1.1 }, waitBase: { x: -7.4, z: turfZ - 1.05 }, waitDir: { x: 0, z: -0.55 } });
-  { const x = 8.9, z = pz + 0.2;
+  if (keepTurf) { box(15 + R - Lf, 0.04, 1.6, '#317033', 0.5 + (R + Lf) / 2, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', Lf - 6.6, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', R + 7.6, 0.0, turfZ, 0, B);
+    addStation('sled', 'other', Lf - 6.2, turfZ, 0, { lane: [Lf - 6.2, R + 7.0], sledX: Lf - 5.4, rest: { x: Lf - 7.6, z: turfZ + 1.1 }, waitBase: { x: Lf - 7.4, z: turfZ - 1.05 }, waitDir: { x: 0, z: -0.55 } }); }
+  if (keepMid && !colIn(R + 8.9 - 1.6, pz - 0.1, R + 8.9 + 0.9, pz + 2.0)) { const x = R + 8.9, z = pz + 0.2;
     for (const dx of [-0.6, 0.6]) { box(0.076, 2.5, 0.076, '#1c1f2a', x + dx, 0, z, 0, B); box(0.076, 0.076, 0.9, '#1c1f2a', x + dx, 0, z, 0, B); obst(x + dx - 0.12, z - 0.12, x + dx + 0.12, z + 0.12); }
     box(1.3, 0.05, 0.05, '#c4c9d4', x, 2.33, z, 0, B); box(1.28, 0.076, 0.076, '#1c1f2a', x, 2.45, z, 0, B);
     // dip bars: parallel handles 0.56 m apart at 1.25 m, each on its own front and back post
     for (const dx of [-0.28, 0.28]) { box(0.045, 0.045, 0.6, '#c4c9d4', x + dx, 1.23, z + 0.55, 0, B); for (const dz of [0.28, 0.82]) box(0.06, 1.23, 0.06, '#1c1f2a', x + dx * 1.15, 0, z + dz, 0, B); box(0.06, 0.06, 0.6, '#1c1f2a', x + dx * 1.15, 0.0, z + 0.55, 0, B); }
     addStation('pullup', 'other', x, z, Z_FRONT, { rest: { x: x - 1.3, z: z + 0.9 }, waitBase: { x: x - 1.4, z: z + 1.5 }, waitDir: { x: 0, z: 0.55 } }); }
   // ---------------- back zone: power racks + Olympic platforms
-  const items = []; for (let i = 0; i < cfg.racks; i++) items.push('rack'); for (let i = 0; i < cfg.plats; i++) items.push('olyplat');
-  const x0 = -10.6, x1 = 14.2; const rows = twoRows ? 2 : 1; const perRow = Math.ceil(items.length / rows);
+  const x0 = bx0, x1 = bx1; const rows = twoRows ? 2 : 1; const perRow = Math.ceil(items.length / rows);
   const pitch = Math.min(3.9, (x1 - x0) / Math.max(1, perRow));
-  BACKROW = { z: -7.6, rows };
+  BACKROW = { z: rowZ[0], rows };
   items.forEach((type, k) => {
     const row = Math.floor(k / perRow), idx = k % perRow;
-    const px = x0 + pitch * (idx + 0.5), pz2 = row === 0 ? -7.6 : -4.25;
+    const px = x0 + pitch * (idx + 0.5), pz2 = rowZ[row];
+    if (colIn(px - 1.3, pz2 - 1.9, px + 1.3, pz2 + 2.5)) return;
     box(2.4, 0.06, 2.4, '#1c1f2a', px, 0, pz2, 0, B); box(1.2, 0.065, 2.38, type === 'rack' ? '#c99a5e' : '#a9733f', px, 0, pz2, 0, B);
     if (type === 'rack') {
       for (const dx of [-0.6, 0.6]) for (const dz of [-1.0, 0.2]) {
@@ -184,14 +217,14 @@ function buildLayout(cfg) {
       addStation('olyplat', 'platforms', px, pz2 + 0.05, Z_FRONT, { bar0: { x: px, z: pz2 + 0.3 }, rest: { x: px - 0.9, z: pz2 + 1.55 }, waitBase: { x: px + 0.75, z: pz2 + 1.8 }, waitDir: { x: 0, z: 0.55 }, load: 20 });
     }
   });
-  CHALK = { x: (x0 + x1) / 2 - 1.2, z: twoRows ? -2.9 : -5.3 };
-  cyl(0.06, 0.12, 0.9, 8, '#7a8090', CHALK.x, 0, CHALK.z, B); cyl(0.3, 0.22, 0.18, 10, '#f2f1ea', CHALK.x, 0.9, CHALK.z, B); obst(CHALK.x - 0.3, CHALK.z - 0.3, CHALK.x + 0.3, CHALK.z + 0.3);
+  CHALK = { x: (x0 + x1) / 2 - 1.2, z: Bk + (twoRows ? -2.9 : -5.3) };
+  if (!colIn(CHALK.x - 0.4, CHALK.z - 0.4, CHALK.x + 0.4, CHALK.z + 0.4)) {   cyl(0.06, 0.12, 0.9, 8, '#7a8090', CHALK.x, 0, CHALK.z, B); cyl(0.3, 0.22, 0.18, 10, '#f2f1ea', CHALK.x, 0.9, CHALK.z, B); obst(CHALK.x - 0.3, CHALK.z - 0.3, CHALK.x + 0.3, CHALK.z + 0.3); }
   // barbell holder
-  for (let i = 0; i < 6; i++) box(0.04, 1.6, 0.04, '#959bab', -11.6 + (i % 3) * 0.08, 0.2, -9.4 + Math.floor(i / 3) * 0.08, 0, B);
-  box(0.4, 0.2, 0.4, '#565c6c', -11.52, 0, -9.36, 0, B); obst(-11.8, -9.6, -11.3, -9.1);
+  for (let i = 0; i < 6; i++) box(0.04, 1.6, 0.04, '#959bab', Lf + (-11.6 + (i % 3) * 0.08), 0.2, Bk + (-9.4 + Math.floor(i / 3) * 0.08), 0, B);
+  box(0.4, 0.2, 0.4, '#565c6c', Lf - 11.52, 0, Bk - 9.36, 0, B); obst(Lf - 11.8, Bk - 9.6, Lf - 11.3, Bk - 9.1);
   // stretch corner
-  [[-14.0, -9.1], [-12.6, -9.1], [-14.0, -7.4], [-12.6, -7.4]].forEach(([x, z], i) => { box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i], x, 0.0, z, 0, B); addStation('mat', 'other', x, z - 0.35, Z_FRONT, { rest: { x: x + 0.6, z }, waitBase: { x: x + 0.7, z: z + 0.9 }, waitDir: { x: 0, z: 0.5 } }); });
-  for (let i = 0; i < 4; i++) cyl(0.08, 0.08, 0.45, 8, '#dfe03a', -11.75, 0.0, -8.6 + i * 0.25, { b: EB, rz: Math.PI / 2 });
+  [[-14.0, -9.1], [-12.6, -9.1], [-14.0, -7.4], [-12.6, -7.4]].map(([x, z]) => [Lf + x, Bk + z]).forEach(([x, z], i) => { box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i], x, 0.0, z, 0, B); addStation('mat', 'other', x, z - 0.35, Z_FRONT, { rest: { x: x + 0.6, z }, waitBase: { x: x + 0.7, z: z + 0.9 }, waitDir: { x: 0, z: 0.5 } }); });
+  for (let i = 0; i < 4; i++) cyl(0.08, 0.08, 0.45, 8, '#dfe03a', Lf - 11.75, 0.0, Bk + (-8.6 + i * 0.25), { b: EB, rz: Math.PI / 2 });
   EB.flush(EQUIP);
   buildNav();
 }
@@ -209,15 +242,18 @@ function buildNav() {
   navBlock.fill(0);
   for (let j = 0; j < NAV.h; j++) for (let i = 0; i < NAV.w; i++) { const [x, z] = cellC(i, j); if (!inIsland(x, z) || !inIsland(x * 0.96, (z - 4) * 0.96 + 4)) navBlock[j * NAV.w + i] = 1; }
   // hall walls with the door gap
-  blockRect(-HX - 0.2, -HZ - 0.2, HX + 0.2, -HZ + 0.15); blockRect(-HX - 0.2, -HZ, -HX + 0.15, HZ);
-  blockRect(HX - 0.15, -HZ, HX + 0.2, HZ); blockRect(-HX, HZ - 0.15, DOOR.x - 0.8, HZ + 0.2); blockRect(DOOR.x + 0.8, HZ - 0.15, HX, HZ + 0.2);
+  const { x0: hx0, x1: hx1, zb } = HALL, { R, Lf } = hallShift();   /* hall walls from HALL; fixtures at today's coordinates plus the shift of their wall */
+  blockRect(hx0 - 0.2, zb - 0.2, hx1 + 0.2, zb + 0.15); blockRect(hx0 - 0.2, zb, hx0 + 0.15, HZ);
+  blockRect(hx1 - 0.15, zb, hx1 + 0.2, HZ); blockRect(hx0, HZ - 0.15, DOOR.x - 0.8, HZ + 0.2); blockRect(DOOR.x + 0.8, HZ - 0.15, hx1, HZ + 0.2);
   // changing room walls (door on the west wall), lockers, benches
-  blockRect(CHG.x0 - 0.15, CHG.z0, CHG.x0 + 0.15, CHG.door - 0.6); blockRect(CHG.x0 - 0.15, CHG.door + 0.6, CHG.x0 + 0.15, CHG.z1);
-  blockRect(CHG.x0, CHG.z0 - 0.15, CHG.x1, CHG.z0 + 0.15); blockRect(CHG.x0, CHG.z1 - 0.15, CHG.x1, CHG.z1 + 0.15);
-  blockRect(HX - 0.85, CHG.z0, HX, CHG.z1); blockRect(12.35, -0.1, 12.85, 3.3); blockRect(12.35, -2.1, 12.85, 0.1);
+  // two washrooms: west wall with two doors, divider, lockers, benches, cubicles and showers (Plan 7b)
+  blockRect(CHG.x0 - 0.15, CHG.z0, CHG.x0 + 0.15, CHG.doorM - 0.6); blockRect(CHG.x0 - 0.15, CHG.doorM + 0.6, CHG.x0 + 0.15, CHG.doorF - 0.6); blockRect(CHG.x0 - 0.15, CHG.doorF + 0.6, CHG.x0 + 0.15, CHG.z1);
+  blockRect(CHG.x0, CHG.z0 - 0.15, CHG.x1, CHG.z0 + 0.15); blockRect(CHG.x0, CHG.z1 - 0.15, CHG.x1, CHG.z1 + 0.15); blockRect(CHG.x0, CHG.mid - 0.15, CHG.x1, CHG.mid + 0.15);
+  blockRect(hx1 - 0.85, CHG.z0, hx1, CHG.z1); blockRect(R + 12.55, -1.4, R + 13.05, -0.5); blockRect(R + 12.55, 3.9, R + 13.05, 4.7);
+  blockRect(R + 11.1, -2.1, R + 12.2, -1.2); blockRect(R + 11.1, 0.9, R + 12.1, 1.5); blockRect(R + 11.1, 4.2, R + 12.2, 5.1); blockRect(R + 11.1, 1.7, R + 12.1, 2.3);
   // desk, turnstile posts, fountain, boards, mirror
-  blockRect(13.15, 6.15, 14.05, 8.65); blockRect(DOOR.x - 0.9, 7.9, DOOR.x - 0.6, 8.5); blockRect(DOOR.x + 0.6, 7.9, DOOR.x + 0.9, 8.5);
-  blockRect(10.4, 5.55, 10.9, 6.05); blockRect(-14.2, -5.75, -11.8, -5.45); blockRect(-11.7, -5.75, -9.1, -5.45);
+  blockRect(R + 13.15, 6.15, R + 14.05, 8.65); blockRect(DOOR.x - 0.9, 7.9, DOOR.x - 0.6, 8.5); blockRect(DOOR.x + 0.6, 7.9, DOOR.x + 0.9, 8.5);
+  blockRect(R + 10.4, 5.55, R + 10.9, 6.05); if (HALL.w == null) { blockRect(Lf - 14.2, WB_AT.z - 0.15, Lf - 11.8, WB_AT.z + 0.15); blockRect(Lf - 11.7, PRB_AT.z - 0.15, Lf - 9.1, PRB_AT.z + 0.15); }   /* a built hall hangs them on the back wall */
   // outside: bus shelter, bike rack, lamps, trees
   blockRect(BUS_STOP.x - 1.6, BUS_STOP.z - 0.75, BUS_STOP.x + 1.6, BUS_STOP.z - 0.55);
   for (const t of TREES) blockRect(t.x - 0.5, t.z - 0.5, t.x + 0.5, t.z + 0.5);
@@ -225,6 +261,7 @@ function buildNav() {
   for (const [a, b, c, d] of OBST) blockRect(a, b, c, d);
   // keep every station spot reachable
   for (const s of STATIONS) for (const p of [s.acc, s.rest, s.waitBase, s.dl, s.spot]) if (p) blockRect(p.x - 0.2, p.z - 0.2, p.x + 0.2, p.z + 0.2, 0);
+  for (const c of COLUMNS) blockRect(c.x - COL_SIZE / 2, c.z - COL_SIZE / 2, c.x + COL_SIZE / 2, c.z + COL_SIZE / 2);   /* structural columns, last: nothing re-opens them */
 }
 const _open = new Int32Array(NAV.w * NAV.h), _g = new Float32Array(NAV.w * NAV.h), _par = new Int32Array(NAV.w * NAV.h), _stamp = new Uint32Array(NAV.w * NAV.h), _closed = new Uint32Array(NAV.w * NAV.h);
 let _gen = 1; const heapF = new Float32Array(NAV.w * NAV.h); let heapN = 0;

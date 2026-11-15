@@ -3,6 +3,7 @@
 let LANG = (() => { try { return localStorage.getItem('gymsim.lang') || 'en'; } catch (e) { return 'en'; } })();
 const ZH = {
   // panel groups and buttons
+  'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'Books (P&L)': '帳本（損益）', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
   'Run': '執行', 'Monitors': '監測', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
   'Setup': '設定', 'Go': '開始', 'Pause': '暫停', 'Step': '單步', 'Go (new day)': '開始（新的一天）',
   'Sound off': '音效：關', 'Sound on': '音效：開', 'Copy results': '複製結果', 'Seed': '種子', 'Random seed': '隨機種子',
@@ -14,7 +15,24 @@ const ZH = {
   // sliders and choosers
   'Speed (gym seconds per real second)': '速度（每實際一秒經過的館內秒數）',
   'Arrival curve': '到場曲線', 'Weekday': '平日', 'Weekend': '週末', 'January rush': '新年人潮', 'Holiday week': '連假週',
-  'Members per day': '每日會員數', 'Mean visit length': '平均停留時間',
+  'People at the weekly peak': '每週尖峰在場人數', 'Month': '月份',
+  'Jan': '1月', 'Feb': '2月', 'Mar': '3月', 'Apr': '4月', 'May': '5月', 'Jun': '6月', 'Jul': '7月', 'Aug': '8月', 'Sep': '9月', 'Oct': '10月', 'Nov': '11月', 'Dec': '12月',
+  'Mon': '週一', 'Tue': '週二', 'Wed': '週三', 'Thu': '週四', 'Fri': '週五', 'Sat': '週六', 'Sun': '週日',
+  'Off-peak price per minute': '離峰每分鐘價格', 'Peak price per minute (Mon–Fri 18–22)': '尖峰每分鐘價格（週一至週五 18–22）',
+  'Prices bill at once; members react from the next day.': '價格立即計費；會員從隔天開始反應。',
+  'Rental price per 90 min': '每 90 分鐘場租', 'Allow outside coaches': '開放外部教練',
+  'Turned away at the door': '門口離開', 'Bad visits': '不佳到訪',
+  'Depreciation': '折舊', 'Net profit': '淨利',
+  'What moves profit most: monthly EBITDA with each input at its low or high value (parameter-book arithmetic, not simulated).': '影響獲利最大的因素：每項調到低或高值時的每月 EBITDA（參數書試算，非模擬）。',
+  'Low': '低', 'High': '高', 'PT sessions a month': '每月教練課堂數', 'Gym keeps of PT': '館方教練課分潤',
+  'Month total': '本月合計', 'Month to date': '本月至今', 'Projected rest': '預估剩餘', 'Fixed costs': '固定成本', 'EBITDA': 'EBITDA', 'Active members': '活躍會員', 'Joined': '新加入', 'Lapsed': '流失',
+  'Returned': '回流', 'PT clients': '教練課學員', 'Next day': '下一天', 'New month': '新的一個月', 'Day complete · press Next day': '今日結束 · 按「下一天」',
+  'Month complete · press New month': '本月結束 · 按「新的一個月」',
+  'P&L': '損益', 'Visit fees': '入場費', 'Member cards': '會員卡', 'PT earned (sessions delivered)': '教練課收入（已上課）', 'Floor rentals': '場租', 'Add-ons (estimated)': '其他收入（估計）',
+  'Gross revenue': '總收入', 'VAT': '營業稅', 'Net sales': '銷售淨額', 'Coach payout': '教練拆帳', 'Marketing': '行銷', 'Card fees': '刷卡手續費',
+  'Rent and management': '租金與管理費', 'Electricity': '電費', 'Other fixed costs': '其他固定成本', 'Staff': '人事', 'EBITDA today': '今日 EBITDA',
+  'Cash in today': '今日現金收入', 'Floor area': '坪數', 'Rent per 坪': '每坪租金', 'Staff cost per month': '每月人事成本', 'Prepaid PT owed ($)': '預收教練課未上課金額（元）', 'Instalments due': '待收分期款',
+  'Costs accrue through opening hours; add-ons are estimated, not simulated.': '成本隨營業時間累計；其他收入為估計值，非模擬結果。', 'Mean visit length': '平均停留時間',
   'Setting': '環境', 'Urban': '都市', 'Suburban': '郊區', 'Rural': '鄉村',
   'Weather': '天氣', 'Clear': '晴天', 'Rain': '雨天', 'Heatwave': '熱浪',
   'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.':
@@ -33,8 +51,8 @@ const ZH = {
   'waits finished today': '今日完成的等待',
   'Cardio': '有氧', 'Machines': '器械', 'Dumbbells': '啞鈴', 'Racks': '健力架', 'Platforms': '舉重台', 'Machine': '器械', 'DB': '啞鈴', 'Rack': '健力架', 'Platform': '舉重台',
   // hud and toasts
-  'Drag to pan · tap someone to follow them': '拖曳平移 · 點選人物即可跟隨',
-  'Pinch to zoom · two fingers to pan · tap someone to follow': '雙指縮放 · 雙指平移 · 點選人物即可跟隨',
+  'Drag to pan · click people and equipment for details': '拖曳平移 · 點擊人物和器材查看詳情',
+  'Pinch to zoom · two fingers to pan · tap people and equipment for details': '雙指縮放 · 雙指平移 · 點選人物和器材查看詳情',
   'Day complete · press Setup or Go for a new day': '今日結束 · 按「設定」或「開始」進入新的一天',
   'Results copied': '已複製結果', 'Copy was blocked here': '此處無法複製',
   'This diorama needs WebGL, which isn\'t available in this browser.': '這個場景需要 WebGL，但此瀏覽器不支援。',
@@ -66,12 +84,16 @@ function setLang(l) {
   LANG = l; try { localStorage.setItem('gymsim.lang', l); } catch (e) {}
   document.documentElement.lang = zh() ? 'zh-Hant-TW' : 'en';
   const b = document.getElementById('langBtn'); if (b) b.querySelectorAll('span[data-l]').forEach(s => s.classList.toggle('on', s.dataset.l === l));
-  const sub = document.getElementById('hudSub'); if (sub) sub.textContent = tr(matchMedia('(pointer: coarse)').matches ? 'Pinch to zoom · two fingers to pan · tap someone to follow' : 'Drag to pan · tap someone to follow them');
+  const sub = document.getElementById('hudSub'); if (sub) sub.textContent = tr(matchMedia('(pointer: coarse)').matches ? 'Pinch to zoom · two fingers to pan · tap people and equipment for details' : 'Drag to pan · click people and equipment for details');
   [['c', 'Pixel-art gym diorama'], ['rotL', 'Rotate left'], ['rotR', 'Rotate right'], ['zoomOut', 'Zoom out'], ['zoomIn', 'Zoom in']].forEach(([id, k]) => { const e = document.getElementById(id); if (e) e.setAttribute('aria-label', tr(k)); });
   const fb = document.getElementById('fallback'); if (fb) fb.textContent = tr('This diorama needs WebGL, which isn\'t available in this browser.');
   if (typeof buildPanel === 'function' && panel.childElementCount) {
     const open = !panel.classList.contains('closed'), tab = panel.querySelector('.tabs button.on'), tk = tab ? tab.dataset.t : 'Run', st = panel.scrollTop;
-    buildPanel(); placePlots(); refreshGo(); refreshPending(); showTab(tk); panel.classList.toggle('closed', !open); panel.scrollTop = st;
+    const more = panel.querySelector('details.more'), moreOpen = !!(more && more.open);
+    buildPanel(); placePlots(); { const m2 = panel.querySelector('details.more'); if (m2) m2.open = moreOpen; } refreshGo(); refreshPending(); showTab(tk); panel.classList.toggle('closed', !open); panel.scrollTop = st; lockBuiltSliders();
+    if (typeof BUILD !== 'undefined' && BUILD.on) renderBuild();
     refreshSnd();
   }
+  { const gc = document.getElementById('goalCard'); if (gc && !gc.hidden && typeof showGoalCard === 'function') showGoalCard(gc.dataset.mode === 'change'); }   /* the goal card follows the language */
+  if (typeof BOOKS !== 'undefined' && BOOKS.open) renderBooks();   // the open binder follows the language too
 }
