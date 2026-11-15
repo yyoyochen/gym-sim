@@ -177,10 +177,10 @@ function buildPanel() {
 let closing = null;
 function closeEarly(kind) {
   if (!M || !A || closing) return;
-  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0, list: [] }, target = closeTarget(kind), m0 = M; closing = { kind, out };
+  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0, list: [], kind }, target = closeTarget(kind), m0 = M; closing = { kind, out };
+  if (kind === 'month') showToast(tx('Closing the month…', '本月結帳中…'));   /* owner 2026-11-16: no day-by-day messages */
   const step = () => {
     let more = true; try { more = M === m0 && closeOneDay(out, target); } catch (e) { more = false; console.error(e); }
-    showToast(tx(`Closing… day ${M.dayI + 1}`, `結帳中… 第 ${M.dayI + 1} 天`));
     if (more) { setTimeout(step, 0); return; }
     closing = null; finishClose(out, kind);
   };
@@ -188,8 +188,10 @@ function closeEarly(kind) {
 }
 function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
   BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending(); persistSave(true);
-  if (A && A.payQ) { A.payQ.length = 0; if (out.days) A.payQ.push({ a: null, fee: Math.round(out.takings), sum: out.days }); }   /* one big pop for the closed days' takings, not the last few member fees */
-  showToast(tx(`Closed ${out.days} day${out.days === 1 ? '' : 's'} · takings ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`, `已結 ${out.days} 天 · 收入 ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`));
+  if (A && A.payQ) A.payQ.length = 0;
+  if (kind === 'month' && out.days) {   /* owner 2026-11-16: one pop of the month's takings; it glows only for a new all-time best month */
+    const tot = M.days.reduce((t, d) => t + d.pnl.takings, 0) + A.pnl.takings, prev = Math.max(0, ...BIZ.months.map(m => (m.pnl && m.pnl.takings) || 0));
+    BIG_POPS.push({ fee: Math.round(tot), month: M.cfg.month, best: prev > 0 && tot > prev }); }
   if (kind !== 'day' && out.days) { if (delay) setTimeout(() => { if (!BOOKS.open && !closing) openBooks('Today'); }, delay); else openBooks('Today'); }   /* after the pop has had its moment */
   else if (BOOKS.open) updateBooks(true);
 }

@@ -273,26 +273,32 @@ function tick(raw, now) {
 }
 // ================================================================ "+$" pops at the gate as members pay on the way out
 const PAYS = [], _payV = new V3();
-let payNext = 0, payDing = 0, payRun = null;
+let payNext = 0, payDing = 0, payRun = null, payBiz = null;
 function updatePays() {
   const now = performance.now();
-  if (A !== payRun) { payRun = A; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; }   // a new run (Setup) clears pops still waiting from the old one
+  if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
   if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; return; }   /* no money pops over the builder's preview */
   if (A && A.payQ && A.payQ.length) {
     const q = A.payQ.splice(0);
     // fast-forward can bill dozens at once: show the latest few floor fees, and every PT sale
     const last = (f, n) => q.filter(f).slice(-n);
-    const sums = q.filter(p => p.sum), show = sums.length ? sums : [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last; a close early shows one total (owner 2026-11-15)
+    const show = [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
     for (const p of show) {
       // colour: green = money in (fee, rent), yellow = capped visit, gold = PT sale (gold is reserved for it)
       const crit = !p.pt && !p.rent && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
-      const el = document.createElement('div'); el.className = 'pay' + (p.sum ? ' sum' : p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
-      el.innerHTML = p.sum ? `+$${p.fee.toLocaleString('en-US')}<small>${tx(`${p.sum} DAY${p.sum === 1 ? '' : 'S'} CLOSED`, `${p.sum} 天結帳`)}</small>` : `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
+      const el = document.createElement('div'); el.className = 'pay' + (p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
+      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
       document.body.appendChild(el);
-      payNext = Math.max(now, payNext + (p.pt || p.sum ? 700 : 450));
+      payNext = Math.max(now, payNext + (p.pt ? 700 : 450));
       const side = Math.random() < 0.5 ? -1 : 1;
-      PAYS.push({ el, born: payNext, pt: !!(p.pt || p.sum), vx: p.sum ? 0 : side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.sum ? 2.8 : p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });   /* the close-early total rises and shakes like a PT sale, bigger */
+      PAYS.push({ el, born: payNext, pt: !!p.pt, vx: side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });
     }
+  }
+  for (const p of BIG_POPS.splice(0)) {   /* owner 2026-11-16: a closed day's or the month's takings: big, like a PT sale; glowing only for an all-time best */
+    const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
+    const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase();
+    el.innerHTML = `+$${p.fee.toLocaleString('en-US')}<small>${lab}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>`; document.body.appendChild(el);
+    payNext = Math.max(now, payNext + 700); PAYS.push({ el, born: payNext, pt: true, vx: 0, size: p.month ? 2.8 : 2.2, rung: false });
   }
   const r = canvas.getBoundingClientRect();
   _payV.set(DOOR.x, 2.6, HZ).project(cam);   // the gate: numbers burst from here, they don't follow the member
@@ -1232,11 +1238,20 @@ const SELFTESTS = {
       return { ok: !!st && (tf === 'none' || tf === 'matrix(1, 0, 0, 1, 0, 0)'), detail: { found: !!st, tf } }; }
     finally { closeBooks(); setupRun(); }
   },
-  closeSumPop() {   // owner 2026-11-15: a close early shows one big money pop for the closed days' takings, not a few tiny ones
-    try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week', 0); const q = A.payQ.slice(), one = q.length === 1 && q[0].sum === w.days && q[0].fee === Math.round(w.takings);
-      updatePays(); const el = document.querySelector('.pay.sum'), txt = el ? el.textContent : '', big = PAYS.some(p => p.el === el && p.size >= 2.5);
-      return { ok: one && !!el && txt.includes(Math.round(w.takings).toLocaleString('en-US')) && big, detail: { n: q.length, sum: q[0] && q[0].sum, txt, big } }; }
-    finally { closeBooks(); for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
+  closeWeekPops() {   // owner 2026-11-16: closing a week pops each closed day's takings as that day closes (7 pops for 7 days), no member pops in between
+    try { setupRun(); BIG_POPS.length = 0; const w = closeEarlySync('week'), pops = BIG_POPS.slice(), memberPops = A.payQ.length; finishClose(w, 'week', 0); const after = BIG_POPS.length;
+      const each = pops.length === w.days && pops.every((p, i) => p.fee === Math.round(w.list[i].pnl.takings) && p.day);
+      return { ok: w.days >= 2 && each && memberPops === 0 && after === pops.length, detail: { days: w.days, pops: pops.length, memberPops, after, fees: pops.map(p => p.fee).slice(0, 3) } }; }
+    finally { closeBooks(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
+  },
+  closeMonthPop() {   // owner 2026-11-16: closing the month is one pop of the month's takings at the end; it glows only for an all-time high
+    try { setupRun(); BIG_POPS.length = 0; const m = closeEarlySync('month'), during = BIG_POPS.length; finishClose(m, 'month', 0);
+      const tot = Math.round(M.days.reduce((t, d) => t + d.pnl.takings, 0) + A.pnl.takings), p = BIG_POPS[0];
+      const one = BIG_POPS.length === 1 && p.month && p.fee === tot && !p.best;   /* the first month has nothing to beat */
+      updatePays(); const el = document.querySelector('.pay.sum'), glow = el && getComputedStyle(el).textShadow.includes('16px');
+      BIZ.bestDay = 1; const hi = noteDayBest(5); BIZ.bestDay = 1e12; const lo = noteDayBest(5);
+      return { ok: during === 0 && one && !!el && !glow && hi && !lo, detail: { during, n: BIG_POPS.length, fee: p && p.fee, tot, best: p && p.best, el: !!el, glow, hi, lo } }; }
+    finally { closeBooks(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
   },
   saveResume() {   // owner 2026-11-15: progress is saved like a life game: a reload resumes the same business at the start of the day, and replaying it gives the same day
     const keep = JSON.parse(JSON.stringify(S));
@@ -1250,6 +1265,16 @@ const SELFTESTS = {
       return { ok: ok1 && same && ebA === ebB && bad && rec.length < 4.5e6, detail: { ok1, was, now, ebA, ebB, bad, kb: Math.round(rec.length / 1024) } }; }
     catch (e) { return { ok: false, detail: String(e && e.stack || e) }; }
     finally { Object.assign(S, keep); GOAL.key = null; setupRun(); }
+  },
+  receptionistRoams() {   // owner 2026-11-16: no cleaner by default; the receptionist cleans when it's quiet or paces by reception, and is back behind the desk for check-ins
+    const keep = S.cleaners;
+    try { const dflt = S.cleaners; setupRun(); const st = new Set(); let cleaners = 0, awayAtCheckin = 0;
+      for (let k = 0; k < 17 * 60 * 4 && !A.done; k++) { fastForward(15); st.add(A.desk.state); cleaners = Math.max(cleaners, A.cleaners.length);
+        if (A.members.some(m => m.state === 'desk') && A.desk.state === 'desk' && Math.hypot(A.desk.pos.x - DESK_STAFF_POS.x, A.desk.pos.z - DESK_STAFF_POS.z) > 0.3) awayAtCheckin++; }
+      S.cleaners = 1; setupRun(); const st1 = new Set(); for (let k = 0; k < 17 * 60 * 2 && !A.done; k++) { fastForward(30); st1.add(A.desk.state); }
+      const ok = dflt === 0 && cleaners === 0 && st.has('pace') && (st.has('work') || st.has('go')) && st.has('desk') && !st1.has('work') && st1.has('pace') && awayAtCheckin === 0;
+      return { ok, detail: { dflt, cleaners, states: [...st], withCleaner: [...st1], awayAtCheckin } }; }
+    finally { S.cleaners = keep; setupRun(); }
   },
   openingSpeed10() {   // owner 2026-11-15: the opening, following the first member in, runs at 10×
     const keep = S.speed;
@@ -1771,7 +1796,7 @@ const SELFTESTS = {
       S.seed = 20261112; setupRun(); fastForward(30 * 3600); const proj = projectMonth().total.ebitda;
       while (nextDay()) fastForward(30 * 3600);
       const real = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda, visits = M.days.reduce((t, d) => t + d.visits, 0) + A.visits;
-      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 970, visits: 5784, ebitda: 111669 };   // re-pinned 2026-11-15 (owner): about a third skip the changing room, some take washroom breaks, so visits bill fewer minutes
+      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 130697 };   // re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; more mess makes visits longer, and visits bill by the minute
       const net = M.days.reduce((t, d) => t + d.pnl.net, 0) + A.pnl.net, projOk = Math.abs(proj - real) / net <= 0.08;   // EBITDA is a small difference of large numbers: judge the projection against net sales
       return { ok: projOk && JSON.stringify(got) === JSON.stringify(want), detail: { got, want, proj: Math.round(proj), real: Math.round(real), net: Math.round(net) } };
     } finally { Object.assign(S, keep); }

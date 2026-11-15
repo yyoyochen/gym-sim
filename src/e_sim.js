@@ -4,7 +4,7 @@ const S = {
   seed: 20261112, month: 'Jun', year: 2027, startDay: 1, /* the opening date: boot sets today's (tests keep 1 Jun 2027) */ peak: DEMAND.peak, visit: DEMAND.stay, weather: 'Clear', setting: 'Urban',
   mix: (({ coach, ...m }) => m)(defaultMix(0)),   // four archetypes in whole percents summing to 100; coaching comes from PT client records
   patience: 5, workIn: 30, rest: 2.5, rerack: 75,
-  racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 1, cap: 60, curls: false, speed: 30, turf: true, layout: null, /* a built gym's pieces (Plan 11); null: laid out by zones */ /* a built gym's turf and sled lane (owner 2026-11-15) */
+  racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 0, cap: 60, curls: false, speed: 30, turf: true, layout: null, /* a built gym's pieces (Plan 11); null: laid out by zones */ /* a built gym's turf and sled lane (owner 2026-11-15) */
   priceOff: 1.2, pricePeak: 1.5, priceCap: 180,   // NT$ per minute off-peak and peak, cap per visit (P3.1–P3.3; same as PRICE); live: bill at once, members react from the next morning
   build: 'existing', monthsOpen: 1, shock: 'none',   // new-build ramp-up (P4.13, P4.16) and shocks (D8): engine settings with no control yet
   deskFT: 2, deskPTh: 40, coaches: 2,   // owner 2026-11-15: the roster (live): full-time desk staff, part-time desk hours a week, in-house coaches
@@ -300,7 +300,7 @@ function noteCashOut() { if (BIZ.cash < 0 && !BIZ.cashOutAt) BIZ.cashOutAt = { m
 function bookCash(p) { if (!BIZ || !p) return; BIZ.cash += dayCash(p); BIZ.mIn += p.cashIn; BIZ.mOut += p.cashIn - dayCash(p); noteCashOut(); }
 function setupRun() { if (typeof resetGoal === 'function') resetGoal(); applyPublished(); if (typeof BOOKS !== 'undefined') BOOKS.stage = null; applyBuild(); newBusiness(); setupMonth(); setupDay(0); }
 function bookDay() { return { dayI: A.dayI, dow: A.dow, date: A.date, visits: A.visits, paidVisits: A.paidVisits || 0, blendSum: A.blendSum || 0, lens: (A.visitLens || []).slice(), ptSessions: A.ptSessions, balked: A.balked || 0, bad: A.bad || 0, pnl: A.pnl }; }
-function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
+function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
 // ================================================================ the month closes and the business carries on (D9)
 // closing: the last day is booked (cash, churn between days), the loan instalment and income tax leave the bank, the month is archived
 function closeMonth() {
@@ -349,16 +349,20 @@ function nextMonth() {
 }
 // ================================================================ close the day, the week or the month early (A1): the days run without being watched
 // a week is today plus up to six more days; nothing runs past the month's last day; returns what the closed days took and earned
+const BIG_POPS = [];   /* owner 2026-11-16: close-early pops: one per closed day for a day or a week, one for the month; shown by updatePays */
+function noteDayBest(t) { const prev = BIZ ? BIZ.bestDay : 0; if (BIZ) BIZ.bestDay = Math.max(prev || 0, t); return !!prev && t > prev; }   /* true for a new all-time best day */
 function closeTarget(kind) { const last = M.cal.length - 1; return kind === 'day' ? M.dayI : kind === 'week' ? Math.min(last, M.dayI + 6) : last; }
 function closeOneDay(out, target) {   // one step of a close: finish today, or move on to the next day; true while more is left
   if (A.done) { if (M.dayI >= target) return false; nextDay(); }
   fastForward(30 * 3600); if (!A.done) endStuckDay();   // a member who never leaves cannot hang a close
   out.days++; out.takings += A.pnl.takings; out.ebitda += A.pnl.ebitda; (out.list = out.list || []).push({ date: A.date, dow: A.dow, month: M.cfg.month, pnl: { ...A.pnl } });   /* owner 2026-11-15: every closed day is shown */
+  if (A.payQ) A.payQ.length = 0;   /* no member pops for unwatched days */
+  const best = noteDayBest(A.pnl.takings); if (out.kind !== 'month') BIG_POPS.push({ fee: Math.round(A.pnl.takings), day: { dow: A.dow, date: A.date }, best });   /* owner 2026-11-16: each closed day pops its takings */
   return M.dayI < target;
 }
 function endStuckDay() { for (const a of A.members) if (a.state !== 'gone' && a.state !== 'pending') { a.state = 'gone'; a.visible = false; if (a.coach) { a.coach.visible = false; a.coach.state = 'gone'; } } A.done = true; A.pnl = computePnl(); }
 function closeEarlySync(kind) {
-  const out = { days: 0, takings: 0, ebitda: 0, list: [] }; if (!M || !A) return out;
+  const out = { days: 0, takings: 0, ebitda: 0, list: [], kind }; if (!M || !A) return out;
   const target = closeTarget(kind); while (closeOneDay(out, target));
   return out;
 }
@@ -590,7 +594,7 @@ function updateAgent(a, dt) {
   if (a.kind === 'pcoach') return updatePCoach(a, dt);
   if (a.kind === 'cleaner') return updateCleaner(a, dt);
   if (a.kind === 'coach') return updateHeadCoach(a, dt);
-  if (a.kind === 'staff') { a.act = { k: 'idle', arms: 'rest' }; a.yaw = Math.PI; if (a.greetUntil && t < a.greetUntil) a.act.arms = 'wave'; }
+  if (a.kind === 'staff') return updateReceptionist(a, dt);
 }
 function updateMember(a, dt) {
   const t = A.t;
@@ -907,6 +911,29 @@ function updateHeadCoach(c, dt) {
     if (!moving(c) && t - c.t0 > 90) { c.t0 = t; const racks = STATIONS.filter(s => s.zone === 'racks' || s.zone === 'platforms'); const s = racks[Math.floor(A.rng() * racks.length)]; go(c, s.rest.x - 0.6, s.rest.z + 0.6); }
     if (!moving(c)) { const s = nearestOf(['rack', 'olyplat'], c, s => !!s.active); if (s) faceTo(c, s.x, s.z); }
   }
+}
+// owner 2026-11-16: the receptionist is also the cleaner until one is hired. Behind the desk whenever someone is arriving or checking in; when it is
+// quiet, every few minutes they deal with the nearest mess (no cleaner hired) or pace in front of reception, then go back. Their own random numbers,
+// so the members' day does not shift because of them.
+function messNear() { for (const s of STATIONS) { if (s.cleanBy || s.users.length) continue; if (s.dirty > 20 || s.strayDB > 0) return true; if ((s.zone === 'machines' || s.type === 'bench') && A.t - s.lastUsed < 900 && !s.wiped) return true; } return false; }
+function updateReceptionist(a, dt) {
+  const t = A.t, r = a.rng || (a.rng = makeRng(((M ? M.seed : 1) ^ Math.imul((M ? M.dayI : 0) + 7, 0x2545F491)) >>> 0));
+  const busy = A.outQ.length > 0 || A.members.some(m => m.state === 'toDesk' || m.state === 'desk');
+  const home = () => { dropTask(a); a.carry = false; a.state = 'back'; go(a, DESK_STAFF_POS.x, DESK_STAFF_POS.z); };
+  if (a.state === 'desk') {
+    a.act = { k: 'idle', arms: a.greetUntil && t < a.greetUntil ? 'wave' : 'rest' }; a.yaw = Math.PI;
+    if (a.nextRoam == null) a.nextRoam = A.open + 120 + r() * 240;
+    if (busy || t < A.open || t > T_CLOSE || t < a.nextRoam) return;
+    if (!S.cleaners && messNear()) { a.state = 'idle'; a.cleaning = true; updateCleaner(a, dt); if (a.state === 'idle') home(); return; }
+    a.state = 'pace'; a.linger = 6 + r() * 12; go(a, DESK_C.x - 1.4 - r() * 1.6, DESK_C.z - 1.6 + r() * 3.2); return;
+  }
+  if (a.state === 'back') { a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'desk'; a.cleaning = false; a.yaw = Math.PI; a.nextRoam = t + 120 + r() * 300; } return; }
+  if (a.state === 'pace') { if (moving(a)) { a.act = { k: 'walk' }; return; } a.act = { k: 'idle', arms: 'fold' }; a.linger -= dt; if (a.linger <= 0 || busy) home(); return; }
+  if (a.cleaning) {   /* go, work, return: the cleaner's own steps; back to the desk once the job is done, or at once if someone needs the desk and the job has not started */
+    if (busy && a.state === 'go') return home();
+    updateCleaner(a, dt); if (a.state === 'idle') home(); return;
+  }
+  home();
 }
 function updateCleaner(c, dt) {
   const t = A.t;
