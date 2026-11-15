@@ -87,7 +87,7 @@ function updateRecepSay(toScreen) {
 }
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
-  const gc = document.getElementById('goalCard'), show = !!A && !BOOKS.open && !booksSeen() && !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
+  const gc = document.getElementById('goalCard'), rs = document.getElementById('recepSay'), show = !!A && !BOOKS.open && !booksSeen() && !(rs && !rs.hidden) &&   /* not under the receptionist's bubble */ !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
   const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
   const t = tx('Tap the desk to open the P&L', '點櫃檯打開損益表'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
 }
@@ -341,7 +341,7 @@ function bkSliderGroup(body, title, note) { const g = el('section', { class: 'gr
 BOOK_RENDER.Staff = {
   build(body) {
     const g = bkSliderGroup(body, tx('Roster', '人力'), tx('applies at once', '立即生效'));   /* owner 2026-11-15: hire or let people go */
-    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 0, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v]];
+    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 0, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v], ['cleaners', tx('Cleaners (otherwise the receptionist cleans)', '清潔人員（沒有時由櫃檯人員打掃）'), 0, 3, 1, (v) => v]];
     const t = el('table', {}, R.map(([k, lab]) => `<tr><td>${lab}</td><td><div class="step"><button data-roster="${k}" data-d="-1" aria-label="−">−</button><b data-rv="${k}"></b><button data-roster="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`).join('')); g.appendChild(t);
     t.querySelectorAll('button[data-roster]').forEach(b => b.addEventListener('click', () => { const [k, , lo, hi, st] = R.find(r => r[0] === b.dataset.roster); S[k] = clamp(S[k] + st * +b.dataset.d, lo, hi); S.staff = rosterCost(S); if (A) A.pnl = computePnl(); updateBooks(true); }));
     g.dataset.fmt = '1'; BOOKS.rosterFmt = R;
@@ -353,8 +353,8 @@ BOOK_RENDER.Staff = {
   update() {
     const box = document.getElementById('bkStaffLines'); if (!box) return;
     for (const [k, , , , , fmt] of BOOKS.rosterFmt || []) { const b = document.querySelector(`#bkBody [data-rv="${k}"]`); if (b) b.textContent = fmt(S[k]); }
-    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
-    const h = `<table>${Object.keys(it).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
+    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), cleaners: tx(`Cleaners (${S.cleaners})`, `清潔人員（${S.cleaners} 人）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
+    const h = `<table>${Object.keys(it).filter(k => k !== 'cleaners' || S.cleaners).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
       <p class="note">${tx(`Coaches are paid ${100 - pnlCosts().gymShare}% of the PT they deliver, not from this roster. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients; more coaches sell more PT over the coming months.`, `教練由教練課分潤（${100 - pnlCosts().gymShare}%）支付，不在此人事成本內。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員；教練越多，之後幾個月賣出的教練課越多。`)}</p>
       <p class="note${staffAdj(S.staff) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff), mx = more(DEMAND_RESP.staffLean);   /* review I4: the month-0 churn change the model actually applies */
         return tx(`At this roster, members in their first month leave ${x}% more often than with the full roster (${money(DEMAND_RESP.staffBase)}); the most is ${mx}% more, at ${money(DEMAND_RESP.staffLean)}.`, `以目前人力，第一個月的新會員流失比完整人力（${money(DEMAND_RESP.staffBase)}）多 ${x}%；最多多 ${mx}%（${money(DEMAND_RESP.staffLean)}）。`); })()}</p>`;

@@ -146,7 +146,7 @@ function buildPanel() {
   slider(mem, 'rerack', 'Re-rack habit', 0, 100, 5, v => v + ' %');
   const gym = group('Gym', 'Gym');
   /* owner 2026-11-15: equipment is changed with Rearrange, not with sliders */
-  slider(gym, 'cleaners', 'Cleaners', 0, 3, 1, v => v);
+  /* owner 2026-11-16: cleaners are hired on the Staff tab, with a wage */
   slider(gym, 'cap', 'Capacity cap at the turnstile', 20, 80, 1, v => v);
   sw(gym, 'curls', 'Racks used for curls');
   const pl = group('Plots', 'Plots', 'plotGrp');

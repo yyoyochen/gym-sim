@@ -4,6 +4,9 @@ All money is in NT dollars and shown as `$`.
 
 ## 2026-11-15: running the gym
 
+- Cleaners are hired on the Staff tab and paid a wage (just above the minimum wage, plus insurance, pension and bonus). Mess counts against a visit: stripping someone's loaded bar, or hunting for dumbbells among strays; two hassles make a bad visit, which raises churn.
+- The desk hint no longer sits under the receptionist's speech bubble.
+- New README with a hero animation of members training and fresh screenshots.
 - Closing a week early pops each closed day's takings as that day closes; closing the month pops the month's takings once at the end, with no day-by-day messages. A pop glows only for an all-time best day or month.
 - No cleaner by default: the receptionist steps out to clean when it's quiet (or paces by reception) and is back behind the desk for check-ins. The Cleaners slider still hires dedicated cleaners.
 - Your gym is saved in this browser: a reload carries on from the morning of the current day (paused, with a welcome-back note). Build a gym starts a new one. Changes made since that morning, like a rearrange or the day's visits so far, are not kept.

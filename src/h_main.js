@@ -658,7 +658,7 @@ const SELFTESTS = {
       const b = onGroundPicked(DESK_C.x + 0.5, DESK_C.z) && BOOKS.open; closeBooks();
       const c = !onGroundPicked(-10, -5) && !BOOKS.open;
       return { ok: a && b && c, detail: { a, b, c } }; }
-    finally { closeBooks(); }
+    finally { closeBooks(); const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; }
   },
   booksNextDay() {   // Plan 6: at day end the binder offers Next day and stays open
     try { setupRun(); goOn = false; fastForward(30 * 3600); openBooks(); const d0 = M.dayI, shown = !document.getElementById('bkNext').hidden;
@@ -1206,14 +1206,15 @@ const SELFTESTS = {
   moreGone() {   // owner 2026-11-15: no More section and no Show intro again; Goal sits with Build a gym and Rearrange
     const more = panel.querySelector('details.more'), again = document.getElementById('introAgain'), g = document.getElementById('goalAgain'), row = g && g.parentNode;
     const withBuild = !!row && row.contains(document.getElementById('buildBtn')) && row.contains(document.getElementById('rearrBtn'));
-    if (g) g.click(); const card = !document.getElementById('goalCard').hidden; hideGoalCard();
+    if (g) g.click(); const gc = document.getElementById('goalCard'), card = !gc.hidden && !/More|更多/.test(gc.textContent); hideGoalCard();   /* and the card no longer points to More */
     return { ok: !more && !again && withBuild && card, detail: { more: !!more, again: !!again, withBuild, card } };
   },
   receptionistTalks() {   // owner 2026-11-15: the person at the desk is the Receptionist; a tap gets a line about the gym and its people, not the P&L; the counter still opens the P&L
     try { setupRun(); fastForward(11 * 3600 - A.t); const lab = hoverLabel({ kind: 'agent', a: A.desk }); actOn({ kind: 'agent', a: A.desk });
       const say = document.getElementById('recepSay'), t1 = say && !say.hidden ? say.textContent : '', books1 = BOOKS.open; const lines = new Set(); for (let i = 0; i < 12; i++) { actOn({ kind: 'agent', a: A.desk }); lines.add(say.textContent); }
+      updateBooksHint(() => [100, 100]); const hintHidden = getComputedStyle(document.getElementById('booksHint')).display === 'none';   /* the bubble and the desk hint don't overlap */
       actOn({ kind: 'desk' }); const books2 = BOOKS.open; closeBooks();
-      return { ok: lab === 'Receptionist' && t1.length > 10 && !books1 && lines.size >= 3 && books2, detail: { lab, t1, books1, n: lines.size, books2 } }; }
+      return { ok: lab === 'Receptionist' && t1.length > 10 && !books1 && lines.size >= 3 && books2 && hintHidden, detail: { lab, t1, books1, n: lines.size, books2, hintHidden } }; }
     catch (e) { return { ok: false, detail: String(e) }; }
     finally { closeBooks(); const s = document.getElementById('recepSay'); if (s) s.hidden = true; }
   },
@@ -1276,6 +1277,16 @@ const SELFTESTS = {
       return { ok, detail: { dflt, cleaners, states: [...st], withCleaner: [...st1], awayAtCheckin } }; }
     finally { S.cleaners = keep; setupRun(); }
   },
+  cleanerEconomics() {   // owner 2026-11-16: a cleaner costs a wage on the roster; mess (a loaded bar to strip, dumbbells strewn about) counts against a visit, so a messy gym loses members
+    const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff };
+    try { setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;
+      openBooks('Staff'); const plus = document.querySelector('#bkBody [data-roster="cleaners"][data-d="1"]'); if (plus) plus.click(); const staffed = S.cleaners === 1 && S.staff === one; closeBooks();
+      const day = (c) => { S.cleaners = c; S.rerack = 20; setupRun(); fastForward(30 * 3600); return A.badMess || 0; }, messy = day(0), tidy = day(3);
+      const ok = base === 184000 && one - base === Math.round(30000 * (1 + 42200 / 141800)) && staffed && !W.w_cleaners && messy > 0 && tidy < messy;
+      return { ok, detail: { base, one, staffed, slider: !!W.w_cleaners, messy, tidy } }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { closeBooks(); Object.assign(S, keep); setupRun(); }
+  },
   openingSpeed10() {   // owner 2026-11-15: the opening, following the first member in, runs at 10×
     const keep = S.speed;
     try { setupRun(); S.speed = 30; openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
@@ -1284,7 +1295,7 @@ const SELFTESTS = {
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
   },
   deskHintStays() {   // owner 2026-11-15: the desk hint stays on until the player clicks the desk (or the P&L tab): not hidden by an earlier visit, and gone once clicked
-    try { BOOKS_SEEN = false; setupRun(); try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}   /* a fresh visit; an old visit's flag must not hide it */
+    try { BOOKS_SEEN = false; { const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; } setupRun(); try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}   /* a fresh visit; an old visit's flag must not hide it */
       const h = document.getElementById('booksHint'), at = () => ({ x: 0, y: 0 }), shown = () => getComputedStyle(h).display !== 'none';
       updateBooksHint(() => [100, 100]); const a = shown(); updateMonitors(); updateBooksHint(() => [100, 100]); const b = shown();
       openBooks('Today'); const c = shown(); closeBooks(); updateBooksHint(() => [100, 100]); const d = shown();
@@ -1796,7 +1807,7 @@ const SELFTESTS = {
       S.seed = 20261112; setupRun(); fastForward(30 * 3600); const proj = projectMonth().total.ebitda;
       while (nextDay()) fastForward(30 * 3600);
       const real = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda, visits = M.days.reduce((t, d) => t + d.visits, 0) + A.visits;
-      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 130697 };   // re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; more mess makes visits longer, and visits bill by the minute
+      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 130600 };   // re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; mess (bars to strip, strewn dumbbells) counts against a visit
       const net = M.days.reduce((t, d) => t + d.pnl.net, 0) + A.pnl.net, projOk = Math.abs(proj - real) / net <= 0.08;   // EBITDA is a small difference of large numbers: judge the projection against net sales
       return { ok: projOk && JSON.stringify(got) === JSON.stringify(want), detail: { got, want, proj: Math.round(proj), real: Math.round(real), net: Math.round(net) } };
     } finally { Object.assign(S, keep); }

@@ -693,6 +693,8 @@ function release(a, s) {
 function recordWait(e, a) { A.waits.push((A.t - e.waitT) / 60); if (a) noteWait(a, (A.t - e.waitT) / 60); }
 // a visit goes bad once any wait passes badWait minutes (P4.11); bad visits in the last 30 days raise that member's churn
 function noteWait(a, minutes) { a.maxWait = Math.max(a.maxWait || 0, minutes); if (minutes >= DEMAND_RESP.badWait) markBad(a); }
+const MESS = { strayAt: 3, searchS: 20, badAt: 2 };   /* owner 2026-11-16: a loaded bar to strip or a dumbbell spot with 3+ strays is a hassle; two hassles make a bad visit */
+function noteMess(a) { a.mess = (a.mess || 0) + 1; if (a.mess >= MESS.badAt && !a.badMarked) { markBad(a); A.badMess = (A.badMess || 0) + 1; } }
 function markBad(a) { if (a.badMarked || !a.rec) return; a.badMarked = true; (a.rec.bad || (a.rec.bad = [])).push(A.dayI); A.bad = (A.bad || 0) + 1; }
 function walkAway(a) {   // turned away at the door: no fee, a bad visit, back the way they came
   a.balked = true; markBad(a); A.balked = (A.balked || 0) + 1; a.state = 'leaveSite';
@@ -740,10 +742,10 @@ function updateExercise(a, dt) {
       if (!moving(a)) {
         e.st = 'setup'; e.t0 = t;
         if (L.kind === 'bar') {
-          const need = Math.abs(platePairs(setLoad(e)) - platePairs(s.load)) + (s.dirty > 20 ? platePairs(s.dirty) : 0);
+          const need = Math.abs(platePairs(setLoad(e)) - platePairs(s.load)) + (s.dirty > 20 ? platePairs(s.dirty) : 0); if (s.dirty > 20 && a.kind === 'member') noteMess(a);   /* someone else's plates to strip */
           e.setupDur = 8 + need * 9; s.mode = e.lift; s.bumper = !!L.bumper;
           s.loadTarget = setLoad(e); s.loadFrom = s.dirty > 20 ? s.dirty : s.load;
-        } else e.setupDur = L.kind === 'cardio' ? 6 : L.kind === 'mat' ? 4 : 10;
+        } else { e.setupDur = L.kind === 'cardio' ? 6 : L.kind === 'mat' ? 4 : 10; if (L.kind === 'db' && s.strayDB >= MESS.strayAt && a.kind === 'member') { e.setupDur += MESS.searchS; noteMess(a); } }   /* hunting for a pair among strewn dumbbells */
         if (L.kind === 'cardio' || L.kind === 'mat') e.endT = t + e.dur * 60;
         s.dirty = 0;
       }

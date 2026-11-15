@@ -32,7 +32,7 @@ function showGoalCard(change) {
   if (INTRO.phase === 'follow' && followA === INTRO.a) clearFollow();   /* logged minor 5: the card always ends the automatic follow */
   INTRO.phase = 'goal'; c.dataset.mode = change ? 'change' : 'first';
   c.innerHTML = `<h2 class="ttl">${tx('What do you want to try first?', '你想先挑戰什麼？')}</h2>${GOALS.map(([k, en, zh]) => `<button data-goal="${k}">${tx(en, zh)}</button>`).join('')}
-    <button data-goal="" class="skip">${tx("Skip, I'll explore", '先跳過，自己逛逛')}</button><p class="note">${tx('The gym keeps running. Change the goal any time from More.', '健身房會繼續營業。之後可以從「更多」換目標。')}</p>`;
+    <button data-goal="" class="skip">${tx("Skip, I'll explore", '先跳過，自己逛逛')}</button><p class="note">${tx('The gym keeps running. Change it any time with the Goal button.', '健身房會繼續營業。之後隨時可以按「目標」更換。')}</p>`;
   c.hidden = false;
 }
 function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) c.hidden = true; }
