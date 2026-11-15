@@ -7,6 +7,7 @@ const S = {
   racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 1, cap: 60, curls: false, speed: 30, turf: true, layout: null, /* a built gym's pieces (Plan 11); null: laid out by zones */ /* a built gym's turf and sled lane (owner 2026-11-15) */
   priceOff: 1.2, pricePeak: 1.5, priceCap: 180,   // NT$ per minute off-peak and peak, cap per visit (P3.1–P3.3; same as PRICE); live: bill at once, members react from the next morning
   build: 'existing', monthsOpen: 1, shock: 'none',   // new-build ramp-up (P4.13, P4.16) and shocks (D8): engine settings with no control yet
+  deskFT: 2, deskPTh: 40, coaches: 2,   // owner 2026-11-15: the roster (live): full-time desk staff, part-time desk hours a week, in-house coaches
   ptClients: 22, outsideClients: 10, rentP: 250, allowOutside: true,   // floor rental NT$ per 90 min (P3.10) and whether freelancers may rent (setup)   // in-house PT clients (P5.10) and members training with outside coaches (P5.6 ÷ visits)
   area: COSTS.area, rentRate: COSTS.rentRate, staff: COSTS.staff,   // live P&L settings (the floor plan does not change with area)
   finOwn: FIN.own, finLoan: FIN.loan, finRate: FIN.rate, finYears: FIN.years   // financing at opening (B3, setup)
@@ -112,7 +113,7 @@ function chargeOut(a) {   // billed once, as the member walks out past the desk
     A.payQ.push({ a, fee: entry, min: Math.round(min) }, { a, fee: rent, rent: true });
   }
   // a client who has used the last session renews half the time (P5.12); a member without a coach occasionally starts PT
-  else if (a.rec && (pt ? pt.left <= 0 && a.rng() < PT.renew : !a.rec.outside && a.rng() < PT.convert)) {
+  else if (a.rec && (pt ? pt.left <= 0 && a.rng() < PT.renew : !a.rec.outside && a.rng() < ptConvert() && ptRoom())) {   /* owner 2026-11-15: more coaches sell more PT, up to what they can carry */
     const pk = PT_PACKS[pickPack(a.rng())];   // one draw: 45% pack of 8, 37% of 16, 18% of 24
     const inst = pk.parts.length > 1 && a.rng() < 0.5;   // half spread the bigger packs over instalments
     const paid = inst ? pk.parts[0] : pk.price;
@@ -207,10 +208,15 @@ function genProgram(a, rng, cfg) {
 }
 // ================================================================ the month: a member pool that persists across watched days
 let M = null;
+function archFor(u, mix) { const K = Object.keys(mix).filter(k => k !== 'coach'), T = K.reduce((s, k) => s + mix[k], 0); let m = u * T, arch = K[0]; for (const kk of K) { m -= mix[kk]; if (m <= 0) { arch = kk; break; } } return arch; }
+function applyMixChange() {   /* owner 2026-11-15: a new archetype mix from the panel re-sorts the members at the start of the next day; nobody changes mid-visit */
+  const now = {}, was = M.cfg.mix; for (const k of Object.keys(S.mix)) now[k] = S.mix[k];
+  if (Object.keys(now).every(k => now[k] === was[k])) return;
+  M.cfg.mix = { ...was, ...now }; for (const m of M.pool.concat(M.lapsed)) if (m.archU !== undefined) m.arch = archFor(m.archU, M.cfg.mix);
+}
 function newMember(rng, joinedDay, isNew) {
   const mix = { ...M.cfg.mix }; delete mix.coach; const mixK = Object.keys(mix), mixT = mixK.reduce((s, k) => s + mix[k], 0);
-  let m = rng() * mixT, arch = mixK[0]; for (const kk of mixK) { m -= mix[kk]; if (m <= 0) { arch = kk; break; } }
-  if (arch === 'coach') arch = 'client';
+  const archU = rng(); let arch = archFor(archU, mix);   /* the draw is kept so a new mix can re-sort members the next morning (owner 2026-11-15) */
   const female = rng() < (arch === 'power' ? 0.38 : 0.5), fm = female ? 0.63 : 1;
   const look = makeLook(rng, female, 'member'), name = `${rng.pick(FIRST)} ${String.fromCharCode(65 + rng.int(0, 25))}.`;
   const sq = (arch === 'power' ? rng.range(140, 210) : arch === 'oly' ? rng.range(130, 175) : arch === 'body' ? rng.range(100, 150) : rng.range(55, 95)) * fm;
@@ -219,7 +225,7 @@ function newMember(rng, joinedDay, isNew) {
   const mach = (arch === 'beginner' || arch === 'client' ? rng.range(25, 45) : rng.range(45, 85)) * fm;
   const vpu = 6 * Math.exp(0.6 * rng.gauss()) / Math.exp(0.18);   // visits a month, mean 6 (P4.1), spread between people
   const outside = false;
-  return { id: M.nextId++, arch, female, look, name, rm, db, mach, vpu, joinedDay, visits: [], outside, card: !isNew, isNew: !!isNew, pt: null };
+  return { id: M.nextId++, arch, archU, female, look, name, rm, db, mach, vpu, joinedDay, visits: [], outside, card: !isNew, isNew: !!isNew, pt: null };
 }
 function setupMonth() {
   const cfg = JSON.parse(JSON.stringify(S)), rng = makeRng(cfg.seed);
@@ -239,7 +245,7 @@ function setupMonth() {
   const outBase = cfg.outsideClients * cfg.peak / 35, outN = cfg.allowOutside ? Math.round(outBase * Math.pow(cfg.rentP / DEMAND_RESP.rentBase, DEMAND_RESP.rentElastic)) : 0;
   const moved = Math.round((Math.round(outBase) - outN) * DEMAND_RESP.substitute);
   const lv = M.level * (cfg.shock === 'competitor' ? 0.9 : 1), firstMonth = cfg.build === 'new' && cfg.monthsOpen === 0;   // a gym that has just opened owes no sessions yet
-  choose(firstMonth ? 0 : Math.round((Math.round(cfg.ptClients * cfg.peak / 35) + Math.max(0, moved)) * lv), m => { const i = pickPack(rng()), pk = PT_PACKS[i]; m.pt = { n: pk.n, left: 1 + Math.floor(rng() * pk.n), price: pk.price }; });
+  choose(firstMonth ? 0 : Math.min(ptCap(cfg.coaches != null ? cfg.coaches : 2), Math.round((Math.round(cfg.ptClients * cfg.peak / 35) + Math.max(0, moved)) * lv)), m => { const i = pickPack(rng()), pk = PT_PACKS[i]; m.pt = { n: pk.n, left: 1 + Math.floor(rng() * pk.n), price: pk.price }; });
   choose(Math.round(outN * lv), m => { m.outside = true; });
 }
 // prices published at the desk wait for the next morning (Calls 1, 14); Setup and a new month apply them at once
@@ -347,12 +353,12 @@ function closeTarget(kind) { const last = M.cal.length - 1; return kind === 'day
 function closeOneDay(out, target) {   // one step of a close: finish today, or move on to the next day; true while more is left
   if (A.done) { if (M.dayI >= target) return false; nextDay(); }
   fastForward(30 * 3600); if (!A.done) endStuckDay();   // a member who never leaves cannot hang a close
-  out.days++; out.takings += A.pnl.takings; out.ebitda += A.pnl.ebitda;
+  out.days++; out.takings += A.pnl.takings; out.ebitda += A.pnl.ebitda; (out.list = out.list || []).push({ date: A.date, dow: A.dow, month: M.cfg.month, pnl: { ...A.pnl } });   /* owner 2026-11-15: every closed day is shown */
   return M.dayI < target;
 }
 function endStuckDay() { for (const a of A.members) if (a.state !== 'gone' && a.state !== 'pending') { a.state = 'gone'; a.visible = false; if (a.coach) { a.coach.visible = false; a.coach.state = 'gone'; } } A.done = true; A.pnl = computePnl(); }
 function closeEarlySync(kind) {
-  const out = { days: 0, takings: 0, ebitda: 0 }; if (!M || !A) return out;
+  const out = { days: 0, takings: 0, ebitda: 0, list: [] }; if (!M || !A) return out;
   const target = closeTarget(kind); while (closeOneDay(out, target));
   return out;
 }
@@ -413,7 +419,7 @@ function retainAct(m, kind, roll, packRoll) {
   else if (ok) {
     const until = M.dayI + Math.round(R.months * 30.4); if (!m.protect || m.protect.until < until) m.protect = { until, kind };
     if (kind === 'voucher') m.voucher = { left: R.off, until: M.dayI + R.days };
-    if (kind === 'taster' && !m.pt && !m.outside && (packRoll != null ? packRoll : rng()) < R.packP) {   /* members with an outside coach never buy an in-house pack */   /* one in four buys a pack, paid in full; the gym owes the sessions */
+    if (kind === 'taster' && !m.pt && !m.outside && (packRoll != null ? packRoll : rng()) < R.packP && ptRoom()) {   /* members with an outside coach never buy an in-house pack */   /* one in four buys a pack, paid in full; the gym owes the sessions */
       const pk = PT_PACKS[pickPack(rng())]; A.rev = (A.rev || 0) + pk.price; A.ptRev = (A.ptRev || 0) + pk.price; A.packs = (A.packs || 0) + 1; A.ptOwed = (A.ptOwed || 0) + pk.n;
       m.pt = { n: pk.n, left: pk.n, price: pk.price }; A.deferred += pk.price; pack = pk;
     }
@@ -443,7 +449,13 @@ function endDay() {
   out.actives = M.pool.length;
   return out;
 }
+const PT_PER_COACH = 15;   /* owner 2026-11-15: an in-house coach carries about 15 clients */
+function ptCap(coaches = S.coaches) { return Math.max(0, coaches) * PT_PER_COACH; }
+function ptConvert() { return PT.convert * Math.max(0, S.coaches) / 2; }   /* 2 coaches = the researched rate */
+function ptRoom() { return !M || M.pool.reduce((n, m) => n + (m.pt && !m.outside && m.pt.left > 0 ? 1 : 0), 0) < ptCap(); }
+function skipLocker(a) { a.state = 'ex'; a.exI = 0; a.tIn = A.t; startExercise(a); }   /* owner 2026-11-15: the member the opening follows goes straight to the floor */
 function setupDay(i) {
+  if (M && i > 0) applyMixChange();
   if (A && A.occ) { HIST.unshift({ occ: A.occ, q: A.q, label: A.label }); if (HIST.length > 3) HIST.pop(); }
   for (const a of AGENTS) a.visible = false;
   AGENTS.length = 0;
@@ -592,7 +604,7 @@ function updateMember(a, dt) {
       if (a.waitStart) { A.waits.push((t - a.waitStart) / 60); noteWait(a, (t - Math.max(a.waitStart, A.open)) / 60); a.waitStart = 0; }
       if (!moving(a)) { a.state = 'desk'; a.t0 = t; a.yaw = 0; A.desk.greetUntil = t + 4; a.tDoor = t; A.checkins = (A.checkins || 0) + 1; }
       return;
-    case 'desk': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > 5) { a.state = 'toLocker'; const room = a.female ? LOCKERS_F : LOCKERS_M, L = room[Math.floor(a.rng() * room.length)]; /* their own washroom */ a.locker = L; goLocker(a, L); } return;
+    case 'desk': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > 5 && a.straight) { skipLocker(a); return; } if (t - a.t0 > 5) { a.state = 'toLocker'; const room = a.female ? LOCKERS_F : LOCKERS_M, L = room[Math.floor(a.rng() * room.length)]; /* their own washroom */ a.locker = L; goLocker(a, L); } return;
     case 'toLocker': a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'locker'; a.t0 = t; a.yaw = 0; a.lockDur = 90 + a.rng() * 120; } return;
     case 'locker': a.act = { k: 'idle', arms: 'locker' }; if (t - a.t0 > a.lockDur) { a.state = 'ex'; a.exI = 0; a.tIn = t; startExercise(a); } return;
     case 'ex': return updateExercise(a, dt);

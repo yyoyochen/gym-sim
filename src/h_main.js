@@ -88,7 +88,7 @@ function rMove(cx, cy) {
   const k = KINDS[q.kind], w = (q.rot % 2 ? k.d : k.w) * SUB, d = (q.rot % 2 ? k.w : k.d) * SUB, cx0 = p ? HALL.x0 + (p.sx * SUB + w / 2) : HALL.x0 + (s[0] + 0.5) * SUB, cz0 = p ? HALL.zb + (p.sz * SUB + d / 2) : HALL.zb + (s[1] + 0.5) * SUB;
   RGHOST.scale.set(w, 1, d); RGHOST.position.x = cx0; RGHOST.position.z = cz0; RGHOST.material.color.set(p ? '#5ee08a' : '#d6403a'); RGHOST.visible = true; return true;
 }
-function rUp(cx, cy) { if (RDRAG.id == null) return false; const id = RDRAG.id; RDRAG.id = null; RGHOST.visible = false; if (!BUILD.on || BUILD.mode !== 'rearrange') return true; if (RDRAG.moved) { const s = subAt(cx, cy); if (s) rearrangeDrop(id, s[0], s[1]); } else { BUILD.sel = id; renderBuild(); } return true; }
+function rUp(cx, cy) { if (RDRAG.id == null) return false; const id = RDRAG.id; RDRAG.id = null; RGHOST.visible = false; if (!BUILD.on || BUILD.mode !== 'rearrange') return true; if (RDRAG.moved) { const s = subAt(cx, cy); BUILD.sel = id; if (s) rearrangeDrop(id, s[0], s[1]); } else { BUILD.sel = id; renderBuild(); } return true; }
 canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; if (rDown(e.clientX, e.clientY)) { canvas.setPointerCapture(e.pointerId); return; } canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 1) { downAt = { x: e.clientX, y: e.clientY }; panLast = { x: e.clientX, y: e.clientY }; panning = false; } if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = view.zoomT; downAt = null; panning = false; panLast = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } });
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'touch' && rMove(e.clientX, e.clientY)) return;
@@ -888,8 +888,7 @@ const SELFTESTS = {
     try { Object.assign(S, { hallW: 10, hallD: 8 }, presetCounts(10, 8), { benches: 10 }); setupRun();
       const placed = STATIONS.filter(s => s.type === 'bench').length, keys = BUILT.items.map(it => it.key), benchLine = BUILT.items.find(it => it.key === 'benches');
       const okS = S.benches === placed && benchLine.n === placed && keys.includes('turf') === STATIONS.some(s => s.type === 'sled') && keys.includes('pullup') === STATIONS.some(s => s.type === 'pullup');   /* Plan 11: kit is charged exactly when it is placed */
-      const locked = W.w_benches && W.w_benches.inp.disabled;
-      return { ok: okS && locked, detail: { placed, sBenches: S.benches, line: benchLine.n, keys, locked } }; }
+      return { ok: okS, detail: { placed, sBenches: S.benches, line: benchLine.n, keys } }; }   /* owner 2026-11-15: the equipment sliders are gone (Rearrange changes equipment) */
     finally { Object.assign(S, keep); setupRun(); syncSetupWidgets(); }
   },
   buildSampleMoney() {   // Plan 8 review: from a built gym, picking Sample in the builder shows the sample gym's capex
@@ -1086,7 +1085,7 @@ const SELFTESTS = {
   newMonthPanelSync() {   // Plan 7 review I2: after New month the panel shows the month (and months open) a Setup would use
     const keep = JSON.parse(JSON.stringify(S));
     try { S.build = 'new'; S.monthsOpen = 24; skimDays(30, true); fastForward(30 * 3600); W.go.click(); goOn = false;
-      return { ok: W.w_month.sel.value === 'Jul' && S.monthsOpen === 25, detail: { month: W.w_month.sel.value, open: S.monthsOpen } }; }   // the months-open slider was removed with the scenario picker
+      return { ok: S.month === 'Jul' && S.monthsOpen === 25, detail: { month: S.month, open: S.monthsOpen } }; }   /* owner 2026-11-15: no month chooser; the month follows the calendar */   // the months-open slider was removed with the scenario picker
     finally { goOn = false; Object.assign(S, keep); setLang(LANG); }
   },
   closeLocksControls() {   // Plan 7 review I3: while a close is running, Go, Step, Setup and the binder's Next day do nothing
@@ -1122,6 +1121,83 @@ const SELFTESTS = {
       const every = introWantedFor('') && introWantedFor('?seed=3') && !introWantedFor('?selftest=x') && !introWantedFor('?shot=none');
       return { ok: !welcome && !tabs && every, detail: { welcome, tabs, every } }; }
     finally { if (BUILD.on) cancelBuild(); try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} }
+  },
+  panelTrimmed() {   // owner 2026-11-15: no seed, no Copy results, no money or loan sliders (set when building), no month chooser (the calendar runs), no equipment sliders (Rearrange), no OS dropdowns
+    const gone = ['seed', 'dice', 'w_finOwn', 'w_finLoan', 'w_finRate', 'w_finYears', 'w_month', 'w_racks', 'w_plats', 'w_benches'].filter(id => document.getElementById(id) || W[id]);
+    const copy = [...panel.querySelectorAll('button')].some(b => /Copy results|複製結果/.test(b.textContent)), selects = panel.querySelectorAll('select').length;
+    const weather = [...panel.querySelectorAll('button')].some(b => b.textContent === tr('Rain'));
+    return { ok: !gone.length && !copy && !selects && weather, detail: { gone, copy, selects, weather } };
+  },
+  mixNextDay() {   // owner 2026-11-15: a new archetype mix shows from the next morning, no Setup needed; today stays as it was
+    const keep = JSON.parse(JSON.stringify(S.mix)), share = () => M.pool.filter(m => m.arch === 'power').length / M.pool.length;
+    try { setupRun(); const a = share(); S.mix = { power: 70, oly: 10, body: 10, beginner: 10 }; const b = share(); nextDay(); const c = share();
+      return { ok: a < 0.35 && Math.abs(b - a) < 1e-9 && c > 0.6 && c < 0.8, detail: { a, b, c } }; }
+    finally { S.mix = keep; setupRun(); }
+  },
+  introStraightToWork() {   // owner 2026-11-15: the member the opening follows goes straight from the desk to their first exercise, no changing room
+    try { setupRun(); clearFollow(); onGymOpened(true);
+      for (let i = 0; i < 7200 && INTRO.phase === 'wait'; i++) { fastForward(30); updateIntro(0.1); }
+      const a = INTRO.a, seen = []; for (let i = 0; i < 4000 && a && !['ex', 'toLocker', 'locker'].includes(a.state); i++) { fastForward(1); if (seen[seen.length - 1] !== a.state) seen.push(a.state); }
+      return { ok: !!a && a.state === 'ex', detail: { state: a && a.state, seen } }; }
+    finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); setupRun(); }
+  },
+  dbSpotsShareRack() {   // owner 2026-11-15: both pick-up spots of a dumbbell rack outline the rack itself, not a patch of empty floor
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { hallW: 16, hallD: 10 }); setHall(16, 10); const p = { kind: 'dbrack', sx: 10, sz: 12, rot: 0, id: 1 }; buildLayout({ ...S, layout: { pieces: [p] }, shock: 'none' });
+      const f = footprint(p), X0 = HALL.x0 + f.x0 * SUB, X1 = HALL.x0 + f.x1 * SUB, Z0 = HALL.zb + f.z0 * SUB, Z1 = HALL.zb + f.z1 * SUB;
+      const boxes = STATIONS.filter(s => s.type === 'dbspot').map(s => hoverBox({ kind: 'station', s })).map(b => b.map(v => +v.toFixed(2)));
+      const onRack = boxes.every(b => b[0] >= X0 - 0.1 && b[0] <= X1 + 0.1 && b[1] >= Z0 - 0.1 && b[1] <= Z1 + 0.1);
+      return { ok: boxes.length === 2 && onRack && boxes[0][0] === boxes[1][0] && boxes[0][1] === boxes[1][1], detail: { boxes, rack: [X0, Z0, X1, Z1] } }; }
+    finally { Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
+  },
+  closeSummaries() {   // owner 2026-11-15: closing a week shows every day's takings and profit; closing the month shows the P&L by category for the closed days
+    try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week'); const tw = document.getElementById('bkBody') ? document.getElementById('books').textContent : '', openW = BOOKS.open && BOOKS.tab === 'Today';
+      const dayRows = document.querySelectorAll('#books table.closed tr.cday').length; closeBooks();
+      const m = closeEarlySync('month'); finishClose(m, 'month'); const tm = document.getElementById('books').textContent, openM = BOOKS.open;
+      const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'EBITDA'].filter(k => !tm.includes(k));
+      const ok = w.list.length === w.days && w.days >= 1 && dayRows === w.days && openW && openM && !cats.length && m.list.length === m.days;
+      return { ok, detail: { wDays: w.days, list: w.list.length, dayRows, openW, openM, missing: cats } }; }
+    finally { closeBooks(); BOOKS.closed = null; setupRun(); }
+  },
+  rearrangeClear() {   // owner 2026-11-15: Rearrange uses in-game buttons (no OS dropdown); the selected piece wears the yellow outline and gets a card with Sell
+    try { setupRun(); openRearrange(); const box = document.getElementById('build'), selects = box.querySelectorAll('select').length;
+      const kinds = Object.keys(KINDS).filter(k => k !== 'turf' || !BUILD.layout.pieces.some(p => p.kind === 'turf')), btns = kinds.filter(k => box.querySelector(`[data-radd="${k}"]`)).length;
+      const n0 = BUILD.layout.pieces.length; box.querySelector('[data-radd="bench"]').click(); const added = BUILD.layout.pieces.length === n0 + 1, nb = BUILD.layout.pieces[BUILD.layout.pieces.length - 1];
+      const selNew = BUILD.sel === nb.id && RSEL.visible, card = !!box.querySelector(`[data-rsell="${nb.id}"]`) && box.textContent.includes(rname('bench'));
+      const f = footprint(nb), fitSel = Math.abs(RSEL.scale.x - (f.x1 - f.x0) * SUB) < 0.01 && Math.abs(RSEL.position.x - (HALL.x0 + (f.x0 + f.x1) / 2 * SUB)) < 0.01;
+      const rack = BUILD.layout.pieces.find(p => p.kind === 'rack'); BUILD.sel = rack.id; renderBuild(); const moved = Math.abs(RSEL.position.x - (HALL.x0 + (footprint(rack).x0 + footprint(rack).x1) / 2 * SUB)) < 0.01;
+      const sticky = getComputedStyle(box.querySelector('.rquote')).position === 'sticky';
+      cancelBuild(); const gone = !RSEL.visible;
+      return { ok: !selects && btns === kinds.length && added && selNew && card && fitSel && moved && sticky && gone, detail: { selects, btns, kinds: kinds.length, added, selNew, card, fitSel, moved, sticky, gone } }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { if (BUILD.on) cancelBuild(); setupRun(); }
+  },
+  staffSteppers() {   // owner 2026-11-15: hire or let go desk staff and coaches; the roster cost follows; each coach carries up to 15 PT clients and more coaches sell more PT
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, staff: S.staff };
+    try { setupRun(); const base = rosterCost(S) === 184000 && S.staff === 184000, conv0 = ptConvert();
+      openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
+      q('coaches', 1).click(); const c3 = S.coaches === 3 && S.staff === 184000 && Math.abs(ptConvert() - conv0 * 1.5) < 1e-12 && ptCap() === 45;
+      q('deskFT', -1).click(); updateBooks(true); const t = document.getElementById('bkBody').textContent, ft = S.deskFT === 1 && S.staff === rosterCost(S) && S.staff < 184000 && /full-time \(1\)/.test(t);
+      closeBooks(); S.coaches = 1; setupRun(); const inHouse = M.pool.filter(m => m.pt && !m.outside).length;
+      S.coaches = 0; const none = ptCap() === 0 && ptConvert() === 0;
+      return { ok: base && c3 && ft && inHouse <= 15 && none, detail: { base, c3, ft, staff: S.staff, inHouse, none } }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { closeBooks(); Object.assign(S, keep); setupRun(); }
+  },
+  openingSpeed10() {   // owner 2026-11-15: the opening, following the first member in, runs at 10×
+    const keep = S.speed;
+    try { setupRun(); S.speed = 30; openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
+      const out = W.w_speed ? W.w_speed.out.textContent : '';
+      return { ok: S.speed === 10 && INTRO.phase === 'wait' && /10/.test(out), detail: { speed: S.speed, phase: INTRO.phase, out } }; }
+    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
+  },
+  deskHintStays() {   // owner 2026-11-15: the desk hint stays on until the player clicks the desk (or the P&L tab): not hidden by an earlier visit, and gone once clicked
+    try { BOOKS_SEEN = false; setupRun(); try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}   /* a fresh visit; an old visit's flag must not hide it */
+      const h = document.getElementById('booksHint'), at = () => ({ x: 0, y: 0 }), shown = () => getComputedStyle(h).display !== 'none';
+      updateBooksHint(() => [100, 100]); const a = shown(); updateMonitors(); updateBooksHint(() => [100, 100]); const b = shown();
+      openBooks('Today'); const c = shown(); closeBooks(); updateBooksHint(() => [100, 100]); const d = shown();
+      return { ok: a && b && !c && !d, detail: { a, b, c, d } }; }
+    finally { closeBooks(); try { localStorage.removeItem('gymsim.booksSeen'); } catch (e) {} BOOKS_SEEN = false; }
   },
   introTakeOver() {   // the sample gym, taken over (now only from code: hidden from players until it is replaced): no build costs, straight to the day
     try { S.hallW = 16; S.hallD = 10; setupRun(); openIntro(); buildPick('sample'); openGym();
@@ -1166,10 +1242,10 @@ const SELFTESTS = {
       return { ok: /year 1/.test(a) && GOAL.key === null && b === '', detail: { a, b } }; }
     finally { GOAL.key = null; }
   },
-  moreHidesDev() {   // Plan 10: Seed and Copy results sit behind More; Build a gym stays in view
-    try { const m = document.querySelector('#panel details.more'), seed = document.getElementById('seed'), copy = W.copy, b = document.getElementById('buildBtn');
-      const ok = !!m && !m.open && m.contains(seed) && m.contains(copy) && !m.contains(b) && !!document.getElementById('introAgain') && !!document.getElementById('goalAgain');
-      return { ok, detail: { more: !!m, seed: m && m.contains(seed), copy: m && m.contains(copy), build: m && m.contains(b) } }; }
+  moreHidesDev() {   // Plan 10: More holds the intro and goal buttons; Build a gym stays in view
+    try { const m = document.querySelector('#panel details.more'), b = document.getElementById('buildBtn');
+      const ok = !!m && !m.open && !m.contains(b) && m.contains(document.getElementById('introAgain')) && m.contains(document.getElementById('goalAgain'));
+      return { ok, detail: { more: !!m, build: m && m.contains(b) } }; }
     catch (e) { return { ok: false, detail: String(e) }; }
   },
   goLabelStart() {   // personas: "Pause" while nothing moved before 07:00; before the doors open the button says Start the day

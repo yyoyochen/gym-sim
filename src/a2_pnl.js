@@ -71,6 +71,11 @@ function sensitivity(base, ranges) {
 }
 // ================================================================ itemised fixed costs for the books (P6.3–P6.12, P7.8, P8.1–P8.5, P10.3–P10.6)
 // monthly base values per line; a period's group total is split by these shares, so the lines always sum to the simulated totals
+// owner 2026-11-15: the roster is people, not one cost: a manager, full-time desk staff, part-time desk hours a week; insurance, pension, bonus and leave cover scale with pay
+const ROSTER = { manager: 43000, deskFT: 32000, deskPTh: 870, onTop: (27000 + 15200) / 141800 };
+function rosterLines(r) { const pay = { manager: ROSTER.manager, deskFT: ROSTER.deskFT * r.deskFT, deskPT: ROSTER.deskPTh * r.deskPTh }, base = pay.manager + pay.deskFT + pay.deskPT;
+  return { ...pay, statutory: base * 27000 / 141800, bonusLeave: base * 15200 / 141800 }; }
+function rosterCost(r) { return Math.round(Object.values(rosterLines(r)).reduce((s, v) => s + v, 0)); }
 const COST_LINES = {
   premises: [['rent', 0], ['mgmt', 0], ['elec', 0], ['water', 2000]],   // rent and management split occupancy by rate; electricity is its own total
   staff: [['manager', 43000], ['deskFT', 64000], ['deskPT', 34800], ['statutory', 27000], ['bonusLeave', 15200]],

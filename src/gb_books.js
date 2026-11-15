@@ -8,13 +8,14 @@ const nt$ = (v) => money(v);   /* Plan 8b: $ with every digit */
 const ntn = (v) => `<span data-v="${Math.round(v || 0)}">${money(v || 0)}</span>`;   /* every digit; the figure also rides along for checks */
 function speedToPos(v) { return Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)); }
 function syncSpeed() { const w = W.w_speed; if (w) { w.inp.value = speedToPos(S.speed); w.out.textContent = w.fmt(S.speed); } }
-function booksSeen() { try { return localStorage.getItem('gymsim.booksSeen') === '1'; } catch (e) { return false; } }
+let BOOKS_SEEN = false;   /* owner 2026-11-15: the desk hint stays until the player opens the P&L in this visit; nothing is remembered between visits */
+function booksSeen() { return BOOKS_SEEN; }
 function openBooks(tab) {
   if (!A || (typeof BUILD !== 'undefined' && BUILD.on)) return;
   BOOKS.retainMsg = null;   /* the last retention answer is shown until the books close */   /* not over the builder: the books can move the day on */
   if (!BOOKS.open) { BOOKS.prevSpeed = S.speed; S.speed = 1; syncSpeed(); }
   BOOKS.open = true; if (tab) BOOKS.tab = tab;
-  try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}
+  BOOKS_SEEN = true;
   const h = document.getElementById('booksHint'); if (h) h.style.display = 'none';
   clearFollow(); renderBooks();
 }
@@ -88,7 +89,7 @@ BOOK_RENDER.Today = {
       + `<p class="note">${tx(`${A.checkins || 0} checked in · ${A.paidVisits || 0} have paid so far. Everyone pays by the minute on the way out, so the two meet at closing.`, `${A.checkins || 0} 人進場 · 目前 ${A.paidVisits || 0} 人已付款。每個人離場時按分鐘付費，打烊時兩個數字會相同。`)}</p>`;
     const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'rearrange' ? (() => { const left = M.cal.slice(M.dayI + 1).filter(d => d.rearrange).length + (BIZ.closedLeft || 0); return tx(`Closed today for rearranging${left ? `: ${left} more day${left === 1 ? '' : 's'} after today` : '; it reopens tomorrow with the new layout'}. No sales, the fixed costs still run.`, `今日重新擺設休館${left ? `：之後還有 ${left} 天` : '，明天以新擺設開門'}。沒有營收，固定成本照付。`); })() : A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
     const stamp = A.done ? `<div class="stamp">${tx('Day closed', '本日結帳')} · EBITDA ${nt$(p.ebitda)}</div>` : '';
-    const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
+    const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? closedSummary(BOOKS.closed) + `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
     return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the P&L records every one of them.', '這些天會在背景跑完，損益表照樣記下每一天。')}</p>`);
   },
@@ -110,6 +111,28 @@ function yearHtml() {
   const head = `<tr class="grp0"><td>${tx('Month', '月份')}</td><td class="n">${tx('Net sales', '銷售淨額')}</td><td class="n">EBITDA</td><td class="n">${tx('Net profit', '淨利')}</td><td class="n">${tx('Cash', '現金')}</td></tr>`;
   const total = `<tr class="sum"><td>${tx('So far', '累計')}</td><td class="n">${ntn(tot.net)}</td><td class="n" data-k="yrEbitda">${ntn(tot.ebitda)}</td><td class="n">${ntn(tot.np)}</td><td class="n"></td></tr>`;
   return bkSection(tx('The business so far', '開業至今'), `<div style="overflow-x:auto"><table class="yr">${head}${rows.join('')}${total}</table></div><p class="note">${tx('Closed months as booked (loan interest and tax paid at month end); tap one for its full P&L. Cash is the bank balance at each month end, and now.', '已結帳月份依實際入帳（貸款利息與所得稅在月底支付）；點一個月份看完整損益表。現金為每月底與目前的銀行餘額。')}</p>`, '$');
+}
+// owner 2026-11-15: what a close early ran: a week lists every day; a month lists the P&L by category over the closed days
+function closedSummary(cl) {
+  if (!cl.list || !cl.list.length || cl.kind === 'day') return '';
+  const n = (v) => `<td class="n">${nt$(v)}</td>`;
+  if (cl.kind === 'week') {
+    const rows = cl.list.map(d => `<tr class="cday"><td>${tr(d.dow)} ${d.date} ${tr(d.month)}</td>${n(d.pnl.takings)}${n(d.pnl.ebitda)}</tr>`).join('');
+    return bkSection(tx('The week, day by day', '本週逐日'), `<table class="closed"><tr class="grp0"><td></td><td class="n">${tx('Takings', '收入')}</td><td class="n">EBITDA</td></tr>${rows}<tr class="sum"><td>${tx('Total', '合計')}</td>${n(cl.takings)}${n(cl.ebitda)}</tr></table>`);
+  }
+  const p = {}; for (const d of cl.list) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') p[k] = (p[k] || 0) + d.pnl[k];
+  const it = itemiseFixed(p, pnlCosts()), row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td>${n(v)}</tr>`;
+  const body = `<tr class="grp0"><td colspan="2">${tx('Revenue', '營收')}</td></tr>`
+    + row(tx('Visit fees, off-peak', '入場費（離峰）'), p.entryOff || 0) + row(tx('Visit fees, peak', '入場費（尖峰）'), p.entryPeak || 0) + row(tx('Member cards', '會員卡'), p.cards || 0)
+    + row(tx('PT earned', '教練課收入'), p.ptEarned || 0) + row(tx('Floor rentals', '場地租借'), p.rentals || 0) + row(tx('Add-ons (estimated)', '其他收入（估計）'), p.addOns || 0)
+    + row(tx('Gross revenue', '總營收'), p.gross || 0, 'sum') + row(tx('VAT', '營業稅'), -(p.vat || 0))
+    + `<tr class="grp0"><td colspan="2">${tx('Costs', '成本')}</td></tr>`
+    + row(tx('Coach payout', '教練分潤'), -(p.coach || 0)) + row(tx('Marketing', '行銷'), -(p.mkt || 0)) + row(tx('Card and e-payment fees', '刷卡與電子支付手續費'), -(p.card || 0))
+    + (p.retain ? row(tx('Retention actions', '留客行動'), -p.retain) : '') + (p.rearrange ? row(tx('Rearranging (movers)', '重新擺設（搬運）'), -p.rearrange) : '')
+    + row(tx('Rent and management', '租金與管理費'), -(it.premises.rent + it.premises.mgmt)) + row(tx('Electricity and water', '水電'), -(it.premises.elec + it.premises.water))
+    + row(tx('Staff', '人事'), -it.totals.staff) + row(tx('Floor upkeep and compliance', '場地維護與法規'), -(it.totals.floor + it.totals.compliance))
+    + row('EBITDA', p.ebitda || 0, 'sum');
+  return bkSection(tx(`The ${cl.days} closed days by category`, `結帳的 ${cl.days} 天，分類合計`), `<table class="closed">${body}</table>`);
 }
 function booksPeriod(period) {
   const arch = archOf(period); if (arch) return { ...arch.pnl };
@@ -287,8 +310,11 @@ BOOK_RENDER.Pricing = {
 function bkSliderGroup(body, title, note) { const g = el('section', { class: 'grp' }); g.appendChild(el('h2', {}, `<span>${title}</span>${note ? `<span class="pend">${note}</span>` : ''}`)); body.appendChild(g); return g; }
 BOOK_RENDER.Staff = {
   build(body) {
-    const g = bkSliderGroup(body, tx('Roster cost', '人事成本'), tx('applies at once', '立即生效'));
-    slider(g, 'staff', 'Staff cost per month', 100000, 260000, 1000, v => money(v));
+    const g = bkSliderGroup(body, tx('Roster', '人力'), tx('applies at once', '立即生效'));   /* owner 2026-11-15: hire or let people go */
+    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 0, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v]];
+    const t = el('table', {}, R.map(([k, lab]) => `<tr><td>${lab}</td><td><div class="step"><button data-roster="${k}" data-d="-1" aria-label="−">−</button><b data-rv="${k}"></b><button data-roster="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`).join('')); g.appendChild(t);
+    t.querySelectorAll('button[data-roster]').forEach(b => b.addEventListener('click', () => { const [k, , lo, hi, st] = R.find(r => r[0] === b.dataset.roster); S[k] = clamp(S[k] + st * +b.dataset.d, lo, hi); S.staff = rosterCost(S); if (A) A.pnl = computePnl(); updateBooks(true); }));
+    g.dataset.fmt = '1'; BOOKS.rosterFmt = R;
     g.appendChild(el('div', { id: 'bkStaffLines' }));
     const h = bkSliderGroup(body, tx('Opening hours', '營業時間'));
     h.appendChild(el('table', {}, `<tr><td>${tx('Mon–Fri', '週一至五')}</td><td class="n">07:00–24:00</td></tr><tr><td>${tx('Sat–Sun', '週六日')}</td><td class="n">08:00–24:00</td></tr>`));
@@ -296,9 +322,10 @@ BOOK_RENDER.Staff = {
   },
   update() {
     const box = document.getElementById('bkStaffLines'); if (!box) return;
-    const it = itemiseFixed({ staff: S.staff, occupancy: 0, otherOpex: 0, elec: 0 }).staff, lab = { manager: tx('Store manager', '店長'), deskFT: tx('Desk staff, full-time (2)', '櫃檯正職（2 人）'), deskPT: tx('Desk staff, part-time (about 40 h a week)', '櫃檯兼職（每週約 40 小時）'), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
+    for (const [k, , , , , fmt] of BOOKS.rosterFmt || []) { const b = document.querySelector(`#bkBody [data-rv="${k}"]`); if (b) b.textContent = fmt(S[k]); }
+    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
     const h = `<table>${Object.keys(it).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
-      <p class="note">${tx('Coaches are paid from PT, not from this roster.', '教練由教練課分潤支付，不在此人事成本內。')}</p>
+      <p class="note">${tx(`Coaches are paid ${100 - pnlCosts().gymShare}% of the PT they deliver, not from this roster. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients; more coaches sell more PT over the coming months.`, `教練由教練課分潤（${100 - pnlCosts().gymShare}%）支付，不在此人事成本內。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員；教練越多，之後幾個月賣出的教練課越多。`)}</p>
       <p class="note${staffAdj(S.staff) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff), mx = more(DEMAND_RESP.staffLean);   /* review I4: the month-0 churn change the model actually applies */
         return tx(`At this roster, members in their first month leave ${x}% more often than with the full roster (${money(DEMAND_RESP.staffBase)}); the most is ${mx}% more, at ${money(DEMAND_RESP.staffLean)}.`, `以目前人力，第一個月的新會員流失比完整人力（${money(DEMAND_RESP.staffBase)}）多 ${x}%；最多多 ${mx}%（${money(DEMAND_RESP.staffLean)}）。`); })()}</p>`;
     if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }

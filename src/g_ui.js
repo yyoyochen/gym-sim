@@ -92,7 +92,7 @@ function chooser(g, key, label, opts) {
 function segmented(g, key, label, opts) {
   const w = el('div', { class: 'w' }); w.innerHTML = `<div class="lab"><span>${tr(label)}<span class="pd">${tr('· Setup')}</span></span></div><div class="seg" role="group" aria-label="${tr(label)}">${opts.map(o => `<button data-v="${o}">${tr(o)}</button>`).join('')}</div>`;
   const bs = [...w.querySelectorAll('button')]; const upd = () => bs.forEach(b => { const on = b.dataset.v === S[key]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
-  bs.forEach(b => b.addEventListener('click', () => { S[key] = b.dataset.v; upd(); refreshPending(); })); upd();
+  bs.forEach(b => b.addEventListener('click', () => { S[key] = b.dataset.v; if (key === 'weather') env.raining = S.weather === 'Rain'; upd(); refreshPending(); })); upd();
   g.appendChild(w); W['w_' + key] = { w, key, onSetup: true, upd }; return w;
 }
 function sw(g, key, label, onSetup) {
@@ -119,12 +119,8 @@ function buildPanel() {
   // log scale: 1x .. 600x (a whole 17-hour day in under two minutes at the top end)
   const spd = { toV: (p) => { const v = Math.pow(600, p / 100); return v < 10 ? Math.round(v) : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 25) * 25; }, toPos: (v) => Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)) };
   slider(run, 'speed', 'Speed (gym seconds per real second)', 0, 100, 1, v => v + '×', false, undefined, spd);
-  const r2 = el('div', { class: 'row' }); r2.innerHTML = `<label for="seed" style="flex:0 0 auto;font-size:var(--f12)">${tr('Seed')}</label><input type="number" id="seed"><button id="dice" style="flex:0 0 auto" aria-label="${tr('Random seed')}">🎲</button>`;
-  const more = el('details', { class: 'more' }, `<summary>${tx('More', '更多')}</summary>`); more.appendChild(r2); W.seed = r2.querySelector('#seed'); W.seed.value = S.seed;   /* playtest: dev controls out of the first screen (Plan 10) */
-  W.seed.addEventListener('change', () => { S.seed = Math.max(1, Math.floor(+W.seed.value || 1)); W.seed.value = S.seed; refreshPending(); });
-  r2.querySelector('#dice').addEventListener('click', () => { S.seed = Math.floor(Math.random() * 1e6) + 1; W.seed.value = S.seed; refreshPending(); });
-  const r3 = el('div', { class: 'row' }); W.copy = el('button', {}, tr('Copy results')); W.build = el('button', { id: 'buildBtn' }, tx('Build a gym', '設計健身房')); W.build.addEventListener('click', () => { if (closing) return; openBuild(); }); W.rearr = el('button', { id: 'rearrBtn' }, tx('Rearrange', '重新擺設')); W.rearr.addEventListener('click', () => openRearrange()); r3.append(W.build, W.rearr); run.appendChild(r3);
-  const r5 = el('div', { class: 'row' }); r5.append(W.copy); more.appendChild(r5);
+  const more = el('details', { class: 'more' }, `<summary>${tx('More', '更多')}</summary>`);   /* owner 2026-11-15: no seed and no Copy results */
+  const r3 = el('div', { class: 'row' }); W.build = el('button', { id: 'buildBtn' }, tx('Build a gym', '設計健身房')); W.build.addEventListener('click', () => { if (closing) return; openBuild(); }); W.rearr = el('button', { id: 'rearrBtn' }, tx('Rearrange', '重新擺設')); W.rearr.addEventListener('click', () => openRearrange()); r3.append(W.build, W.rearr); run.appendChild(r3);
   const r6 = el('div', { class: 'row' }), again = el('button', { id: 'introAgain' }, tx('Show intro again', '重看開場')), goalB = el('button', { id: 'goalAgain' }, tx('Change goal', '換目標'));
   again.addEventListener('click', () => { if (closing || BUILD.on) return; goOn = false; refreshGo(); openIntro(true); });
   goalB.addEventListener('click', () => { if (typeof showGoalCard === 'function') showGoalCard(true); });
@@ -133,34 +129,28 @@ function buildPanel() {
   for (const [k, lab] of [['day', tx('Day', '今天')], ['week', tx('Week', '本週')], ['month', tx('Month', '本月')]]) { const b = el('button', { 'data-close': k }, lab); b.addEventListener('click', () => closeEarly(k)); r4.appendChild(b); }
   run.appendChild(r4);
   run.appendChild(el('p', { class: 'note', id: 'runNote' }, ''));
-  const m$ = (v) => moneyK(v);   /* financing sliders step in half-millions */
-  slider(run, 'finOwn', 'Your own money', 0, 20e6, 5e5, m$, true);
-  slider(run, 'finLoan', 'Bank loan', 0, 20e6, 5e5, m$, true);
-  slider(run, 'finRate', 'Loan rate a year', 1, 8, 0.1, v => v.toFixed(1) + '%', true);
-  slider(run, 'finYears', 'Loan term', 3, 15, 1, v => tx(`${v} years`, `${v} 年`), true);
+  /* owner 2026-11-15: own money and the loan are set when the gym is built, not here */
   run.insertBefore(el('div', { id: 'dayLbl', class: 'daylbl' }, ''), run.children[1]);
   const mg = group('Monitors', null, 'monGrp'); mg.querySelector('.pend').remove();
   const mon = el('div', { class: 'mon' });
   for (const [id, lab] of [['mClock', 'Clock'], ['mIn', 'Inside now'], ['mWait', 'Waiting now'], ['mAvg', 'Avg wait'], ['mQ', 'Longest queue'], ['mPR', 'PRs today'], ['mStray', 'Stray weights'], ['mVisits', 'Visits'], ['mRack', 'Rack queue']]) { const d = el('div', {}, `<span>${tr(lab)}</span><b id="${id}">–</b>`); mon.appendChild(d); }
   mg.appendChild(mon);
   const day = group('Day', 'Day');
-  chooser(day, 'month', 'Month', MONTH_NAMES);
+  /* owner 2026-11-15: no month chooser: the month follows the calendar */
   slider(day, 'peak', 'People at the weekly peak', 15, 60, 1, v => v, true);
   slider(day, 'visit', 'Mean visit length', 30, 100, 1, v => v + MIN(), true);
   segmented(day, 'setting', 'Setting', ['Urban', 'Suburban', 'Rural']);
-  chooser(day, 'weather', 'Weather', ['Clear', 'Rain', 'Heatwave']);
+  segmented(day, 'weather', 'Weather', ['Clear', 'Rain', 'Heatwave']);   /* in-game buttons, not an OS dropdown */
   day.appendChild(el('p', { class: 'note' }, tr('Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.')));
   const mem = group('Members', 'Members');
-  mem.appendChild(el('p', { class: 'note', style: 'margin:0 0 4px' }, tr('Archetype mix (sums to 100 %, applies on Setup)')));
-  for (const [k, lab] of [['power', 'Powerlifter'], ['oly', 'Olympic lifter'], ['body', 'Bodybuilder'], ['beginner', 'Beginner']]) slider(mem, k, lab, 0, 100, 1, v => v + ' %', true, 'mix');
+  mem.appendChild(el('p', { class: 'note', style: 'margin:0 0 4px' }, tr('Archetype mix (sums to 100 %, applies from tomorrow)')));
+  for (const [k, lab] of [['power', 'Powerlifter'], ['oly', 'Olympic lifter'], ['body', 'Bodybuilder'], ['beginner', 'Beginner']]) slider(mem, k, lab, 0, 100, 1, v => v + ' %', false, 'mix');   /* owner 2026-11-15: from the next morning, no Setup */
   slider(mem, 'patience', 'Patience before swapping', 0, 15, 0.5, v => v + MIN());
   slider(mem, 'workIn', 'Work-in willingness', 0, 100, 5, v => v + ' %');
   slider(mem, 'rest', 'Rest between sets', 1, 5, 0.25, v => v.toFixed(2).replace(/0$/, '') + MIN());
   slider(mem, 'rerack', 'Re-rack habit', 0, 100, 5, v => v + ' %');
   const gym = group('Gym', 'Gym');
-  slider(gym, 'racks', 'Power racks', 2, 10, 1, v => v, true);
-  slider(gym, 'plats', 'Olympic platforms', 0, 4, 1, v => v, true);
-  slider(gym, 'benches', 'Adjustable benches', 2, 10, 1, v => v, true);
+  /* owner 2026-11-15: equipment is changed with Rearrange, not with sliders */
   slider(gym, 'cleaners', 'Cleaners', 0, 3, 1, v => v);
   slider(gym, 'cap', 'Capacity cap at the turnstile', 20, 80, 1, v => v);
   sw(gym, 'curls', 'Racks used for curls');
@@ -187,22 +177,24 @@ function buildPanel() {
   W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) syncSetupWidgets(); refreshPending(); } goOn = !goOn; refreshGo(); });   // Next day; after the last day the business carries into the next month (D9)
   W.step.addEventListener('click', () => { if (closing || !A || A.done) return; for (let i = 0; i < 60 / STEP; i++) simStep(); });
   { const ll = document.getElementById('liveLine'); if (ll && !ll.dataset.wired) { ll.dataset.wired = '1'; ll.addEventListener('click', () => openBooks()); ll.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openBooks(); } }); } }
-  W.copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(resultsText()); showToast(tr('Results copied')); } catch (e) { showToast(tr('Copy was blocked here')); } });
 }
 // the UI side of closing early: one day per macrotask so the page stays responsive, then a summary (A1)
 let closing = null;
 function closeEarly(kind) {
   if (!M || !A || closing) return;
-  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0 }, target = closeTarget(kind), m0 = M; closing = { kind, out };
+  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0, list: [] }, target = closeTarget(kind), m0 = M; closing = { kind, out };
   const step = () => {
     let more = true; try { more = M === m0 && closeOneDay(out, target); } catch (e) { more = false; console.error(e); }
     showToast(tx(`Closing… day ${M.dayI + 1}`, `結帳中… 第 ${M.dayI + 1} 天`));
     if (more) { setTimeout(step, 0); return; }
-    closing = null; BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending();
-    showToast(tx(`Closed ${out.days} day${out.days === 1 ? '' : 's'} · takings ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`, `已結 ${out.days} 天 · 收入 ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`));
-    if (BOOKS.open) updateBooks(true);
+    closing = null; finishClose(out, kind);
   };
   setTimeout(step, 0);
+}
+function finishClose(out, kind) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
+  BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending();
+  showToast(tx(`Closed ${out.days} day${out.days === 1 ? '' : 's'} · takings ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`, `已結 ${out.days} 天 · 收入 ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`));
+  if (kind !== 'day' && out.days) openBooks('Today'); else if (BOOKS.open) updateBooks(true);
 }
 // after New month the panel shows what a Setup would start from: the month and, for a new build, the months since opening
 // a built gym's equipment comes from the builder: the Setup sliders for it are locked (Plan 8 review)

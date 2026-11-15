@@ -2,6 +2,16 @@
 
 All money is in NT dollars and shown as `$`.
 
+## 2026-11-15: running the gym
+
+- Staff: hire or let go full-time desk staff, part-time desk hours and in-house coaches; the roster cost follows. Each coach carries up to 15 PT clients, and more coaches sell more PT over the coming months.
+- Rearrange: the cost and closed days stay at the top; the selected piece gets a yellow outline and a card with Sell; equipment to add is a grid of in-game buttons by group, with prices.
+- Closing a week early lists every day's takings and profit; closing the month lists the closed days by category, revenue and costs.
+- The archetype mix applies from the next morning, without Setup.
+- The opening runs at 10× and the member it follows goes straight to the floor, without the changing room; the desk hint stays until you open the P&L.
+- A dumbbell rack's two pick-up spots both outline the rack itself.
+- The panel is simpler: no seed, no Copy results, no money and loan sliders (set when building), no month chooser (the calendar runs), no equipment sliders (use Rearrange); weather is picked with buttons.
+
 ## 2026-11-15: clearer view and layout
 
 - Benches stand beside the dumbbell racks instead of across the room.

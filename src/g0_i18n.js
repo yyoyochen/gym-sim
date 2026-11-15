@@ -37,7 +37,7 @@ const ZH = {
   'Weather': '天氣', 'Clear': '晴天', 'Rain': '雨天', 'Heatwave': '熱浪',
   'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.':
     '環境與雨天會立即顯示。會員的交通方式（機車、公車、步行、接送）、公車班距和熱浪時的到場曲線，按「設定」後生效。',
-  'Archetype mix (sums to 100 %, applies on Setup)': '會員類型組成（合計 100%，按「設定」後生效）',
+  'Archetype mix (sums to 100 %, applies from tomorrow)': '會員類型組成（合計 100%，明天起生效）',
   'Powerlifter': '健力選手', 'Olympic lifter': '舉重選手', 'Bodybuilder': '健美選手', 'Beginner': '新手', 'Coach with client': '教練帶學員',
   'Patience before swapping': '換器材前的耐心', 'Work-in willingness': '輪流使用意願', 'Rest between sets': '組間休息', 'Re-rack habit': '槓片歸位習慣',
   'Power racks': '健力架', 'Olympic platforms': '舉重台', 'Adjustable benches': '可調式訓練椅', 'Cleaners': '清潔人員',

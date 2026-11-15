@@ -75,7 +75,7 @@ function buildTurf(on) {   /* owner: the turf and sled lane is the player's choi
   }
   buildPreview();
 }
-function closeBuildUI() { if (typeof RDRAG !== 'undefined') RDRAG.id = null; BUILD.mode = null;   /* review C1: no drag outlives the sheet */ if (typeof RGHOST !== 'undefined') RGHOST.visible = false; BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
+function closeBuildUI() { if (typeof RDRAG !== 'undefined') RDRAG.id = null; BUILD.mode = null;   /* review C1: no drag outlives the sheet */ if (typeof RGHOST !== 'undefined') RGHOST.visible = false; if (typeof RSEL !== 'undefined') RSEL.visible = false; BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
 function cancelBuild() {
   if (!BUILD.on) return; const z = BUILD.snap;
   setHall(z.w, z.d); [LOCKERS_M, LOCKERS_F, LOCKERS].forEach((L, i) => L.splice(0, L.length, ...z.lockers[i]));   /* members keep their own locker objects */
@@ -131,7 +131,7 @@ function renderBuild() {
   const c = buildCostNow(), sample = !BUILD.w, tabs = [['Plot', tx('1 Plot', '1 場地')], ['Equipment', tx('2 Equipment', '2 器材')], ['Money', tx('3 Money', '3 資金')]];
   const btn = (attrs, label, cls = '') => `<button class="${cls}" ${attrs}>${label}</button>`;
   if (EQUIP) EQUIP.visible = !(BUILD.intro && BUILD.step === 'welcome');   /* the welcome shows an empty plot */
-  if (BUILD.mode === 'rearrange') { box.innerHTML = rearrangeHtml(btn); return; }   /* Plan 12 */
+  if (BUILD.mode === 'rearrange') { box.innerHTML = rearrangeHtml(btn); updateRSel(); return; }   /* Plan 12 */
   if (BUILD.intro && BUILD.step !== 'custom' && (BUILD.step === 'welcome' || c)) { box.innerHTML = introHtml(c, btn); return; }
   let body = '';
   if (BUILD.tab === 'Plot') {
@@ -197,7 +197,7 @@ function openRearrange() {
   BUILD.layout = JSON.parse(JSON.stringify(BUILD.orig)); BUILD.sel = null; buildPreview(); return true;
 }
 const rOpen = () => BUILD.on && BUILD.mode === 'rearrange';   /* review C1: edits only while Rearrange is open, never on the live gym */
-function rearrangeAdd(kind) { if (!rOpen()) return; if (!addPiece(BUILD.layout, kind, BUILD.w, BUILD.d)) showToast(tx('No room for it: the floor is full.', '放不下了：場地已滿。')); buildPreview(); }
+function rearrangeAdd(kind) { if (!rOpen()) return; const p = addPiece(BUILD.layout, kind, BUILD.w, BUILD.d); if (!p) showToast(tx('No room for it: the floor is full.', '放不下了：場地已滿。')); else { BUILD.sel = p.id; showToast(tx(`Added: ${rname(kind)} · ${money(KINDS[kind].price)}`, `已新增：${rname(kind)} · ${money(KINDS[kind].price)}`)); } buildPreview(); }   /* the new piece is selected, so it shows where it went */
 function rearrangeSell(id) { if (!rOpen()) return; BUILD.layout.pieces = BUILD.layout.pieces.filter(p => p.id !== id); BUILD.sel = null; buildPreview(); }
 function rearrangeDrop(id, sx, sz) { if (!rOpen()) return false; const p = dropPiece(BUILD.layout, id, sx, sz, BUILD.w, BUILD.d); if (!p) showToast(tx("It can't go there: no room for it and its clear floor.", '不能放那裡：放不下器材和它周圍的空間。')); buildPreview(); return !!p; }
 function pieceAt(sx, sz) { const hit = BUILD.layout.pieces.filter(p => { const f = footprint(p); return sx >= f.x0 && sx < f.x1 && sz >= f.z0 && sz < f.z1; }); return hit.find(p => p.kind !== 'turf') || hit[0] || null; }
@@ -208,18 +208,33 @@ function rearrangeApply() {
   showToast(q.days ? tx(`Closed for ${q.days} day${q.days === 1 ? '' : 's'} from tomorrow for rearranging · ${money(q.cost)}`, `明天起休館 ${q.days} 天重新擺設 · ${money(q.cost)}`) : tx(`The new layout opens tomorrow morning · ${money(q.cost)}`, `新擺設明天早上啟用 · ${money(q.cost)}`));
   if (typeof updateMonitors === 'function') updateMonitors();
 }
-function rearrangeHtml(btn) {
-  const d = diffLayouts(BUILD.orig, BUILD.layout), q = quote(d), sel = BUILD.sel && BUILD.layout.pieces.find(p => p.id === BUILD.sel);
-  const kinds = Object.keys(KINDS).filter(k => k !== 'turf' || !BUILD.layout.pieces.some(p => p.kind === 'turf'));
-  return `<h2 class="btitle">${tx('Rearrange', '重新擺設')}</h2>${BUILD.convert ? `<p class="note warn">${tx('Your gym is shown converted to grid pieces for rearranging; its layout may shift a little. Nothing changes unless you apply.', '為了重新擺設，你的健身房以格狀器材顯示，擺設可能略有不同。按「確定」才會變更。')}</p>` : ''}<p class="note">${tx('Drag a piece to move it: the gym picks which way it faces. Tap a piece to sell it. Heavy pieces need movers and a closed day for every 4; new equipment needs a day to install.', '拖曳器材即可移動，方向由系統決定。點器材可賣掉。重型器材要請搬運，每 4 件休館 1 天；新器材安裝要 1 天。')}</p>
-    <table><tr><td>${tx(`Movers (${q.heavy} heavy piece${q.heavy === 1 ? '' : 's'})`, `搬運（${q.heavy} 件重型）`)}</td><td class="n">${money(q.movers)}</td></tr><tr><td>${tx(`Equipment bought (${d.bought.length})`, `購買器材（${d.bought.length}）`)}</td><td class="n">${money(q.buy)}</td></tr>
+const RGROUPS = [['Racks and platforms', '深蹲架與平台', ['rack', 'olyplat']], ['Cardio', '有氧', ['treadmill', 'rower', 'bike', 'airbike']],
+  ['Pin-loaded machines', '插銷式器械', ['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl']], ['Plate-loaded machines', '掛片式器械', ['legpress', 'hack', 'hipthrust', 'beltsquat']],
+  ['Free weights and more', '自由重量與其他', ['bench', 'dbrack', 'cable', 'pullup', 'mat', 'turf']]];
+// owner 2026-11-15: the selected piece wears a yellow outline on the floor, as in the gym view
+const RSEL = new THREE.Group(); RSEL.visible = false; BUILD_GRID.add(RSEL);
+{ const fill = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.22, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), new THREE.LineBasicMaterial({ color: '#dfe03a', fog: false, depthWrite: false }));
+  fill.renderOrder = edge.renderOrder = 7; RSEL.add(fill, edge); RSEL.position.y = 0.11; }
+function updateRSel() {
+  const p = BUILD.on && BUILD.mode === 'rearrange' && BUILD.sel != null && BUILD.layout && BUILD.layout.pieces.find(q => q.id === BUILD.sel);
+  if (!p) { RSEL.visible = false; return; } const f = footprint(p);
+  RSEL.scale.set((f.x1 - f.x0) * SUB, 1, (f.z1 - f.z0) * SUB); RSEL.position.x = HALL.x0 + (f.x0 + f.x1) / 2 * SUB; RSEL.position.z = HALL.zb + (f.z0 + f.z1) / 2 * SUB; RSEL.visible = true;
+}
+function rearrangeHtml(btn) {   /* owner 2026-11-15: the cost on top (pinned), the selected piece's card, then equipment to add as in-game buttons */
+  const d = diffLayouts(BUILD.orig, BUILD.layout), q = quote(d), sel = BUILD.sel && BUILD.layout.pieces.find(p => p.id === BUILD.sel), hasTurf = BUILD.layout.pieces.some(p => p.kind === 'turf');
+  const quoteT = `<div class="rquote"><table><tr><td>${tx(`Movers (${q.heavy} heavy piece${q.heavy === 1 ? '' : 's'})`, `搬運（${q.heavy} 件重型）`)}</td><td class="n">${money(q.movers)}</td></tr><tr><td>${tx(`Equipment bought (${d.bought.length})`, `購買器材（${d.bought.length}）`)}</td><td class="n">${money(q.buy)}</td></tr>
     <tr><td>${tx(`Equipment sold at 40% (${d.sold.length})`, `出售器材 4 成價（${d.sold.length}）`)}</td><td class="n">${money(-q.sell)}</td></tr><tr class="sum"><td>${tx('Total', '合計')}</td><td class="n" data-k="rcost">${money(q.cost)}</td></tr>
     <tr><td>${tx('Closed', '休館')}</td><td class="n" data-k="rdays">${q.days ? tx(`${q.days} day${q.days === 1 ? '' : 's'} from tomorrow`, `明天起 ${q.days} 天`) : tx('none: done overnight', '不用：一個晚上完成')}</td></tr></table>
-    ${sel ? `<div class="row"><span>${rname(sel.kind)}</span>${btn(`data-rsell="${sel.id}"`, tx(`Sell for ${money(REARRANGE.resale * KINDS[sel.kind].price)}`, `以 ${money(REARRANGE.resale * KINDS[sel.kind].price)} 賣掉`))}</div>` : ''}
-    <div class="row"><select id="raddKind">${kinds.map(k => `<option value="${k}">${rname(k)} · ${moneyK(KINDS[k].price)}</option>`).join('')}</select>${btn('data-radd="1"', tx('Add', '新增'))}</div>
-    <div class="row bfoot">${btn('data-bact="cancel"', tx('Cancel', '取消'))}${btn('data-rapply="1"', tx('Apply', '確定'), 'btn-go')}</div>`;
+    <div class="row bfoot">${btn('data-bact="cancel"', tx('Cancel', '取消'))}${btn('data-rapply="1"', tx('Apply', '確定'), 'btn-go')}</div></div>`;
+  const card = sel ? `<section class="rsel"><h3>${rname(sel.kind)}</h3><p class="note">${tx('Drag it on the floor to move it; the gym picks which way it faces.', '在地板上拖曳即可移動，方向由系統決定。')}</p>
+    <div class="row">${btn(`data-rsell="${sel.id}"`, tx(`Sell for ${money(REARRANGE.resale * KINDS[sel.kind].price)}`, `以 ${money(REARRANGE.resale * KINDS[sel.kind].price)} 賣掉`))}${btn('data-rdesel="1"', tx('Done', '完成'))}</div></section>`
+    : `<p class="note">${tx('Tap a piece to select it, or drag it to move it. Heavy pieces need movers and a closed day for every 4; new equipment needs a day to install.', '點器材可選取，拖曳可移動。重型器材要請搬運，每 4 件休館 1 天；新器材安裝要 1 天。')}</p>`;
+  const add = RGROUPS.map(([en, zh, ks]) => { const items = ks.filter(k => KINDS[k] && (k !== 'turf' || !hasTurf));
+    return items.length ? `<h4 class="rgh">${tx(en, zh)}</h4><div class="radd">${items.map(k => btn(`data-radd="${k}"`, `${rname(k)}<small>${moneyK(KINDS[k].price)}</small>`)).join('')}</div>` : ''; }).join('');
+  return `<h2 class="btitle">${tx('Rearrange', '重新擺設')}</h2>${quoteT}${BUILD.convert ? `<p class="note warn">${tx('Your gym is shown converted to grid pieces for rearranging; its layout may shift a little. Nothing changes unless you apply.', '為了重新擺設，你的健身房以格狀器材顯示，擺設可能略有不同。按「確定」才會變更。')}</p>` : ''}${card}<section class="rlist"><h3>${tx('Add equipment', '新增器材')}</h3>${add}</section>`;
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#build button'); if (!b || !BUILD.on || BUILD.mode !== 'rearrange') return; const d = b.dataset;
-  if (d.rsell) rearrangeSell(+d.rsell); else if (d.radd) rearrangeAdd(document.getElementById('raddKind').value); else if (d.rapply) rearrangeApply();
+  if (d.rsell) rearrangeSell(+d.rsell); else if (d.radd) rearrangeAdd(d.radd); else if (d.rdesel) { BUILD.sel = null; renderBuild(); } else if (d.rapply) rearrangeApply();
 });

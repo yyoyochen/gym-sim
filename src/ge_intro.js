@@ -8,6 +8,7 @@ function introWanted() { return introWantedFor(location.search); }
 function onGymOpened(wasIntro) {
   if (!wasIntro || !A) return;
   const at = A.members.length ? A.members[0].spawnT - 5 : A.open - 60; if (A.t < at) fastForward(at - A.t);   /* the clock moves to just before the first member arrives (review I1: not a long empty door) */
+  S.speed = 10; syncSpeed();   /* owner 2026-11-15: the opening, following the first member in, runs at 10× */
   goOn = true; refreshGo(); INTRO.phase = 'wait'; INTRO.t = 0; INTRO.a = null;
   view.target.set(DOOR.x, 0, HZ - 2); view.zoomT = 2.2;
 }
@@ -15,7 +16,7 @@ function updateIntro(real) {
   if (INTRO.phase === 'wait') {
     if (followA || (A && (A.closed || A.done))) { showGoalCard(); return; }   /* the player already follows someone, or the day is closed: no automatic follow */
     const a = AGENTS.find(q => q.visible && q.kind === 'member');
-    if (a) { onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; }
+    if (a) { a.straight = true; if (a.state === 'toLocker' || a.state === 'locker') skipLocker(a); onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; }   /* owner 2026-11-15: no changing room for the member the opening follows */
   } else if (INTRO.phase === 'follow') {
     INTRO.t += real;
     if (followA !== INTRO.a || INTRO.t >= INTRO_FOLLOW_S) {   /* the player picked someone else, or the follow has run its time */

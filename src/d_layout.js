@@ -332,7 +332,9 @@ const DRAW = {
           z += 2 * r + 0.015; }
         w += 2.5; } }
     F.obst(-0.45, z0, 0.4, z1);
-    for (const z of [-0.8, 0.8]) F.st('dbspot', 'dumbbells', 1.0, z, Math.PI, { rest: P2(1.6, z + 0.45), waitBase: P2(1.35, z + 0.2), waitDir: P2(0.2, 0.15) });   /* owner 2026-11-15: a short queue that stays inside the rack's 1.8 m of clear floor */
+    const [s1, s2] = [-0.8, 0.8].map(z => F.st('dbspot', 'dumbbells', 1.0, z, Math.PI, { rest: P2(1.6, z + 0.45), waitBase: P2(1.35, z + 0.2), waitDir: P2(0.2, 0.15) }));   /* owner 2026-11-15: a short queue that stays inside the rack's 1.8 m of clear floor */
+    if (s1.fit) { const B = s1.fit, f = [Math.cos(s1.yaw), Math.sin(s1.yaw)], r = [-Math.sin(s1.yaw), Math.cos(s1.yaw)], cx = s1.x + f[0] * B.ca + r[0] * B.cc - s2.x, cz = s1.z + f[1] * B.ca + r[1] * B.cc - s2.z;
+      s2.fit = { ...B, ca: cx * f[0] + cz * f[1], cc: cx * r[0] + cz * r[1] }; }   /* owner 2026-11-15: both spots outline the rack itself, not the empty floor beside it */
   },
   cable(F) {
     for (const dx of [-1.8, 1.8]) { stackTowerF(F.sub(dx, -0.3), 2.45); const U = F.sub(dx, 0); for (const ddx of [-0.32, 0.32]) U.box(0.076, 2.45, 0.076, STEEL, ddx, 0, 0.2); U.obst(-0.4, -0.6, 0.4, 0.3); F.cyl(0.075, 0.075, 0.05, 12, CHROME, dx * 0.92, 2.1, 0.2, { rx: Math.PI / 2 }); }
