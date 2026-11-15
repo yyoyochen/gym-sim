@@ -7,8 +7,11 @@ node_modules/
 reference/
 reference2/
 .superpowers/
-gymcube-finance/
+finance-model/
 STATUS.md
 
 # private planning notes
 idea.md
+
+# private design docs (never push)
+design-docs/
