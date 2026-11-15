@@ -55,9 +55,12 @@ function placePlots() {
   if (wide) { if (plotbar.parentNode !== document.body) document.body.appendChild(plotbar); plotbar.classList.add('bar'); plotbar.style.right = panelW + 'px'; document.documentElement.style.setProperty('--plotH', plotH + 'px'); document.documentElement.style.setProperty('--plotOff', plotH + 'px'); if (grp) grp.style.display = 'none'; }
   else { if (grp && plotbar.parentNode !== grp) grp.appendChild(plotbar); plotbar.classList.remove('bar'); plotbar.style.right = ''; document.documentElement.style.setProperty('--plotOff', '0px'); if (grp) grp.style.display = ''; }
   // every legend stays on one line so all four plots get the same height; a legend that doesn't fit shrinks its text
-  for (const lg of plotbar.querySelectorAll('.legend')) { let f = 10; lg.classList.remove('short'); lg.style.fontSize = f + 'px'; while (lg.scrollWidth > lg.clientWidth + 1 && f > 8) { f -= 0.5; lg.style.fontSize = f + 'px'; } if (lg.scrollWidth > lg.clientWidth + 1) lg.classList.add('short'); }
+  plotbar.classList.remove('two');
+  for (const lg of plotbar.querySelectorAll('.legend')) { const f0 = parseFloat(fs(10)); let f = f0; lg.classList.remove('short'); lg.style.fontSize = f + 'px'; while (lg.scrollWidth > lg.clientWidth + 1 && f > f0) {   /* never below the smallest size: a legend that doesn't fit switches to its short labels */ f -= 0.5; lg.style.fontSize = f + 'px'; } if (lg.scrollWidth > lg.clientWidth + 1) lg.classList.add('short'); }
+  if ([...plotbar.querySelectorAll('.legend')].some(lg => lg.scrollWidth > lg.clientWidth + 1)) plotbar.classList.add('two');   /* still too long: every legend gets two lines, so the plots stay level */
   for (const c of plotbar.querySelectorAll('canvas')) { const r = c.getBoundingClientRect(); if (r.width > 0) { c.width = Math.round(r.width); c.height = Math.round(Math.max(60, r.height)); } }
 }
+function fs(n) { return getComputedStyle(document.documentElement).getPropertyValue('--f' + n).trim() || n + 'px'; }   // a UI text size, for text drawn on a canvas
 function el(tag, attrs = {}, html = '') { const e = document.createElement(tag); for (const k in attrs) { if (k === 'class') e.className = attrs[k]; else e.setAttribute(k, attrs[k]); } if (html) e.innerHTML = html; return e; }
 function group(title, tab, id) { const g = el('section', { class: 'grp' }); if (tab) g.dataset.tab = tab; if (id) g.id = id; g.appendChild(el('h2', {}, `<span>${tr(title)}</span><span class="pend">${tr('applies on Setup')}</span>`)); panel.appendChild(g); return g; }
 function slider(g, key, label, min, max, step, fmt, onSetup, path, map) {
@@ -116,7 +119,7 @@ function buildPanel() {
   // log scale: 1x .. 600x (a whole 17-hour day in under two minutes at the top end)
   const spd = { toV: (p) => { const v = Math.pow(600, p / 100); return v < 10 ? Math.round(v) : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 25) * 25; }, toPos: (v) => Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)) };
   slider(run, 'speed', 'Speed (gym seconds per real second)', 0, 100, 1, v => v + '×', false, undefined, spd);
-  const r2 = el('div', { class: 'row' }); r2.innerHTML = `<label for="seed" style="flex:0 0 auto;font-size:12px">${tr('Seed')}</label><input type="number" id="seed"><button id="dice" style="flex:0 0 auto" aria-label="${tr('Random seed')}">🎲</button>`;
+  const r2 = el('div', { class: 'row' }); r2.innerHTML = `<label for="seed" style="flex:0 0 auto;font-size:var(--f12)">${tr('Seed')}</label><input type="number" id="seed"><button id="dice" style="flex:0 0 auto" aria-label="${tr('Random seed')}">🎲</button>`;
   const more = el('details', { class: 'more' }, `<summary>${tx('More', '更多')}</summary>`); more.appendChild(r2); W.seed = r2.querySelector('#seed'); W.seed.value = S.seed;   /* playtest: dev controls out of the first screen (Plan 10) */
   W.seed.addEventListener('change', () => { S.seed = Math.max(1, Math.floor(+W.seed.value || 1)); W.seed.value = S.seed; refreshPending(); });
   r2.querySelector('#dice').addEventListener('click', () => { S.seed = Math.floor(Math.random() * 1e6) + 1; W.seed.value = S.seed; refreshPending(); });
@@ -126,7 +129,7 @@ function buildPanel() {
   again.addEventListener('click', () => { if (closing || BUILD.on) return; try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} goOn = false; refreshGo(); openIntro(true); });
   goalB.addEventListener('click', () => { if (typeof showGoalCard === 'function') showGoalCard(true); });
   r6.append(again, goalB); more.appendChild(r6); run.appendChild(more);
-  const r4 = el('div', { class: 'row' }); r4.appendChild(el('span', { style: 'flex:0 0 auto;font-size:12px' }, tr('Close early')));
+  const r4 = el('div', { class: 'row' }); r4.appendChild(el('span', { style: 'flex:0 0 auto;font-size:var(--f12)' }, tr('Close early')));
   for (const [k, lab] of [['day', tx('Day', '今天')], ['week', tx('Week', '本週')], ['month', tx('Month', '本月')]]) { const b = el('button', { 'data-close': k }, lab); b.addEventListener('click', () => closeEarly(k)); r4.appendChild(b); }
   run.appendChild(r4);
   run.appendChild(el('p', { class: 'note', id: 'runNote' }, ''));
@@ -277,7 +280,7 @@ function plotLine(c, arr, max, col, w = 1, dash) {
 }
 function axes(c, max, unit) {
   const W_ = c.canvas.width, H_ = c.canvas.height; c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
-  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '9px Silkscreen, monospace'; c.fillStyle = '#6b7182';
+  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '11px Silkscreen, monospace'; c.fillStyle = '#6b7182';
   for (const h of [7, 10, 13, 16, 19, 22]) { const x = 26 + (h - 7) / 17 * (W_ - 30); c.beginPath(); c.moveTo(x, 4); c.lineTo(x, H_ - 12); c.stroke(); c.fillText(String(h).padStart(2, '0'), x - 5, H_ - 2); }
   c.fillText(String(Math.round(max)), 2, 10); c.fillText('0', 2, H_ - 12);
 }
@@ -304,7 +307,7 @@ function drawPlots() {
   c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
   const bins = new Array(12).fill(0); for (const w of A.waits) bins[Math.min(11, Math.floor(w))]++;
   const bm = Math.max(1, ...bins); const bw = (W_ - 30) / 12;
-  c.font = '9px Silkscreen, monospace';
+  c.font = '11px Silkscreen, monospace';
   bins.forEach((v, i) => { const h = v / bm * (H_ - 22); c.fillStyle = '#4a8acb'; c.fillRect(26 + i * bw + 1, H_ - 12 - h, bw - 2, h); c.fillStyle = '#6b7182'; if (i % 2 === 0) c.fillText(i === 11 ? '11+' : String(i), 26 + i * bw + 2, H_ - 2); });
   c.fillStyle = '#6b7182'; c.fillText(String(bm), 2, 10);
   setText('pHv', tx(`${A.waits.length} waits`, `${A.waits.length} 次等待`));

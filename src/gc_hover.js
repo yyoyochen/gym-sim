@@ -80,9 +80,10 @@ function updateHover() {
   g.beginPath(); for (const e of edges) { g.moveTo(e.a[0], e.a[1]); g.lineTo(e.b[0], e.b[1]); } g.stroke(); g.setLineDash([]);
   // the name and an expand icon (a box with an arrow out of its corner)
   const top = hull.reduce((m, p) => p[1] < m[1] ? p : m), cx = hull.reduce((s, p) => s + p[0], 0) / hull.length, text = hoverLabel(t);
-  g.font = '12px Silkscreen, "Cubic 11", monospace'; const w = g.measureText(text).width + 34, x = Math.max(4, Math.min(W - w - 4, cx - w / 2)), y = Math.max(4, top[1] - 28);
-  g.fillStyle = 'rgba(16,19,28,.92)'; g.fillRect(x, y, w, 20); g.strokeStyle = '#dfe03a'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, 19);
-  g.fillStyle = '#f2f1ea'; g.textBaseline = 'middle'; g.fillText(text, x + 7, y + 10.5);
-  const ix = x + w - 20, iy = y + 4; g.strokeStyle = '#dfe03a'; g.lineWidth = 1.5; g.strokeRect(ix + 0.5, iy + 3.5, 9, 9);
+  const fz = parseFloat(fs(12)), bh = Math.round(fz + 8);   /* the tag grows with the UI text size */
+  g.font = fz + 'px Silkscreen, "Cubic 11", monospace'; const w = g.measureText(text).width + 34, x = Math.max(4, Math.min(W - w - 4, cx - w / 2)), y = Math.max(4, top[1] - bh - 8);
+  g.fillStyle = 'rgba(16,19,28,.92)'; g.fillRect(x, y, w, bh); g.strokeStyle = '#dfe03a'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, bh - 1);
+  g.fillStyle = '#f2f1ea'; g.textBaseline = 'middle'; g.fillText(text, x + 7, y + bh / 2 + 0.5);
+  const ix = x + w - 20, iy = y + Math.round((bh - 12) / 2); g.strokeStyle = '#dfe03a'; g.lineWidth = 1.5; g.strokeRect(ix + 0.5, iy + 3.5, 9, 9);
   g.beginPath(); g.moveTo(ix + 6, iy + 7); g.lineTo(ix + 13, iy); g.moveTo(ix + 8.5, iy); g.lineTo(ix + 13, iy); g.lineTo(ix + 13, iy + 4.5); g.stroke();
 }
