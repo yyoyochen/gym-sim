@@ -3,13 +3,11 @@
 const INTRO = { phase: 'off', t: 0, a: null };   /* off | wait (for the first member) | follow | goal (card up) | done */
 const GOAL = { key: null };
 const INTRO_FOLLOW_S = 8;
-function introWanted() { const q = new URLSearchParams(location.search); if (q.has('selftest') || q.has('shot')) return false; return !introSeen(); }   /* never on test or screenshot pages */
-function introSeen() { try { return localStorage.getItem('gymsim.introDone') === '1'; } catch (e) { return false; } }
-function markIntroSeen() { try { localStorage.setItem('gymsim.introDone', '1'); } catch (e) {} }
+function introWantedFor(search) { const q = new URLSearchParams(search); return !q.has('selftest') && !q.has('shot'); }   /* owner 2026-11-15: every load starts at the size screen (nothing is saved and the sample is hidden); never on test or screenshot pages */
+function introWanted() { return introWantedFor(location.search); }
 function onGymOpened(wasIntro) {
   if (!wasIntro || !A) return;
   const at = A.members.length ? A.members[0].spawnT - 5 : A.open - 60; if (A.t < at) fastForward(at - A.t);   /* the clock moves to just before the first member arrives (review I1: not a long empty door) */
-  markIntroSeen();   /* logged minor 8: a reload after opening doesn't replay the intro */
   goOn = true; refreshGo(); INTRO.phase = 'wait'; INTRO.t = 0; INTRO.a = null;
   view.target.set(DOOR.x, 0, HZ - 2); view.zoomT = 2.2;
 }
@@ -40,7 +38,7 @@ function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) 
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#goalCard button[data-goal]'); if (!b) return;
   const keep = !b.dataset.goal && document.getElementById('goalCard').dataset.mode === 'change';   /* Skip from Change goal keeps the goal */
-  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); INTRO.phase = 'done'; markIntroSeen(); if (typeof updateMonitors === 'function') updateMonitors();
+  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); INTRO.phase = 'done'; if (typeof updateMonitors === 'function') updateMonitors();
 });
 function resetGoal() { GOAL.key = null; }
 function goalNow() {

@@ -1097,7 +1097,7 @@ const SELFTESTS = {
   },
   introWelcome() {   // Plan 10 frame 1: the first screen is a size picker with no Cancel (there is no gym to go back to)
     try { setupRun(); openIntro(); const box = document.getElementById('build'), t = box.textContent;
-      const ok = BUILD.on && BUILD.intro && BUILD.step === 'welcome' && /Open your first gym/.test(t) && /NT dollars/.test(t) && /Take over a running gym/.test(t) && !box.querySelector('[data-bact="cancel"]') && ['S', 'M', 'L'].every(k => box.querySelector(`[data-intro="${k}"]`));
+      const ok = BUILD.on && BUILD.intro && BUILD.step === 'welcome' && /Open your first gym/.test(t) && /NT dollars/.test(t) && !/Take over|接手/.test(t) && !box.querySelector('[data-bact="cancel"]') && ['S', 'M', 'L'].every(k => box.querySelector(`[data-intro="${k}"]`));
       return { ok, detail: { step: BUILD.step, t: t.slice(0, 300) } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
@@ -1115,8 +1115,16 @@ const SELFTESTS = {
       return { ok, detail: { pay, neg: neg.slice(0, 300), pos: pos.slice(0, 400) } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
-  introTakeOver() {   // "Take over a running gym": the sample gym, no build costs, straight to the day
-    try { S.hallW = 16; S.hallD = 10; setupRun(); openIntro(); document.querySelector('#build [data-intro="take"]').click();
+  sampleHidden() {   // owner 2026-11-15: the sample gym is hidden until it is replaced: no Take over, no Sample button, and every normal load starts at the size screen
+    try { setupRun(); try { localStorage.setItem('gymsim.introDone', '1'); } catch (e) {}   /* an old visit's flag must not skip the size screen */
+      openIntro(true); const welcome = !!document.querySelector('#build [data-intro="take"]') || /Take over|接手/.test(document.getElementById('build').textContent); cancelBuild();
+      openBuild(); const tabs = !!document.querySelector('#build [data-pick="sample"]') || /Sample|範例/.test(document.getElementById('build').textContent); cancelBuild();
+      const every = introWantedFor('') && introWantedFor('?seed=3') && !introWantedFor('?selftest=x') && !introWantedFor('?shot=none');
+      return { ok: !welcome && !tabs && every, detail: { welcome, tabs, every } }; }
+    finally { if (BUILD.on) cancelBuild(); try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} }
+  },
+  introTakeOver() {   // the sample gym, taken over (now only from code: hidden from players until it is replaced): no build costs, straight to the day
+    try { S.hallW = 16; S.hallD = 10; setupRun(); openIntro(); buildPick('sample'); openGym();
       return { ok: !BUILD.on && S.hallW === null && BIZ.cash === S.finOwn + S.finLoan - COSTS.capex, detail: { on: BUILD.on, hallW: S.hallW, cash: BIZ.cash } }; }
     finally { if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; setupRun(); }
   },
@@ -1279,11 +1287,6 @@ const SELFTESTS = {
       const t = document.getElementById('goalCard').textContent, m = document.querySelector('#panel details.more').open; return { ok: /你想先挑戰什麼/.test(t) && m, detail: { t: t.slice(0, 60), m } }; }
     finally { setLang('en'); hideGoalCard(); INTRO.phase = 'off'; const more = document.querySelector('#panel details.more'); if (more) more.open = false; }
   },
-  minorIntroDoneOnOpen() {   // logged minor 8: opening a gym from the intro marks the intro seen (a reload before the goal card doesn't replay it)
-    try { setupRun(); try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} openIntro(); document.querySelector('#build [data-intro="take"]').click();
-      return { ok: introSeen(), detail: { seen: introSeen() } }; }
-    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); }
-  },
   minorClickWord() {   // logged minor 9: the hand-off hint says Click on a mouse, Tap on touch
     const w = followWord(); return { ok: w === (matchMedia('(pointer: coarse)').matches ? 'Tap anyone to follow them' : 'Click anyone to follow them'), detail: { w } };
   },
@@ -1295,7 +1298,7 @@ const SELFTESTS = {
   builtGymStartsNew() {   // owner 2026-11-15: a built gym opens as a new business (pre-sale members only, then grows), not an established one; taking over stays established
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
       const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)) };
-      openIntro(); document.querySelector('#build [data-intro="take"]').click(); const b = { build: S.build, pool: M.pool.length };
+      openIntro(); buildPick('sample'); openGym(); const b = { build: S.build, pool: M.pool.length };
       return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 200 && b.build === 'existing' && b.pool > 900, detail: { a, b } }; }
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
   },

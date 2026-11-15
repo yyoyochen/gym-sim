@@ -13,6 +13,7 @@ All money is in NT dollars and shown as `$`.
 - The date under Run shows just the day, without a day count.
 - The books are called P&L everywhere; the phone tab reads P&L with no emoji, like the other tabs.
 - On phones the plots side by side line up, whatever their titles and legends wrap to.
+- The game opens on the size screen every time. The sample gym is hidden for now: no "Take over a running gym" and no Sample size in the builder.
 
 ## 2026-11-15: rearrange your gym
 

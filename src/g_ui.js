@@ -126,7 +126,7 @@ function buildPanel() {
   const r3 = el('div', { class: 'row' }); W.copy = el('button', {}, tr('Copy results')); W.build = el('button', { id: 'buildBtn' }, tx('Build a gym', '設計健身房')); W.build.addEventListener('click', () => { if (closing) return; openBuild(); }); W.rearr = el('button', { id: 'rearrBtn' }, tx('Rearrange', '重新擺設')); W.rearr.addEventListener('click', () => openRearrange()); r3.append(W.build, W.rearr); run.appendChild(r3);
   const r5 = el('div', { class: 'row' }); r5.append(W.copy); more.appendChild(r5);
   const r6 = el('div', { class: 'row' }), again = el('button', { id: 'introAgain' }, tx('Show intro again', '重看開場')), goalB = el('button', { id: 'goalAgain' }, tx('Change goal', '換目標'));
-  again.addEventListener('click', () => { if (closing || BUILD.on) return; try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} goOn = false; refreshGo(); openIntro(true); });
+  again.addEventListener('click', () => { if (closing || BUILD.on) return; goOn = false; refreshGo(); openIntro(true); });
   goalB.addEventListener('click', () => { if (typeof showGoalCard === 'function') showGoalCard(true); });
   r6.append(again, goalB); more.appendChild(r6); run.appendChild(more);
   const r4 = el('div', { class: 'row' }); r4.appendChild(el('span', { style: 'flex:0 0 auto;font-size:var(--f12)' }, tr('Close early')));

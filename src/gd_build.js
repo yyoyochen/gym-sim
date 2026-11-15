@@ -106,8 +106,7 @@ function introHtml(c, btn) {
   if (step === 'welcome') {
     const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping} 坪 · ${Math.round(ping * 3.3058)} m²</small>`); }).join('');
     return `<h2 class="btitle">${tx('Open your first gym', '開你的第一間健身房')}</h2><p class="bwel">${tx('Pick a size for your gym in Taipei. A few members signed up before you open; you win the rest month by month. All money is in NT dollars.', '替你在台北的健身房選個大小。開幕前有少數會員預售報名，其餘要一個月一個月慢慢招募。所有金額都是新台幣。')}</p>
-      <div class="bpick">${pick}</div><div class="row">${btn('data-intro="take"', tx('Take over a running gym', '接手一間營業中的健身房'))}</div>${BUILD.introCancel ? `<div class="row">${btn('data-bact="cancel"', tx('Cancel: back to my gym', '取消：回到我的健身房'))}</div>` : ''}
-      <p class="note">${tx('Taking over skips the build: you run the sample gym, already open.', '接手就不用蓋：直接經營已開幕的範例健身房。')}</p>`;
+      <div class="bpick">${pick}</div>${BUILD.introCancel ? `<div class="row">${btn('data-bact="cancel"', tx('Cancel: back to my gym', '取消：回到我的健身房'))}</div>` : ''}`;
   }
   const k = Object.keys(PRESETS).find(q => PRESETS[q].w === BUILD.w && PRESETS[q].d === BUILD.d), name = k ? tx(...PRESET_NAME[k]) : tx('Custom', '自訂'), head = `${name} · ${c.ping} 坪 · ${Math.round(c.ping * 3.3058)} m²`;
   if (step === 'cost') {
@@ -136,7 +135,7 @@ function renderBuild() {
   if (BUILD.intro && BUILD.step !== 'custom' && (BUILD.step === 'welcome' || c)) { box.innerHTML = introHtml(c, btn); return; }
   let body = '';
   if (BUILD.tab === 'Plot') {
-    const pre = [['S', 'S', PRESETS.S], ['M', 'M', PRESETS.M], ['L', 'L', PRESETS.L]].map(([k, lab, p]) => btn(`data-pick="${k}"`, `${lab}<small>${p.w * p.d} 坪</small>`, BUILD.w === p.w && BUILD.d === p.d ? 'on' : '')).join('') + (BUILD.intro ? '' : btn('data-pick="sample"', `${tx('Sample', '範例')}<small>${tx('today\'s gym', '目前的館')}</small>`, sample ? 'on' : ''));   /* the intro's Customise: the sample is "Take over" on the welcome */
+    const pre = [['S', 'S', PRESETS.S], ['M', 'M', PRESETS.M], ['L', 'L', PRESETS.L]].map(([k, lab, p]) => btn(`data-pick="${k}"`, `${lab}<small>${p.w * p.d} 坪</small>`, BUILD.w === p.w && BUILD.d === p.d ? 'on' : '')).join('');   /* owner 2026-11-15: no Sample button; the sample gym is hidden until the real floor plan replaces it */
     const size = sample ? `<p class="note">${tx('The sample gym: 30 × 20 m, rent counted on 115 坪.', '範例健身房：30 × 20 公尺，租金以 115 坪計算。')}</p>` : `<div class="bstep"><span>${tx('Width', '寬')}</span>${btn('data-size="-1,0"', '−')}<b>${BUILD.w} ${tx('cells', '格')} · ${(BUILD.w * CELL).toFixed(1)} m</b>${btn('data-size="1,0"', '+')}</div>
       <div class="bstep"><span>${tx('Depth', '深')}</span>${btn('data-size="0,-1"', '−')}<b>${BUILD.d} ${tx('cells', '格')} · ${(BUILD.d * CELL).toFixed(1)} m</b>${btn('data-size="0,1"', '+')}</div>`;
     const rules = sample ? '' : (() => { const r = checkPlot(BUILD.w, BUILD.d), L = { area: tx('At least 60 坪', '至少 60 坪'), size: tx('At least 8 × 7 cells (desk, door and two washrooms)', '至少 8 × 7 格（櫃檯、大門與兩間浴廁）'), fits: tx('Fits the site (24 × 18 cells)', '在基地範圍內（24 × 18 格）'), door: tx('Door on the street', '大門面向街道'), connected: tx('One connected shape', '單一連續形狀') };

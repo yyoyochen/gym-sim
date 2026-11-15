@@ -22,7 +22,7 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 
 ## How the sandbox works
 
-1. **Open your first gym.** Pick a size (Small, Medium or Large), check the setup cost, then decide how much of it is your own money and how much is a bank loan. You can start in debt. Or take over a running sample gym and skip the build.
+1. **Open your first gym.** Pick a size (Small, Medium or Large), check the setup cost, then decide how much of it is your own money and how much is a bank loan. You can start in debt. The game opens on this screen every time.
 2. **Watch the doors open.** The camera follows the first member in. Tap anyone, or any piece of equipment, to see what they are doing and why.
 3. **Pick something to try.** A goal appears ("Reach 500 members by the end of month 3", "Don't run out of cash in year 1", "Keep at least 92% of members every month"). They are meant to be reachable with effort. A brand-new gym is not expected to turn a profit in its first month, so none of the goals asks for it. You can skip the goals and explore.
 4. **Run time.** Start the day, speed it up, step through it, or close early to the end of the day, week or month. Gym days run on into months, so you see real monthly rent, payroll and loan payments, not only one day's takings.
