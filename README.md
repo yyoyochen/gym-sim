@@ -24,7 +24,7 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 
 1. **Open your first gym.** Pick a size (Small, Medium or Large), check the setup cost, then decide how much of it is your own money and how much is a bank loan. You can start in debt. Or take over a running sample gym and skip the build.
 2. **Watch the doors open.** The camera follows the first member in. Tap anyone, or any piece of equipment, to see what they are doing and why.
-3. **Pick something to try.** A goal appears ("Make a profit in month 1", "Don't run out of cash in year 1", "Keep most of your members each month"). You can skip it and explore.
+3. **Pick something to try.** A goal appears ("Reach 500 members by the end of month 3", "Don't run out of cash in year 1", "Keep at least 92% of members every month"). They are meant to be reachable with effort. A brand-new gym is not expected to turn a profit in its first month, so none of the goals asks for it. You can skip the goals and explore.
 4. **Run time.** Start the day, speed it up, step through it, or close early to the end of the day, week or month. Gym days run on into months, so you see real monthly rent, payroll and loan payments, not only one day's takings.
 5. **Tap the front desk to open the books.** This is where the money lives:
    - **Today and Books (P&L):** revenue, variable costs, fixed costs and profit, for today, the month so far, the month projected, and the year.
@@ -60,14 +60,15 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 
 ![Members tab: who is at risk of leaving, and three ways to respond](screenshots/06-members-at-risk.jpg)
 
+## Goals
+
+![Pick a goal to try first, or skip and explore](screenshots/07-pick-a-goal.png)
+
+![The goal tracker under the clock, with a hint to tap the desk and open the books](screenshots/08-goal-tracker.png)
+
 ## On a phone
 
 The panels collapse into tabs (Run, Day, Members, Gym, Plots, Books) under the map.
-
-<p>
-  <img src="screenshots/07-phone-goal.png" width="300" alt="Phone: pick a goal to try first">
-  <img src="screenshots/08-phone-tracker.png" width="300" alt="Phone: the goal tracker and the books button">
-</p>
 
 ## Build
 
