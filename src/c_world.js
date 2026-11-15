@@ -6,9 +6,7 @@ sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 200 });
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
 world.add(sun); world.add(sun.target);
-const hallLights = [];
-// hall lights: short reach so their pools stay inside the hall instead of spilling curved bands onto the forecourt
-for (const x of [-10, 0, 10]) for (const z of [-4.5, 4.5]) { const p = new THREE.PointLight(0xfff1d8, 0, 7.6, 0.4); p.position.set(x, 4.0, z); world.add(p); hallLights.push(p); }
+const hallLights = [];   // short reach so their pools stay inside the hall instead of spilling curved bands onto the forecourt; placed by buildHall
 const lotLights = [];
 for (const [x, z] of [[-20, 12.4], [-6, 12.4], [9, 12.2]]) { const p = new THREE.PointLight(0xffb060, 0, 14, 1.4); p.position.set(x, 4.2, z); world.add(p); lotLights.push(p); }
 
@@ -27,22 +25,54 @@ let curSetting = null;
 function applySetting(n) { if (n === curSetting) return; curSetting = n; for (const k in ENV) { ENV[k].w.visible = ENV[k].u.visible = k === n; } }
 function inIsland(x, z) { return x > -38.2 && x < 38.2 && z > -24.2 && z < 26.5; }
 const clouds = new THREE.Group(); under.add(clouds);
-// ================================================================ the hall (30 x 20 m), cutaway walls
-const HX = 15, HZ = 10, WALL_H = 3.8, CUT_H = 1.2;
+// ================================================================ the hall, cutaway walls (Plan 8: its size comes from HALL; the front wall stays at z = HZ)
+// Every fixture is placed at today's coordinates plus the shift of the wall it hangs off (R right, Lf left, Bk back), so the sample hall is unchanged.
+const HZ = 10, WALL_H = 3.8, CUT_H = 1.2;
+const HALL = { x0: -15, x1: 15, zb: -HZ, zf: HZ, w: null, d: null };   // the sample hall, 30 x 20 m (w, d: cells of a built hall)
+const hallShift = () => ({ R: HALL.x1 - 15, Lf: HALL.x0 + 15, Bk: HALL.zb + HZ });
 const DOOR = { x: 12, z: HZ, w: 1.6 };
-// floor: black rubber tiles
-const floorCanvas = document.createElement('canvas'); floorCanvas.width = 600; floorCanvas.height = 400;
-{
-  const c = floorCanvas.getContext('2d'); c.fillStyle = '#2f3340'; c.fillRect(0, 0, 600, 400);
-  for (let i = 0; i < 4000; i++) { c.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.12)'; c.fillRect(Math.random() * 600, Math.random() * 400, 2, 2); }
-  c.fillStyle = '#1c1f2a'; for (let x = 0; x <= 600; x += 20) c.fillRect(x, 0, 1, 400); for (let y = 0; y <= 400; y += 20) c.fillRect(0, y, 600, 1);
-  // entrance mat + painted walkway lines
-  c.fillStyle = '#474c5c'; c.fillRect((DOOR.x - 1.2 + HX) * 20, (HZ - 1.6 + HZ) * 20, 48, 30);
-  c.fillStyle = '#b8a21e'; c.fillRect(0, (6.9 + HZ) * 20, 420, 3); c.fillRect(0, (2.4 + HZ) * 20, 420, 3);
+const CHG = { x0: 11, x1: 15, z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };   // two washrooms with changing space, men's north, women's south
+const PRICEBOARD_AT = { x: 13.33, y: 1.124, z: 8.12 };   // centre of the price card lying flat on the counter by the customers (Plan 8b, owner); rotate or zoom to read it, tap it for the price list
+const DESK_C = { x: 13.6, z: 7.4 }, DESK_MON = { x: 13.5, y: 1.54, z: 7.0 }, DESK_STAFF_POS = { x: 14.35, z: 7.4 };
+const DOOR_OUT = { x: 12, z: HZ + 0.9 }, DOOR_IN = { x: 12, z: HZ - 0.9 }, DESK_PT = { x: 12.55, z: 7.35 }, CHG_DOOR = { x: 10.5, z: 0.2 };
+const WB_AT = { x: -13.0, z: -5.6 }, PRB_AT = { x: -10.4, z: -5.6 };   // whiteboard and PR board, by the left wall near the back
+const LOCKERS_M = [], LOCKERS_F = [], LOCKERS = [];
+// structural columns of a built hall (Plan 8b, owner): a reinforced-concrete frame with bays of at most 9 m (common Taiwan practice, not a code number);
+// interior grid points only (the perimeter ones stand in the walls). Points that fall in the washroom and desk corner move onto the washroom's
+// west wall line, clear of its doors, as if the rooms had been planned on the grid. The sample hall has a long-span roof and none.
+const COLUMNS = [], COL_BAY = 9, COL_SIZE = 0.6;
+function hallAnchors() {   // fixture positions for the current HALL
+  const { R, Lf, Bk } = hallShift();
+  DOOR.x = R + 12; Object.assign(CHG, { x0: R + 11, x1: HALL.x1 }); PRICEBOARD_AT.x = R + 13.33;
+  DESK_C.x = R + 13.6; DESK_MON.x = R + 13.5; DESK_STAFF_POS.x = R + 14.35;
+  DOOR_OUT.x = DOOR_IN.x = DOOR.x; DESK_PT.x = R + 12.55; CHG_DOOR.x = CHG.x0 - 0.5;
+  COLUMNS.length = 0;
+  if (HALL.w != null) {
+    const W = HALL.x1 - HALL.x0, D = HZ - HALL.zb, nx = Math.ceil(W / COL_BAY), nz = Math.ceil(D / COL_BAY);
+    for (let i = 1; i < nx; i++) for (let k = 1; k < nz; k++) {
+      let x = HALL.x0 + i * W / nx, z = HALL.zb + k * D / nz;
+      if (x > R + 11 - 1.0 && z > CHG.z0 - 1.0) { x = R + 11; if (z > CHG.z1 - 0.3) z = CHG.z1; for (const dz of [CHG.doorM, CHG.doorF]) if (Math.abs(z - dz) < 0.95) z = dz + (z >= dz ? 0.95 : -0.95); }
+      if (!COLUMNS.some(c => Math.hypot(c.x - x, c.z - z) < 1)) COLUMNS.push({ x, z });
+    }
+  }
+  if (HALL.w == null) { WB_AT.x = Lf - 13.0; PRB_AT.x = Lf - 10.4; WB_AT.z = PRB_AT.z = Bk - 5.6; }   /* the sample hall: on posts by the dumbbells */
+  else { WB_AT.x = HALL.x0 + 1.6; PRB_AT.x = HALL.x0 + 4.2; WB_AT.z = PRB_AT.z = HALL.zb + 0.08; }   /* a built hall: on the back wall above the stretch corner, clear of every zone */
 }
-const floorTex = new THREE.CanvasTexture(floorCanvas); floorTex.colorSpace = THREE.SRGBColorSpace;
-const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(HX * 2, HZ * 2).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: floorTex }));
+// floor: black rubber tiles, 20 px a metre
+const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial());
 floorMesh.position.y = 0.02; floorMesh.receiveShadow = true; world.add(floorMesh);
+function buildFloor() {
+  const W = HALL.x1 - HALL.x0, D = HALL.zf - HALL.zb, cv = document.createElement('canvas'); cv.width = Math.round(W * 20); cv.height = Math.round(D * 20);
+  const c = cv.getContext('2d'); c.fillStyle = '#2f3340'; c.fillRect(0, 0, cv.width, cv.height);
+  for (let i = 0; i < 4000 * cv.width * cv.height / 240000; i++) { c.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.12)'; c.fillRect(Math.random() * cv.width, Math.random() * cv.height, 2, 2); }
+  c.fillStyle = '#1c1f2a'; for (let x = 0; x <= cv.width; x += 20) c.fillRect(x, 0, 1, cv.height); for (let y = 0; y <= cv.height; y += 20) c.fillRect(0, y, cv.width, 1);
+  // entrance mat + painted walkway lines in front of the cardio and machine rows
+  c.fillStyle = '#474c5c'; c.fillRect((DOOR.x - 1.2 - HALL.x0) * 20, (HZ - 1.6 - HALL.zb) * 20, 48, 30);
+  c.fillStyle = '#b8a21e'; for (const z of [6.9, 2.4]) if (z > HALL.zb) c.fillRect(0, (z - HALL.zb) * 20, Math.max(0, DOOR.x - 6 - HALL.x0) * 20, 3);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  if (floorMesh.material.map) floorMesh.material.map.dispose(); floorMesh.material.map = tex; floorMesh.material.needsUpdate = true;
+  floorMesh.geometry.dispose(); floorMesh.geometry = new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2); floorMesh.position.set((HALL.x0 + HALL.x1) / 2, 0.02, (HALL.zb + HALL.zf) / 2);
+}
 // walls: lower 1.2 m always; upper part only on the far sides of the current view
 const winMat = new THREE.MeshLambertMaterial({ color: '#74abe0', emissive: '#000000', transparent: true, opacity: 0.55 });
 const wallSides = [];
@@ -59,12 +89,17 @@ function wallSide(name, nx, nz, segs) {   // segs: [x0,z0,x1,z1, door?]
   }
   lb.flush(lower); ub.flush(upper);
   upper.position.y = CUT_H; upper.children.forEach(m => { m.position.y = -CUT_H; m.matrixAutoUpdate = true; });
-  wallSides.push({ name, nx, nz, upper, h: 1 });
+  wallSides.push({ name, nx, nz, upper, lower, h: 1 });
 }
-wallSide('front', 0, 1, [[-HX + 1.2, HZ, DOOR.x - 2, HZ, 'glass'], [DOOR.x + 2, HZ, HX - 1.2, HZ, 'glass']]);
-wallSide('back', 0, -1, [[-HX + 1.2, -HZ, HX - 1.2, -HZ]]);
-wallSide('left', -1, 0, [[-HX, -HZ + 1.2, -HX, HZ - 1.2]]);
-wallSide('right', 1, 0, [[HX, -HZ + 1.2, HX, HZ - 1.2, 'glass']]);
+function buildWalls() {
+  for (const w of wallSides) { for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } }
+  wallSides.length = 0;
+  const { x0, x1, zb } = HALL;
+  wallSide('front', 0, 1, [[x0 + 1.2, HZ, DOOR.x - 2, HZ, 'glass'], [DOOR.x + 2, HZ, x1 - 1.2, HZ, 'glass']]);
+  wallSide('back', 0, -1, [[x0 + 1.2, zb, x1 - 1.2, zb]]);
+  wallSide('left', -1, 0, [[x0, zb + 1.2, x0, HZ - 1.2]]);
+  wallSide('right', 1, 0, [[x1, zb + 1.2, x1, HZ - 1.2, 'glass']]);
+}
 function updateWalls(dt) {
   const ox = Math.sin(view.az), oz = Math.cos(view.az);
   for (const w of wallSides) {
@@ -93,12 +128,6 @@ function updateWalls(dt) {
   const FX = 88, FS = 86, FN = 86;   // every setting fills a big board; the view is kept inside it
   scene.fog.color.setRGB(ext('e', 48, FX), ext('s', 46, FS), ext('w', 48, FX)); scene.fog.near = ext('n', 44, FN);
 }
-// full-height corners and entrance portal
-for (const [x, z] of [[-HX, -HZ], [HX, -HZ], [-HX, HZ], [HX, HZ]]) box(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);
-box(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
-for (const dx of [-1.25, 1.25]) box(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
-box(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
-box(1.0, 2.3, 0.04, '#74abe0', DOOR.x - 0.4, 0, HZ + 0.02, 0.0); // open door leaf (glass)
 // sign
 const signCanvas = document.createElement('canvas'); signCanvas.width = 256; signCanvas.height = 48;
 const signTex = new THREE.CanvasTexture(signCanvas); signTex.colorSpace = THREE.SRGBColorSpace; signTex.magFilter = THREE.NearestFilter;
@@ -106,12 +135,11 @@ function paintSign() { const c = signCanvas.getContext('2d'); c.fillStyle = '#1c
 paintSign();
 const signMat = new THREE.MeshLambertMaterial({ map: signTex, emissive: '#000000', emissiveMap: signTex });
 const sign = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 0.1), [L('#1c1f2a'), L('#1c1f2a'), L('#1c1f2a'), L('#1c1f2a'), signMat, L('#1c1f2a')]);
-sign.position.set(DOOR.x, WALL_H + 0.45, HZ + 0.25); sign.castShadow = true; world.add(sign);
+sign.castShadow = true; world.add(sign);   // placed by buildHall
 // real-time clock on the portal
 const clock = new THREE.Group(); world.add(clock);
 const hourHand = new THREE.Group(), minHand = new THREE.Group();
 {
-  clock.position.set(DOOR.x, 3.05, HZ + 0.3);
   clock.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.06, 14).rotateX(Math.PI / 2), L('#f2f1ea')));
   const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.05, 14).rotateX(Math.PI / 2), L('#1c1f2a')); rim.position.z = -0.02; clock.add(rim);
   for (let i = 0; i < 12; i++) { const big = i % 3 === 0; const t = new THREE.Mesh(new THREE.BoxGeometry(big ? 0.06 : 0.035, big ? 0.12 : 0.06, 0.02), L(i === 0 ? '#d6403a' : '#1c1f2a')); const a = i / 12 * Math.PI * 2; t.position.set(Math.sin(a) * 0.33, Math.cos(a) * 0.33, 0.04); t.rotation.z = -a; clock.add(t); }   // 12-hour face, 12 marked in red
@@ -120,27 +148,78 @@ const hourHand = new THREE.Group(), minHand = new THREE.Group();
   hourHand.position.z = 0.05; minHand.position.z = 0.06; clock.add(hourHand); clock.add(minHand);
 }
 // changing rooms, front desk, turnstile, fountain
-const CHG = { x0: 11, x1: HX, z0: -2.2, z1: 5.2, door: 1.6 };
-const LOCKERS = [];
-{
-  const c = '#c4c9d4';
-  box(0.2, CUT_H, CHG.door - 0.6 - CHG.z0, c, CHG.x0, 0, (CHG.z0 + CHG.door - 0.6) / 2);
-  box(0.2, CUT_H, CHG.z1 - (CHG.door + 0.6), c, CHG.x0, 0, (CHG.door + 0.6 + CHG.z1) / 2);
+// two washrooms with changing space (Plan 7b, owner: every gym has a men's and a women's): men's to the north, women's to the south,
+// a divider wall between them, each with its own door on the west wall, a toilet cubicle, a shower, a bench and lockers
+const HALLG = { g: null, u: null };   // the hall's fixtures (its own groups, so a new build can replace them)
+function buildHallFixtures() {
+  for (const k of ['g', 'u']) if (HALLG[k]) { HALLG[k].parent.remove(HALLG[k]); HALLG[k].traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.userData.sign) { o.material[0].map.dispose(); o.material[0].dispose(); o.material[2].dispose(); } }); }
+  HALLG.g = new THREE.Group(); world.add(HALLG.g); HALLG.u = new THREE.Group(); under.add(HALLG.u);
+  const keepSB = SB, HB = new Builder(), HU = new Builder(); SB = HB;   /* box() builds into SB: point it at the hall's own builder while building */
+  const { R, Lf, Bk } = hallShift(), { x0, x1, zb } = HALL;
+  LOCKERS_M.length = LOCKERS_F.length = LOCKERS.length = 0;
+  // full-height corners and entrance portal
+  for (const [x, z] of [[x0, zb], [x1, zb], [x0, HZ], [x1, HZ]]) box(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);
+  box(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
+  for (const dx of [-1.25, 1.25]) box(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
+  box(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
+  box(1.0, 2.3, 0.04, '#74abe0', DOOR.x - 0.4, 0, HZ + 0.02, 0.0); // open door leaf (glass)
+  box(1.8, 0.03, 9, '#c4c9d4', DOOR.x, 0, 15.4, 0, { b: HU });     // entrance walk
+  const c = '#c4c9d4', dw = 0.6;   // half the door gap
+  const seg = (z0, z1) => box(0.2, CUT_H, z1 - z0, c, CHG.x0, 0, (z0 + z1) / 2);
+  seg(CHG.z0, CHG.doorM - dw); seg(CHG.doorM + dw, CHG.doorF - dw); seg(CHG.doorF + dw, CHG.z1);
   box(CHG.x1 - CHG.x0, CUT_H, 0.2, c, (CHG.x0 + CHG.x1) / 2, 0, CHG.z0);
   box(CHG.x1 - CHG.x0, CUT_H, 0.2, c, (CHG.x0 + CHG.x1) / 2, 0, CHG.z1);
-  box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.z1 - CHG.z0 - 0.2, '#959bab', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.z0 + CHG.z1) / 2);
-  for (let i = 0; i < 12; i++) { const z = CHG.z0 + 0.45 + i * 0.6; box(0.5, 1.8, 0.56, i % 2 ? '#2f68ab' : '#1e4a85', HX - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', HX - 0.82, 1.1, z + 0.15); LOCKERS.push({ x: HX - 1.25, z }); }
-  box(0.45, 0.42, 3.4, '#a9733f', 12.6, 0, 1.6); box(0.45, 0.42, 2.2, '#a9733f', 12.6, 0, -1.0);
+  box(CHG.x1 - CHG.x0, CUT_H, 0.2, c, (CHG.x0 + CHG.x1) / 2, 0, CHG.mid);   // divider
+  box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.mid - CHG.z0 - 0.2, '#959bab', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.z0 + CHG.mid) / 2);
+  box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.z1 - CHG.mid - 0.2, '#a5a39a', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.mid + CHG.z1) / 2);
+  const lockers = (list, zs, col) => zs.forEach((z, i) => { box(0.5, 1.8, 0.56, i % 2 ? col[0] : col[1], x1 - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', x1 - 0.82, 1.1, z + 0.15); const L = { x: x1 - 1.25, z }; list.push(L); LOCKERS.push(L); });
+  lockers(LOCKERS_M, [-1.6, -1.0, -0.4, 0.2, 0.8], ['#2f68ab', '#1e4a85']);
+  lockers(LOCKERS_F, [2.0, 2.6, 3.2, 3.8, 4.4], ['#b0506a', '#8a3a52']);
+  // a toilet cubicle (door on its east face) and a shower (glass, tiled tray) in each room; benches between them and the lockers
+  const cubicle = (z) => { box(1.0, 1.9, 0.9, '#d9dde4', R + 11.65, 0, z); box(0.04, 1.6, 0.6, '#6b7182', R + 12.17, 0.1, z); box(0.06, 0.06, 0.06, '#dfe03a', R + 12.2, 0.95, z + 0.2); };
+  const shower = (z) => { box(0.9, 0.06, 0.6, '#74abe0', R + 11.6, 0, z); box(0.9, 2.0, 0.04, '#9fc3e6', R + 11.6, 0, z + 0.3); box(0.04, 2.0, 0.6, '#9fc3e6', R + 12.05, 0, z); box(0.06, 0.25, 0.06, '#c4c9d4', R + 11.25, 1.85, z); };
+  cubicle(-1.65); shower(1.2); cubicle(4.65); shower(2.0);
+  box(0.45, 0.42, 0.9, '#a9733f', R + 12.8, 0, -0.95); box(0.45, 0.42, 0.8, '#a9733f', R + 12.8, 0, 4.3);
+  // door signs (Plan 8b, owner): a small plaque standing on the low wall beside each door, square to the walls; the letter on both faces; M blue, W red
+  const plaque = (letter, bg, z) => { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, 32, 32); g.fillStyle = '#f2f1ea'; g.font = '700 22px Silkscreen, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter, 16, 17);
+    const t = new THREE.CanvasTexture(cv); t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; const face = new THREE.MeshLambertMaterial({ map: t }), edge = L(bg);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 0.36), [face, face, edge, edge, edge, edge]); m.position.set(CHG.x0, CUT_H + 0.2, z); m.userData.sign = letter; HALLG.g.add(m); };
+  plaque('M', '#2f68ab', CHG.doorM + 0.85); plaque('W', '#b0506a', CHG.doorF + 0.85);
   // desk
-  box(0.8, 1.05, 2.4, '#2f3340', 13.6, 0, 7.4); box(0.95, 0.06, 2.55, '#e8dcc0', 13.6, 1.05, 7.4);
-  box(0.3, 0.25, 0.4, '#1c1f2a', 13.5, 1.11, 7.0); box(0.06, 0.06, 0.06, '#dfe03a', 13.4, 1.15, 7.8);
+  box(0.8, 1.05, 2.4, '#2f3340', DESK_C.x, 0, 7.4); box(0.95, 0.06, 2.55, '#e8dcc0', DESK_C.x, 1.05, 7.4);
+  // the front-desk computer (Plan 7b): a Mac mini and an aluminium-stand display facing the desk staff, a keyboard and a mouse
+  box(0.3, 0.06, 0.3, '#d5d8de', R + 13.82, 1.11, 7.72); box(0.3, 0.008, 0.3, '#9aa0ab', R + 13.82, 1.17, 7.72); box(0.008, 0.012, 0.08, '#1c1f2a', R + 13.973, 1.14, 7.72); box(0.01, 0.01, 0.01, '#dfe03a', R + 13.975, 1.13, 7.82);
+  box(0.18, 0.012, 0.16, '#c9ccd2', R + 13.55, 1.11, 7.0); box(0.03, 0.2, 0.12, '#c9ccd2', R + 13.47, 1.122, 7.0);
+  box(0.03, 0.6, 0.94, '#c9ccd2', R + 13.5, 1.24, 7.0); box(0.006, 0.56, 0.9, '#24364f', R + 13.518, 1.26, 7.0); box(0.006, 0.07, 0.32, '#74abe0', R + 13.522, 1.7, 6.82);   /* a big studio display (Plan 8b, owner) */
+  box(0.12, 0.01, 0.3, '#e8e8e8', R + 13.86, 1.11, 7.0); box(0.05, 0.015, 0.035, '#e8e8e8', R + 13.88, 1.11, 7.25);
+  // the price card: lies flat on the counter by the customers under acrylic, redrawn when the price list changes (drawPriceBoard); base, backing, yellow top edge
+  box(0.41, 0.012, 0.64, '#10131c', PRICEBOARD_AT.x, 1.11, PRICEBOARD_AT.z); box(0.41, 0.004, 0.02, '#dfe03a', PRICEBOARD_AT.x, 1.122, PRICEBOARD_AT.z - 0.31);   /* acrylic base and a yellow edge */   // backing and a yellow top edge
   // turnstile
   for (const dx of [-0.75, 0.75]) box(0.25, 1.0, 0.6, '#6b7182', DOOR.x + dx, 0, 8.2);
   box(0.6, 0.05, 0.05, '#c4c9d4', DOOR.x - 0.3, 0.9, 8.2);
   // fountain
-  box(0.5, 1.0, 0.4, '#c4c9d4', 10.65, 0, 5.8); box(0.3, 0.05, 0.25, '#74abe0', 10.65, 1.0, 5.8);
+  box(0.5, 1.0, 0.4, '#c4c9d4', R + 10.65, 0, 5.8); box(0.3, 0.05, 0.25, '#74abe0', R + 10.65, 1.0, 5.8);
+  for (const c of COLUMNS) box(COL_SIZE, WALL_H, COL_SIZE, '#e8dcc0', c.x, 0, c.z);   /* structural columns, full height */
+  // mirror wall on the left, whiteboard and PR board posts
+  box(0.06, 2.1, 8.4, '#d5ebfb', x0 + 0.16, 0.3, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 2.42, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 0.28, Bk - 1.0);
+  for (const [b, at] of [[WB, WB_AT], [PRB, PRB_AT]]) { b.mesh.position.set(at.x, 1.0 + b.h / 2, at.z); if (HALL.w == null) for (const dx of [-b.w / 2 + 0.1, b.w / 2 - 0.1]) box(0.06, 1.0, 0.06, '#474c5c', at.x + dx, 0, at.z); }
+  SB = keepSB; HB.flush(HALLG.g); HU.flush(HALLG.u, false);
 }
-const DESK_STAFF_POS = { x: 14.35, z: 7.4 };
+// a plot of w x d cells, about centred on x = 0 with its front on the street wall; no arguments = the sample hall (30 x 20 m)
+function setHall(w, d) {
+  if (!w) Object.assign(HALL, { x0: -15, x1: 15, zb: -HZ, w: null, d: null });
+  else { const x1 = Math.round(w * CELL / 2); Object.assign(HALL, { x0: x1 - w * CELL, x1, zb: HZ - d * CELL, w, d }); }   /* the right wall on a whole metre, as in the sample hall, so the desk, door and washrooms sit on the 0.5 m walking grid the same way */
+  buildHall();
+}
+// build (or rebuild) the whole hall for HALL: anchors, floor, walls, fixtures, lights, sign and clock, price board
+function buildHall() {
+  hallAnchors(); buildFloor(); buildWalls(); buildHallFixtures();
+  for (const l of hallLights) world.remove(l); hallLights.length = 0;
+  const W = HALL.x1 - HALL.x0, D = HZ - HALL.zb, nx = Math.max(1, Math.round(W / 10)), nz = Math.max(1, Math.round(D / 9)), xc = (HALL.x0 + HALL.x1) / 2, zc = (HALL.zb + HZ) / 2;
+  for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) { const p = new THREE.PointLight(0xfff1d8, 0, 7.6, 0.4); p.position.set(xc + (i - (nx - 1) / 2) * 10, 4.0, zc + (k - (nz - 1) / 2) * 9); world.add(p); hallLights.push(p); }
+  sign.position.set(DOOR.x, WALL_H + 0.45, HZ + 0.25); clock.position.set(DOOR.x, 3.05, HZ + 0.3);
+  PRICEBOARD.mesh.position.set(PRICEBOARD_AT.x, PRICEBOARD_AT.y, PRICEBOARD_AT.z);
+}
 // ================================================================ outside: a Taipei street block
 const ROAD_Z = 23.6;                 // main street centreline is ROAD_Z + 1.8
 const NB = [];
@@ -197,7 +276,6 @@ box(SITE.x1 - SITE.x0, 0.004, SITE.z1 - SITE.z0, '#959bab', (SITE.x0 + SITE.x1) 
 box(30, 0.025, 7.4, '#7d746a', -14, 0, 16.6, 0, { b: UB });
 const SCOOT = [];
 for (let r = 0; r < 2; r++) for (let i = 0; i < 26; i++) { const x = -27.8 + i * 1.05, z = r ? 18.9 : 14.3; SCOOT.push({ x, z, yaw: r ? -Math.PI / 2 : Math.PI / 2 }); box(0.06, 0.03, 2.0, '#f2f1ea', x - 0.52, 0, z, 0, { b: UB }); }
-box(1.8, 0.03, 9, '#c4c9d4', DOOR.x, 0, 15.4, 0, { b: UB });     // entrance walk
 const BUS_STOP = { x: 13.6, z: 20.5 };   // shelter sits back from the kerb so a bus can pull in
 box(3.2, 0.06, 1.2, '#959bab', BUS_STOP.x, 0.12, BUS_STOP.z); box(3.2, 2.4, 0.08, '#74abe0', BUS_STOP.x, 0.12, BUS_STOP.z - 0.6); box(3.4, 0.1, 1.6, '#1e4a85', BUS_STOP.x, 2.5, BUS_STOP.z);
 box(0.1, 2.4, 0.1, '#474c5c', BUS_STOP.x - 1.55, 0.12, BUS_STOP.z + 0.5); box(0.1, 2.4, 0.1, '#474c5c', BUS_STOP.x + 1.55, 0.12, BUS_STOP.z + 0.5); box(1.8, 0.45, 0.4, '#c4c9d4', BUS_STOP.x, 0.12, BUS_STOP.z - 0.3);
@@ -759,14 +837,11 @@ function boardMesh(w, h, x, z, ry) {
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = Math.round(256 * h / w);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter;
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), [L('#474c5c'), L('#474c5c'), L('#474c5c'), L('#474c5c'), new THREE.MeshLambertMaterial({ map: tex }), L('#474c5c')]);
-  m.position.set(x, 1.0 + h / 2, z); m.rotation.y = ry; m.castShadow = true; world.add(m);
-  for (const dx of [-w / 2 + 0.1, w / 2 - 0.1]) box(0.06, 1.0, 0.06, '#474c5c', x + Math.cos(ry) * dx, 0, z - Math.sin(ry) * dx);
-  return { cv, ctx: cv.getContext('2d'), tex };
+  m.position.set(x, 1.0 + h / 2, z); m.rotation.y = ry; m.castShadow = true; world.add(m);   // posts are built with the hall (buildHallFixtures)
+  return { cv, ctx: cv.getContext('2d'), tex, mesh: m, w, h };
 }
-const WB = boardMesh(2.2, 1.3, -13.0, -5.6, 0);
-const PRB = boardMesh(2.4, 1.5, -10.4, -5.6, 0);
-box(0.06, 2.1, 8.4, '#d5ebfb', -HX + 0.16, 0.3, -1.0);     // mirror wall
-box(0.08, 0.1, 8.5, '#6b7182', -HX + 0.18, 2.42, -1.0); box(0.08, 0.1, 8.5, '#6b7182', -HX + 0.18, 0.28, -1.0);
+const WB = boardMesh(2.2, 1.3, WB_AT.x, WB_AT.z, 0);
+const PRB = boardMesh(2.4, 1.5, PRB_AT.x, PRB_AT.z, 0);
 
 // ================================================================ rain + puddles
 const RAIN_N = 1800;
@@ -806,3 +881,11 @@ for (const n in ENV) {
   for (const k in E.sides) { const S_ = E.sides[k]; S_.lb.flush(S_.lo); S_.hb.flush(S_.hi); S_.tb.flush(S_.tall); S_.tall.children.forEach(m => { m.matrixAutoUpdate = true; }); S_.hi.position.y = 3.1; S_.hi.children.forEach(m => { if (!signMeshes.includes(m)) m.position.y = -3.1; m.matrixAutoUpdate = true; }); }
 }
 applySetting('Urban');
+
+// ================================================================ price board on the reception desk (Plan 7b): per-minute prices, cap, floor rental, PT packs
+const PRICEBOARD = { canvas: document.createElement('canvas'), drawn: '', mesh: null };
+PRICEBOARD.canvas.width = 256; PRICEBOARD.canvas.height = 160;
+{ const t = new THREE.CanvasTexture(PRICEBOARD.canvas); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  PRICEBOARD.tex = t; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.375).rotateX(-Math.PI / 2).rotateY(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: t }));
+  m.position.set(PRICEBOARD_AT.x, PRICEBOARD_AT.y, PRICEBOARD_AT.z); world.add(m); PRICEBOARD.mesh = m; }   /* face up, the text reads from the customer side (−x) */
+buildHall();   // the sample hall

@@ -3,7 +3,7 @@
 let FRAME = 0;
 const _o = new V3(), _B = new V3(), _ax = new V3(), _t1 = new V3(), _t2 = new V3(), _t3 = new V3(), _D = new V3();
 const curveDown = (u) => u < 0.5 ? smooth(u / 0.5) : 1 - smooth((u - 0.5) / 0.5);   // 0 -> 1 -> 0
-const isOutside = (p) => Math.abs(p.x) > HX - 0.2 || Math.abs(p.z) > HZ - 0.2;
+const isOutside = (p) => p.x < HALL.x0 + 0.2 || p.x > HALL.x1 - 0.2 || p.z > HZ - 0.2 || p.z < HALL.zb + 0.2;
 // ---------------------------------------------------------------- props
 function drawBar(c, ax, load, bumper, sagK = 1) {
   const sag = Math.min(0.09, load * 0.00028) * sagK;
