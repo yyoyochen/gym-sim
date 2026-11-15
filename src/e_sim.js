@@ -453,6 +453,14 @@ const PT_PER_COACH = 15;   /* owner 2026-11-15: an in-house coach carries about 
 function ptCap(coaches = S.coaches) { return Math.max(0, coaches) * PT_PER_COACH; }
 function ptConvert() { return PT.convert * Math.max(0, S.coaches) / 2; }   /* 2 coaches = the researched rate */
 function ptRoom() { return !M || M.pool.reduce((n, m) => n + (m.pt && !m.outside && m.pt.left > 0 ? 1 : 0), 0) < ptCap(); }
+const CHANGE = { skip: 0.35, loo: 0.15, leaveAsIs: 0.7 };   /* owner 2026-11-15: share who skip the changing room, take a washroom break, and (having skipped) leave without changing */
+function lockerOf(a) { if (!a.locker) { const room = a.female ? LOCKERS_F : LOCKERS_M; a.locker = room[Math.floor(a.rng() * room.length)]; } return a.locker; }   /* their own washroom */
+function squatFirst(a) { const i = a.prog.findIndex(e => e.lift === 'squat'); if (i === 0) return; if (i > 0) a.prog.unshift(a.prog.splice(i, 1)[0]); else a.prog.unshift(makeEx('squat', a, a.rng)); }   /* owner 2026-11-15: the opening's member starts with a squat */
+function squatNow(a) {   /* the opening's member: if they already started their first exercise, drop it and start with the squat */
+  if (a.state !== 'ex' || a.exI !== 0 || (a.prog[0] && a.prog[0].lift === 'squat')) return;
+  for (const s of STATIONS) { if (s.users.includes(a)) release(a, s); s.queue = s.queue.filter(x => x !== a); if (s.reserved === a) s.reserved = null; }
+  a.station = null; squatFirst(a); startExercise(a);
+}
 function skipLocker(a) { a.state = 'ex'; a.exI = 0; a.tIn = A.t; startExercise(a); }   /* owner 2026-11-15: the member the opening follows goes straight to the floor */
 function setupDay(i) {
   if (M && i > 0) applyMixChange();
@@ -604,10 +612,17 @@ function updateMember(a, dt) {
       if (a.waitStart) { A.waits.push((t - a.waitStart) / 60); noteWait(a, (t - Math.max(a.waitStart, A.open)) / 60); a.waitStart = 0; }
       if (!moving(a)) { a.state = 'desk'; a.t0 = t; a.yaw = 0; A.desk.greetUntil = t + 4; a.tDoor = t; A.checkins = (A.checkins || 0) + 1; }
       return;
-    case 'desk': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > 5 && a.straight) { skipLocker(a); return; } if (t - a.t0 > 5) { a.state = 'toLocker'; const room = a.female ? LOCKERS_F : LOCKERS_M, L = room[Math.floor(a.rng() * room.length)]; /* their own washroom */ a.locker = L; goLocker(a, L); } return;
+    case 'desk': a.act = { k: 'idle', arms: 'rest' };
+      if (t - a.t0 > 5) {   /* owner 2026-11-15: not everyone changes: about a third come dressed and go straight to the floor; some pop into the washroom mid-workout */
+        if (a.noChange === undefined) { a.noChange = !!a.straight || a.rng() < CHANGE.skip; a.looAt = !a.straight && a.prog.length > 1 && a.rng() < CHANGE.loo ? 1 + Math.floor(a.rng() * (a.prog.length - 1)) : -1; }
+        if (a.noChange) { skipLocker(a); return; }
+        a.state = 'toLocker'; goLocker(a, lockerOf(a)); }
+      return;
     case 'toLocker': a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'locker'; a.t0 = t; a.yaw = 0; a.lockDur = 90 + a.rng() * 120; } return;
     case 'locker': a.act = { k: 'idle', arms: 'locker' }; if (t - a.t0 > a.lockDur) { a.state = 'ex'; a.exI = 0; a.tIn = t; startExercise(a); } return;
     case 'ex': return updateExercise(a, dt);
+    case 'toLoo': a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'loo'; a.t0 = t; a.yaw = 0; a.lockDur = 60 + a.rng() * 90; } return;
+    case 'loo': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > a.lockDur) { a.state = 'ex'; startExercise(a); } return;
     case 'toLockerOut': a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'lockerOut'; a.t0 = t; a.yaw = 0; a.lockDur = 120 + a.rng() * 150; } return;
     case 'lockerOut': a.act = { k: 'idle', arms: 'locker' }; if (t - a.t0 > a.lockDur || t > T_CLOSE + 10 * 60) { a.state = 'toExit'; go(a, DOOR_OUT.x, DOOR_OUT.z); } return;
     case 'toExit':
@@ -638,7 +653,10 @@ function updateMember(a, dt) {
 function finishMember(a) { if (a.tDoor) A.visitLens = (A.visitLens || []).concat((A.t - a.tDoor) / 60); a.state = 'gone'; a.visible = false; if (a.coach) { a.coach.visible = false; a.coach.state = 'gone'; } }
 function startExercise(a) {
   const t = A.t;
-  if (a.exI >= a.prog.length || t - a.tIn > a.stay + 15 * 60 || t > T_CLOSE - 5 * 60) { a.state = 'toLockerOut'; const L = a.locker || (a.female ? LOCKERS_F : LOCKERS_M)[0]; goLocker(a, L); a.station = null; return; }
+  if (a.exI >= a.prog.length || t - a.tIn > a.stay + 15 * 60 || t > T_CLOSE - 5 * 60) {
+    a.station = null; if (a.noChange && a.rng() < CHANGE.leaveAsIs) { a.state = 'toExit'; go(a, DOOR_OUT.x, DOOR_OUT.z); return; }   /* came dressed, most leave dressed */
+    a.state = 'toLockerOut'; goLocker(a, lockerOf(a)); return; }
+  if (a.exI > 0 && a.exI === a.looAt && !a.looDone) { a.looDone = true; a.station = null; a.state = 'toLoo'; goLocker(a, lockerOf(a)); return; }   /* a washroom break between exercises */
   const e = a.prog[a.exI]; e.st = 'choose'; e.setI = 0; a.station = null;
   // racks used for curls (live switch): some bodybuilders take a rack for curls
   if (S.curls && e.lift === 'dbcurl' && a.rng() < 0.5) { const ex2 = makeEx('rackcurl', a, a.rng, { n: e.sets.length, reps: 10 }); a.prog[a.exI] = ex2; return chooseStation(a, ex2); }

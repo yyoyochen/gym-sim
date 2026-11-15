@@ -398,9 +398,9 @@ function buildNav() {
   const dz = CHG_DZ;   /* 0 in the sample hall; a built hall's washrooms sit in the back corner */
   blockRect(hx1 - 0.85, CHG.z0, hx1, CHG.z1); blockRect(R + 12.55, -1.4 + dz, R + 13.05, -0.5 + dz); blockRect(R + 12.55, 3.9 + dz, R + 13.05, 4.7 + dz);
   blockRect(R + 11.1, -2.1 + dz, R + 12.2, -1.2 + dz); blockRect(R + 11.1, 0.9 + dz, R + 12.1, 1.5 + dz); blockRect(R + 11.1, 4.2 + dz, R + 12.2, 5.1 + dz); blockRect(R + 11.1, 1.7 + dz, R + 12.1, 2.3 + dz);
-  // desk, turnstile posts, fountain, boards, mirror
+  // desk, turnstile posts, boards, mirror
   blockRect(R + 13.15, 6.15, R + 14.05, 8.65); blockRect(DOOR.x - 0.9, 7.9, DOOR.x - 0.6, 8.5); blockRect(DOOR.x + 0.6, 7.9, DOOR.x + 0.9, 8.5);
-  blockRect(R + 10.4, 5.55, R + 10.9, 6.05); if (HALL.w == null) { blockRect(Lf - 14.2, WB_AT.z - 0.15, Lf - 11.8, WB_AT.z + 0.15); blockRect(Lf - 11.7, PRB_AT.z - 0.15, Lf - 9.1, PRB_AT.z + 0.15); }   /* a built hall hangs them on the back wall */
+  if (HALL.w == null) { blockRect(Lf - 14.2, WB_AT.z - 0.15, Lf - 11.8, WB_AT.z + 0.15); blockRect(Lf - 11.7, PRB_AT.z - 0.15, Lf - 9.1, PRB_AT.z + 0.15); }   /* a built hall hangs them on the back wall */
   // outside: bus shelter, bike rack, lamps, trees
   blockRect(BUS_STOP.x - 1.6, BUS_STOP.z - 0.75, BUS_STOP.x + 1.6, BUS_STOP.z - 0.55);
   for (const t of TREES) blockRect(t.x - 0.5, t.z - 0.5, t.x + 0.5, t.z + 0.5);

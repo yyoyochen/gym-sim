@@ -16,7 +16,7 @@ function updateIntro(real) {
   if (INTRO.phase === 'wait') {
     if (followA || (A && (A.closed || A.done))) { showGoalCard(); return; }   /* the player already follows someone, or the day is closed: no automatic follow */
     const a = AGENTS.find(q => q.visible && q.kind === 'member');
-    if (a) { a.straight = true; if (a.state === 'toLocker' || a.state === 'locker') skipLocker(a); onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; }   /* owner 2026-11-15: no changing room for the member the opening follows */
+    if (a) { a.straight = true; if (!a.exI && a.state !== 'ex') squatFirst(a); if (a.state === 'toLocker' || a.state === 'locker') skipLocker(a); else squatNow(a); onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; }   /* owner 2026-11-15: no changing room for the member the opening follows */
   } else if (INTRO.phase === 'follow') {
     INTRO.t += real;
     if (followA !== INTRO.a || INTRO.t >= INTRO_FOLLOW_S) {   /* the player picked someone else, or the follow has run its time */

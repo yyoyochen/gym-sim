@@ -4,16 +4,17 @@
 const BUILD = { layout: null, turf: true, on: false, w: null, d: null, want: {}, counts: {}, fitted: {}, kit: null, full: {}, tab: 'Plot', snap: null, intro: false, step: 'welcome' };   /* intro: the first-session steps (Plan 10) in front of the tabs */   /* want: what the learner asked for; counts: what fits */
 const BUILD_KEYS = [['cardio', 'Cardio machines', '有氧器材'], ['machines', 'Pin-loaded machines', '插銷式器械'], ['racks', 'Power racks', '深蹲架'], ['plats', 'Olympic platforms', '舉重平台'], ['benches', 'Benches', '訓練椅'], ['plates', 'Plate-loaded machines', '掛片式器械']];
 const BUILD_GRID = new THREE.Group(); BUILD_GRID.visible = false; world.add(BUILD_GRID);
-{ // the buildable grid: 24 x 18 cells of 1.82 m, centred on x = 0, front row on the street wall
-  const W = BUILD_LIMITS.maxW * CELL, D = BUILD_LIMITS.maxD * CELL, pts = [];
-  /* owner 2026-11-15: one grid only (no sub-grid), shown in Build and Rearrange; overlays sit on their own levels well above the floor and the turf (0.045 m), with a depth offset, so nothing flickers */
-  const OFF = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false, fog: false };
-  for (let i = 0; i <= BUILD_LIMITS.maxW; i++) { const x = -W / 2 + i * CELL; pts.push(x, 0.085, HZ, x, 0.085, HZ - D); }
-  for (let k = 0; k <= BUILD_LIMITS.maxD; k++) { const z = HZ - k * CELL; pts.push(-W / 2, 0.085, z, W / 2, 0.085, z); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  const main = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.35, ...OFF })); main.userData.main = true; main.renderOrder = 5; BUILD_GRID.add(main);
-  const plot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.18, ...OFF }));
-  plot.position.y = 0.07; plot.renderOrder = 4; BUILD_GRID.add(plot); BUILD_GRID.userData.plot = plot;
+// owner 2026-11-15: one grid, inside the plot only, in a solid palette colour (see-through lines and fills were snapped to stray specks by the palette pass);
+// the plot is a solid yellow border; both sit above the floor and the platforms
+const GRID_LINES = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#474c5c', fog: false })); GRID_LINES.userData.main = true; GRID_LINES.position.y = 0.09; GRID_LINES.renderOrder = 4; BUILD_GRID.add(GRID_LINES);
+const PLOT_EDGE = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#dfe03a', fog: false })); PLOT_EDGE.position.y = 0.1; PLOT_EDGE.renderOrder = 5; BUILD_GRID.add(PLOT_EDGE); BUILD_GRID.userData.plot = PLOT_EDGE;
+function rebuildGrid() {
+  const pts = [], { x0, x1, zb } = HALL;
+  for (let x = x0; x <= x1 + 1e-6; x += CELL) pts.push(x, 0, zb, x, 0, HZ);
+  for (let z = HZ; z >= zb - 1e-6; z -= CELL) pts.push(x0, 0, z, x1, 0, z);
+  GRID_LINES.geometry.dispose(); GRID_LINES.geometry = new THREE.BufferGeometry(); GRID_LINES.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  const e = [x0, 0, zb, x1, 0, zb, x1, 0, zb, x1, 0, HZ, x1, 0, HZ, x0, 0, HZ, x0, 0, HZ, x0, 0, zb];
+  PLOT_EDGE.geometry.dispose(); PLOT_EDGE.geometry = new THREE.BufferGeometry(); PLOT_EDGE.geometry.setAttribute('position', new THREE.Float32BufferAttribute(e, 3));
 }
 const buildEl = () => document.getElementById('build');
 const buildPlan = () => ({ w: BUILD.w, d: BUILD.d, counts: BUILD.counts, layout: BUILD.layout });
@@ -35,8 +36,7 @@ function buildPreview() {
   setHall(BUILD.w, BUILD.d); buildLayout({ ...S, ...(BUILD.w ? countsOf(BUILD.layout) : SAMPLE_COUNTS), layout: BUILD.w ? BUILD.layout : null, turf: BUILD.turf, shock: 'none' });
   const pc = placedCounts(); BUILD.fitted = pc.counts; BUILD.kit = BUILD.w ? kitOf(BUILD.layout) : pc.kit;
   BUILD.full = {}; for (const [k] of BUILD_KEYS) { BUILD.counts[k] = BUILD.w ? countsOf(BUILD.layout)[k] : SAMPLE_COUNTS[k]; if (BUILD.w && BUILD.want[k] > BUILD.counts[k]) BUILD.full[k] = true; }   /* only what is placed is bought; say so when the floor ran out */
-  for (const o of BUILD_GRID.children) if (o.isLineSegments) o.position.x = HALL.x0 - CELL * Math.round(HALL.x0 / CELL);   /* grid lines on the plot's edges (the right wall snaps to a whole metre) */
-  const p = BUILD_GRID.userData.plot; p.scale.set(HALL.x1 - HALL.x0, 1, HZ - HALL.zb); p.position.x = (HALL.x0 + HALL.x1) / 2; p.position.z = (HALL.zb + HZ) / 2;
+  rebuildGrid();
   renderBuild();
 }
 function buildPick(k) {
@@ -187,7 +187,7 @@ const RNAME = { rack: ['Power rack', '深蹲架'], olyplat: ['Olympic platform',
   cable: ['Cable tower', '滑輪架'], pullup: ['Pull-up station', '引體向上架'], mat: ['Stretch mat', '伸展墊'], turf: ['Turf and sled lane', '草皮與雪橇道'] };
 const rname = (k) => tx(...(RNAME[k] || [k, k]));
 const RGHOST = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#5ee08a', transparent: true, opacity: 0.4, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-RGHOST.position.y = 0.1; RGHOST.renderOrder = 6; RGHOST.visible = false; BUILD_GRID.add(RGHOST);
+RGHOST.position.y = 0.12; RGHOST.renderOrder = 6; RGHOST.visible = false; BUILD_GRID.add(RGHOST);
 function openRearrange() {
   if ((typeof closing !== 'undefined' && closing) || BUILD.on) return false;
   if (BIZ && (BIZ.pending || (A && A.closed && A.closedWhy === 'rearrange'))) { showToast(tx('A rearrange is already booked: wait until the gym reopens.', '已經安排重新擺設：請等健身房重新開門。')); return false; }
@@ -212,14 +212,14 @@ const RGROUPS = [['Racks and platforms', '深蹲架與平台', ['rack', 'olyplat
   ['Pin-loaded machines', '插銷式器械', ['pulldown', 'row', 'chestpress', 'shoulderpress', 'pecdeck', 'legext', 'legcurl']], ['Plate-loaded machines', '掛片式器械', ['legpress', 'hack', 'hipthrust', 'beltsquat']],
   ['Free weights and more', '自由重量與其他', ['bench', 'dbrack', 'cable', 'pullup', 'mat', 'turf']]];
 // owner 2026-11-15: the selected piece wears a yellow outline on the floor, as in the gym view
-const RSEL = new THREE.Group(); RSEL.visible = false; BUILD_GRID.add(RSEL);
-{ const fill = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.22, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), new THREE.LineBasicMaterial({ color: '#dfe03a', fog: false, depthWrite: false }));
-  fill.renderOrder = edge.renderOrder = 7; RSEL.add(fill, edge); RSEL.position.y = 0.11; }
+const RSEL = new THREE.Group(); RSEL.visible = false; BUILD_GRID.add(RSEL);   /* a solid frame of four strips (no see-through fill: the palette pass would speckle it) */
+{ const m = new THREE.MeshBasicMaterial({ color: '#dfe03a', fog: false }); for (let i = 0; i < 4; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1, 0.02, 1), m); b.renderOrder = 7; RSEL.add(b); } RSEL.position.y = 0.13; }
 function updateRSel() {
   const p = BUILD.on && BUILD.mode === 'rearrange' && BUILD.sel != null && BUILD.layout && BUILD.layout.pieces.find(q => q.id === BUILD.sel);
-  if (!p) { RSEL.visible = false; return; } const f = footprint(p);
-  RSEL.scale.set((f.x1 - f.x0) * SUB, 1, (f.z1 - f.z0) * SUB); RSEL.position.x = HALL.x0 + (f.x0 + f.x1) / 2 * SUB; RSEL.position.z = HALL.zb + (f.z0 + f.z1) / 2 * SUB; RSEL.visible = true;
+  if (!p) { RSEL.visible = false; return; } const f = footprint(p), w = (f.x1 - f.x0) * SUB, d = (f.z1 - f.z0) * SUB, t = 0.09;
+  RSEL.position.x = HALL.x0 + (f.x0 + f.x1) / 2 * SUB; RSEL.position.z = HALL.zb + (f.z0 + f.z1) / 2 * SUB; RSEL.userData.size = [w, d];
+  const [a, b, c, e] = RSEL.children; a.scale.set(w + t, 1, t); a.position.set(0, 0, -d / 2); b.scale.set(w + t, 1, t); b.position.set(0, 0, d / 2); c.scale.set(t, 1, d + t); c.position.set(-w / 2, 0, 0); e.scale.set(t, 1, d + t); e.position.set(w / 2, 0, 0);
+  RSEL.visible = true;
 }
 function rearrangeHtml(btn) {   /* owner 2026-11-15: the cost on top (pinned), the selected piece's card, then equipment to add as in-game buttons */
   const d = diffLayouts(BUILD.orig, BUILD.layout), q = quote(d), sel = BUILD.sel && BUILD.layout.pieces.find(p => p.id === BUILD.sel), hasTurf = BUILD.layout.pieces.some(p => p.kind === 'turf');

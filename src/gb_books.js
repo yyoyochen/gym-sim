@@ -55,6 +55,36 @@ const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
 function liveLineText() { const p = A && A.pnl; return tx(`Today ${nt$(p && p.takings)} · ${(A && A.checkins) || 0} check-ins`, `今日 ${nt$(p && p.takings)} · 進場 ${(A && A.checkins) || 0} 人`); }
 function updateLiveLine() { const out = !!(BIZ && BIZ.cashOutAt); setText('liveLine', liveLineText() + (out ? tx(' · cash ran out', ' · 現金用完') : '')); const ll = document.getElementById('liveLine'); if (ll) ll.classList.toggle('out', out); }
+// owner 2026-11-15: the receptionist; a tap gets a line about the gym and what they noticed about its people
+const RECEP = { last: '', until: 0 };
+function receptionistLines() {
+  if (!A) return [tx('Morning! Doors open soon.', '早安！快開門了。')];
+  const L = [], q = STATIONS.reduce((b, s) => (s.queue.length > (b ? b.queue.length : 0) ? s : b), null), stray = STATIONS.reduce((n, s) => n + s.strayDB, 0), regs = A.members.filter(a => a.visible && a.rec);
+  L.push(A.inside > 30 ? tx(`${A.inside} people in right now. It's packed.`, `現在館內 ${A.inside} 人，好擠。`) : A.inside < 5 ? tx(`Only ${A.inside} in right now. A quiet spell.`, `現在館內只有 ${A.inside} 人，很安靜。`) : tx(`${A.inside} in right now, a steady crowd.`, `現在館內 ${A.inside} 人，人潮穩定。`));
+  L.push(tx(`${A.checkins || 0} checked in so far today.`, `今天到目前為止有 ${A.checkins || 0} 人進場。`));
+  if (q && q.queue.length) L.push(tx(`The ${stationName(q).toLowerCase()} has ${q.queue.length} waiting. People keep asking when it frees up.`, `${stationName(q)}有 ${q.queue.length} 人在等，大家一直問什麼時候輪到。`));
+  if (stray) L.push(tx(`${stray} dumbbell${stray === 1 ? '' : 's'} left lying around. I'll tell the cleaner.`, `有 ${stray} 個啞鈴沒歸位，我會跟清潔人員說。`));
+  if (A.prs && A.prs.length) L.push(tx(`${A.prs.length} PR${A.prs.length === 1 ? '' : 's'} today. You could hear one from here.`, `今天有 ${A.prs.length} 個人破個人紀錄，在這裡都聽得到。`));
+  if (M) L.push(tx(`This month ${M.joinedTotal || 0} signed up and ${M.lapsedTotal || 0} stopped coming.`, `這個月有 ${M.joinedTotal || 0} 人入會，${M.lapsedTotal || 0} 人沒再來。`));
+  if (S.weather === 'Rain') L.push(tx('Rain keeps the casual crowd at home.', '下雨天，隨興來的人就少了。'));
+  if (S.weather === 'Heatwave') L.push(tx('Everyone asks if the air con is on full.', '每個人都在問冷氣是不是開到最強。'));
+  L.push(tx('Weekday evenings, six to ten, are the rush.', '平日晚上六點到十點是尖峰。'));
+  L.push(tx(`${S.coaches} coach${S.coaches === 1 ? '' : 'es'} on the roster; ${M ? M.pool.filter(m => m.pt && !m.outside).length : 0} members train with one.`, `目前有 ${S.coaches} 位駐館教練，${M ? M.pool.filter(m => m.pt && !m.outside).length : 0} 位會員有上教練課。`));
+  if (regs.length) { const a = regs[Math.floor(Math.random() * regs.length)], n = a.rec.visits.length;
+    L.push(n >= 8 ? tx(`I see ${trName(a.name)} almost every day.`, `${trName(a.name)}幾乎天天來。`) : a.rec.isNew ? tx(`${trName(a.name)} is new; still finding their way around.`, `${trName(a.name)}是新會員，還在熟悉環境。`) : tx(`${trName(a.name)} drops in a few times a month.`, `${trName(a.name)}一個月來幾次。`)); }
+  L.push(tx('Someone asked again whether we sell protein shakes.', '又有人問我們有沒有賣高蛋白。'), tx('A water bottle was left on the bench. It is in the lost and found.', '有人把水壺忘在椅子上，放在失物招領了。'));
+  return L;
+}
+function receptionistSay() {
+  let box = document.getElementById('recepSay'); if (!box) { box = el('div', { id: 'recepSay' }, '<b></b><p></p>'); document.body.appendChild(box); }
+  const L = receptionistLines(), pool = L.filter(x => x !== RECEP.last), line = (pool.length ? pool : L)[Math.floor(Math.random() * (pool.length || L.length))];
+  RECEP.last = line; box.querySelector('b').textContent = tx('Receptionist', '櫃檯人員'); box.querySelector('p').textContent = line; box.hidden = false; RECEP.until = performance.now() + 8000;
+}
+function updateRecepSay(toScreen) {
+  const box = document.getElementById('recepSay'); if (!box || box.hidden) return;
+  if (performance.now() > RECEP.until || BOOKS.open || (typeof BUILD !== 'undefined' && BUILD.on) || !A || !A.desk) { box.hidden = true; return; }
+  const p = toScreen({ x: A.desk.pos.x, y: 2.2, z: A.desk.pos.z }); box.style.left = Math.round(p[0]) + 'px'; box.style.top = Math.round(p[1]) + 'px';
+}
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
   const gc = document.getElementById('goalCard'), show = !!A && !BOOKS.open && !booksSeen() && !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;

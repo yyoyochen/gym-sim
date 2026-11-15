@@ -4,6 +4,13 @@ All money is in NT dollars and shown as `$`.
 
 ## 2026-11-15: running the gym
 
+- Members don't all change: about a third come dressed and go straight to the floor (most leave the same way), and some take a washroom break mid-workout.
+- The person at the desk is the Receptionist: tap them for a line about the gym and its members; the counter still opens the P&L.
+- The opening's member starts with a squat.
+- Rearrange: hovering a piece shows its dotted outline and name; the selected piece has a solid yellow frame.
+- The build grid stays inside the plot, with a solid yellow border, so no specks on the empty lot or the floor.
+- The selection mark sits above platforms and turf.
+- The drinking fountain by the entrance is gone; Goal sits with Build a gym and Rearrange, and More is gone.
 - Staff: hire or let go full-time desk staff, part-time desk hours and in-house coaches; the roster cost follows. Each coach carries up to 15 PT clients, and more coaches sell more PT over the coming months.
 - Rearrange: the cost and closed days stay at the top; the selected piece gets a yellow outline and a card with Sell; equipment to add is a grid of in-game buttons by group, with prices.
 - Closing a week early lists every day's takings and profit; closing the month lists the closed days by category, revenue and costs.

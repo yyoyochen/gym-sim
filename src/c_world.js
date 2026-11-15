@@ -208,8 +208,7 @@ function buildHallFixtures() {
   // turnstile
   for (const dx of [-0.75, 0.75]) box(0.25, 1.0, 0.6, '#6b7182', DOOR.x + dx, 0, 8.2);
   box(0.6, 0.05, 0.05, '#c4c9d4', DOOR.x - 0.3, 0.9, 8.2);
-  // fountain
-  box(0.5, 1.0, 0.4, '#c4c9d4', R + 10.65, 0, 5.8); box(0.3, 0.05, 0.25, '#74abe0', R + 10.65, 1.0, 5.8);
+  /* owner 2026-11-15: no drinking fountain */
   for (const c of COLUMNS) box(COL_SIZE, WALL_H, COL_SIZE, '#e8dcc0', c.x, 0, c.z);   /* structural columns, full height */
   // mirror wall on the left, whiteboard and PR board posts
   box(0.06, 2.1, 8.4, '#d5ebfb', x0 + 0.16, 0.3, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 2.42, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 0.28, Bk - 1.0);

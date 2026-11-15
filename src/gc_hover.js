@@ -34,7 +34,7 @@ function updateFollowMark(dt = 0) {
   for (const m of u.edges) { const { sx, sz, px } = m.userData, w = px * wpp / k;
     m.position.x = sx * A_; m.position.z = sz * C_; m.scale.set(sx ? w : 2 * A_ + w, 1, sx ? 2 * C_ + w : w); }
   FOLLOW_MARK.rotation.y = -yaw;   /* local x runs along the machine's facing */
-  FOLLOW_MARK.position.set(cx, 0.035, cz);
+  FOLLOW_MARK.position.set(cx, 0.08, cz);   /* owner 2026-11-15: above platform tops (0.065 m), turf and mats, so the floor never hides it */
 }
 // the box that stands for each kind of thing: [centre x, z, bottom y, size along its facing, height, size across, facing angle]
 const STATION_BOX = { rack: [1.4, 2.4, 1.5], olyplat: [2.6, 0.4, 2.4], bench: [1.3, 0.7, 0.6], dbspot: [1.0, 1.0, 1.8], cable: [1.0, 2.2, 1.2], sled: [1.0, 1.0, 0.8], pullup: [1.0, 2.4, 1.2], mat: [0.8, 0.15, 1.7] };
@@ -42,6 +42,7 @@ function hoverBox(t) {
   if (t.kind === 'agent') { const [x, z] = personTile(t.a); return [x, z, 0, 1, t.a.P && t.a.P.H ? t.a.P.H.y + 0.2 : 1.9, 1, 0]; }   /* the tile they'd get if picked */
   if (t.kind === 'board') return [PRICEBOARD_AT.x, PRICEBOARD_AT.z, 1.11, 0.42, 0.04, 0.66, 0];   /* flat on the counter */
   if (t.kind === 'desk') return [DESK_C.x, DESK_C.z, 0, 1.0, 1.6, 2.6, 0];
+  if (t.kind === 'piece') { const f = footprint(t.p); return [HALL.x0 + (f.x0 + f.x1) / 2 * SUB, HALL.zb + (f.z0 + f.z1) / 2 * SUB, 0.1, (f.x1 - f.x0) * SUB, 1.2, (f.z1 - f.z0) * SUB, 0]; }   /* a Rearrange piece: its footprint on the grid */
   const s = t.s, F = s.fit;
   if (s.type === 'sled') return [s.sledX, s.z, 0, 0.75, 1.1, 0.75, 0];   /* the sled itself, wherever it is on the lane (it's drawn each frame, not built) */
   if (F) { const f = [Math.cos(s.yaw), Math.sin(s.yaw)], r = [-Math.sin(s.yaw), Math.cos(s.yaw)], pad = 0.06;
@@ -59,7 +60,8 @@ function hoverHull(t) {   // the screen outline of that box: the convex hull of 
   return lo.slice(0, -1).concat(hi.slice(0, -1));
 }
 function hoverLabel(t) {   // Plan 8b (owner): just the name; the expand icon beside it says it can be opened
-  return t.kind === 'agent' ? (A && t.a === A.desk ? tx('Front desk', '櫃檯') : trName(t.a.name)) : t.kind === 'board' ? tx('Price list', '價目表') : t.kind === 'desk' ? tx('Front desk', '櫃檯') : stationName(t.s);
+  if (t.kind === 'piece') return rname(t.p.kind);
+  return t.kind === 'agent' ? (A && t.a === A.desk ? tx('Receptionist', '櫃檯人員') : trName(t.a.name)) : t.kind === 'board' ? tx('Price list', '價目表') : t.kind === 'desk' ? tx('Front desk', '櫃檯') : stationName(t.s);
 }
 function hoverBase(t) {   // the box's footprint: its four bottom edges, all drawn (it lies flat, nothing hides it)
   const [x, z, y0, a, , c, yaw] = hoverBox(t), f = [Math.cos(yaw), Math.sin(yaw)], r = [-Math.sin(yaw), Math.cos(yaw)], R = canvas.getBoundingClientRect();
@@ -70,7 +72,8 @@ function updateHover() {
   const cv = HOVER.cv, dpr = Math.min(2, window.devicePixelRatio || 1), W = innerWidth, H = innerHeight;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const t = HOVER.at && !(typeof BOOKS !== 'undefined' && BOOKS.open) ? pickTarget(HOVER.at.x, HOVER.at.y) : null; HOVER.t = t;
+  const rearr = typeof BUILD !== 'undefined' && BUILD.on && BUILD.mode === 'rearrange';   /* owner 2026-11-15: in Rearrange, hovering a piece outlines it */
+  const t = !HOVER.at ? null : rearr ? (() => { const s = subAt(HOVER.at.x, HOVER.at.y), p = s && pieceAt(s[0], s[1]); return p ? { kind: 'piece', p } : null; })() : !(typeof BOOKS !== 'undefined' && BOOKS.open) ? pickTarget(HOVER.at.x, HOVER.at.y) : null; HOVER.t = t;
   canvas.style.cursor = t ? 'pointer' : ''; if (!t) return;
   if ((t.kind === 'agent' && t.a === followA) || (t.kind === 'station' && t.s === focusS)) return;   /* already selected: the floor mark is enough (owner, 2026-11-15) */
   const hull = hoverHull(t); if (hull.length < 3) return;
