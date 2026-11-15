@@ -26,8 +26,8 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 2. **Watch the doors open.** The camera follows the first member in. Tap anyone, or any piece of equipment, to see what they are doing and why.
 3. **Pick something to try.** A goal appears ("Reach 500 members by the end of month 3", "Don't run out of cash in year 1", "Keep at least 92% of members every month"). They are meant to be reachable with effort. A brand-new gym is not expected to turn a profit in its first month, so none of the goals asks for it. You can skip the goals and explore.
 4. **Run time.** Start the day, speed it up, step through it, or close early to the end of the day, week or month. Gym days run on into months, so you see real monthly rent, payroll and loan payments, not only one day's takings.
-5. **Tap the front desk to open the books.** This is where the money lives:
-   - **Today and Books (P&L):** revenue, variable costs, fixed costs and profit, for today, the month so far, the month projected, and the year.
+5. **Tap the front desk to open the P&L.** This is where the money lives:
+   - **Today and P&L:** revenue, variable costs, fixed costs and profit, for today, the month so far, the month projected, and the year.
    - **Bank:** cash, loan balance and payments.
    - **Members:** who is likely to quit, and what you can do about it.
    - **Pricing:** change the price list. New prices apply from the next day.
@@ -52,9 +52,9 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 
 ![A gym trading: PR banners, money pops at the door, live monitors and plots](screenshots/03-gym-trading.jpg)
 
-## The books
+## The P&L
 
-![Front desk books: today's profit and loss, line by line](screenshots/04-books-pnl.png)
+![Front desk P&L: today's profit and loss, line by line](screenshots/04-books-pnl.png)
 
 ![Pricing tab: change the per-minute prices, the visit cap and the coach rental price](screenshots/05-pricing.jpg)
 
@@ -64,11 +64,11 @@ The prices, costs and demand figures are calibrated to Taipei as a realistic sta
 
 ![Pick a goal to try first, or skip and explore](screenshots/07-pick-a-goal.png)
 
-![The goal tracker under the clock, with a hint to tap the desk and open the books](screenshots/08-goal-tracker.png)
+![The goal tracker under the clock, with a hint to tap the desk and open the P&L](screenshots/08-goal-tracker.png)
 
 ## On a phone
 
-The panels collapse into tabs (Run, Day, Members, Gym, Plots, Books) under the map.
+The panels collapse into tabs (Run, Day, Members, Gym, Plots, P&L) under the map.
 
 ## Build
 

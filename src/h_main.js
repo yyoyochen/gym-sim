@@ -1200,8 +1200,26 @@ const SELFTESTS = {
   },
   phoneBooksButton() {   // personas: no way into the books on a phone; the sheet's tab row gets a Books button
     try { setupRun(); const b = document.querySelector('#panel .tabs button[data-t="Books"]'); if (b) b.click(); const open = BOOKS.open;
-      return { ok: !!b && open && /Books|帳本/.test(b.textContent), detail: { b: !!b, open } }; }
+      return { ok: !!b && open && /P&L|損益表/.test(b.textContent), detail: { b: !!b, open } }; }
     finally { closeBooks(); }
+  },
+  namedPL() {   // owner 2026-11-15: the books are called P&L everywhere, and the phone tab has no emoji like the other tabs
+    const was = zh() ? 'zh' : 'en', res = {};
+    try { setupRun();
+      for (const lang of ['en', 'zh']) { setLang(lang); const tab = document.querySelector('#panel .tabs button[data-t="Books"]'); openBooks('Today'); const sheet = document.getElementById('books').textContent; closeBooks();
+        const hint = document.getElementById('booksHint') ? document.getElementById('booksHint').textContent : '', all = document.body.innerText + sheet;   /* what a player can read: no script text */
+        res[lang] = { tab: tab && tab.textContent.trim(), emoji: /\p{Extended_Pictographic}/u.test(tab ? tab.textContent : ''), books: (all.match(/\bbooks?\b|帳本/gi) || []).slice(0, 5), title: /P&L|損益表/.test(sheet), hint }; }
+      const ok = res.en.tab === 'P&L' && res.zh.tab === '損益表' && !res.en.emoji && !res.zh.emoji && !res.en.books.length && !res.zh.books.length && res.en.title && res.zh.title;
+      return { ok, detail: res }; }
+    finally { setLang(was); closeBooks(); }
+  },
+  plotsAligned() {   // owner 2026-11-15: on a phone the plots side by side line up: titles, charts and legends start at the same height whatever wraps
+    const box = document.createElement('div'), home = plotbar.parentNode, next = plotbar.nextSibling, bar = plotbar.classList.contains('bar');
+    try { box.style.cssText = 'position:fixed;left:0;top:0;width:390px'; document.body.appendChild(box); plotbar.classList.remove('bar', 'two'); box.appendChild(plotbar);
+      const P = [...plotbar.querySelectorAll('.plot')].map(p => ({ c: Math.round(p.querySelector('canvas').getBoundingClientRect().top), l: Math.round(p.querySelector('.legend').getBoundingClientRect().top), b: Math.round(p.getBoundingClientRect().bottom) }));
+      const ok = P.length === 4 && P[0].c === P[1].c && P[2].c === P[3].c && P[0].l === P[1].l && P[2].l === P[3].l && P[0].b === P[1].b;
+      return { ok, detail: P }; }
+    finally { home.insertBefore(plotbar, next); if (bar) plotbar.classList.add('bar'); box.remove(); placePlots(); }
   },
   introHidesHud() {   // screenshots: while building, the old gym's takings line and the desk hint stay hidden; the desk hint also waits for the goal card
     try { setupRun(); updateMonitors(); openIntro(); updateMonitors(); updateBooksHint(window.__LO.toScreen);

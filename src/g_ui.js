@@ -179,7 +179,7 @@ function buildPanel() {
   // tabs (phones)
   const tabs = panel.querySelector('.tabs');
   for (const t of ['Run', 'Day', 'Members', 'Gym', 'Plots']) { const b = el('button', { role: 'tab' }, tr(t)); b.dataset.t = t; b.addEventListener('click', () => { showTab(t); panel.classList.remove('closed'); }); tabs.appendChild(b); }
-  { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('📒 Books', '📒 帳本')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
+  { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('P&L', '損益表')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
   panel.querySelector('#sheetHandle').addEventListener('click', () => panel.classList.toggle('closed'));
   showTab('Run');
   // wiring

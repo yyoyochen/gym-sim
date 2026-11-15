@@ -28,9 +28,9 @@ function booksNextDay() { if (typeof closing !== 'undefined' && closing) return;
 // the binder frame: header, tab strip, body; the body of the open tab is filled by its renderer
 function renderBooks() {
   const b = booksEl(); if (!b) return; b.hidden = !BOOKS.open; if (!BOOKS.open) return;
-  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · Books', '櫃檯 · 帳本')}</h2><div class="bks" id="bkWhen"></div></div>
-    <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the books', '關閉帳本')}">✕</button></header>
-    <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'Books (P&L)' : t)}</button>`).join('')}</nav>
+  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · P&L', '櫃檯 · 損益表')}</h2><div class="bks" id="bkWhen"></div></div>
+    <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the P&L', '關閉損益表')}">✕</button></header>
+    <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'P&L' : t)}</button>`).join('')}</nav>
     <div class="bkbody" id="bkBody"></div>`;
   b.querySelector('#bkClose').addEventListener('click', closeBooks);
   b.querySelector('#bkNext').addEventListener('click', booksNextDay);
@@ -58,7 +58,7 @@ function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
   const gc = document.getElementById('goalCard'), show = !!A && !BOOKS.open && !booksSeen() && !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
   const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
-  const t = tx('Tap the desk to open the books', '點櫃檯打開帳本'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
+  const t = tx('Tap the desk to open the P&L', '點櫃檯打開損益表'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
 }
 // ---------------------------------------------------------------- shared row helpers
 const pctOf = (v, net) => net > 0.5 ? (100 * v / net).toFixed(1) + '%' : '–';
@@ -78,7 +78,7 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('PT packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
       <tr><td>${tx('Floor rentals', '場地租借')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
       <tr class="sum"><td>${tx('In the till', '收銀合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note">${tx('The till shows cash. Whether today made money is in Books.', '收銀機只顯示現金。今天有沒有賺錢，要看帳本。')}</p>`;
+      <p class="note">${tx('The till shows cash. Whether today made money is in the P&L tab.', '收銀機只顯示現金。今天有沒有賺錢，要看「損益表」分頁。')}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>
@@ -90,7 +90,7 @@ BOOK_RENDER.Today = {
     const stamp = A.done ? `<div class="stamp">${tx('Day closed', '本日結帳')} · EBITDA ${nt$(p.ebitda)}</div>` : '';
     const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
-    return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the books keep every one of them.', '這些天會在背景跑完，帳本照樣記下每一天。')}</p>`);
+    return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the P&L records every one of them.', '這些天會在背景跑完，損益表照樣記下每一天。')}</p>`);
   },
   wire(body) { body.querySelectorAll('button[data-close]').forEach(b => b.addEventListener('click', () => closeEarly(b.dataset.close))); }
 };
@@ -267,7 +267,7 @@ BOOK_RENDER.Pricing = {
     const worse = pv.heavyMonth > nowHeavy && pv.heavyMonth > BENCH.bigBoxMonthly;
     const warn = `<p class="note${worse ? ' warn' : ''}"${worse ? ' data-k="heavyWarn"' : ''}>${tx(`A heavy user (12 visits of 90 min) would pay ${nt$(pv.heavyMonth)} a month (now ${nt$(nowHeavy)}); a big-box membership is about ${nt$(BENCH.bigBoxMonthly)}.`, `常客（每月 12 次、每次 90 分）每月要付 ${nt$(pv.heavyMonth)}（目前 ${nt$(nowHeavy)}）；大型連鎖月費約 ${nt$(BENCH.bigBoxMonthly)}。`)}${worse ? tx(' Your heaviest users may switch.', '最常來的會員可能會轉去連鎖健身房。') : ''}</p>`;
     const preview = `<table><tr><td>${tx('Visits', '到訪人次')}</td><td class="n">${pc(pv.visits)}</td></tr><tr><td>${tx('Fee per visit (70 min)', '每次入場費（70 分）')}</td><td class="n">${pc(pv.feePerVisit)}</td></tr>
-      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Parameter-book arithmetic for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
+      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Worked out from the model\'s assumptions for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
     const pub = PUBLISH ? `<p class="note" style="color:var(--accent)" data-k="published">${tx('Published: the new price list applies from tomorrow morning.', '已公告：新價目從明天早上開始。')}</p>` : '';
     const nextMonth = (st.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside) || S.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside)) ? `<p class="note warn" data-k="nextMonthNote">${tx('Who may rent the floor changes from next month (Setup or New month).', '外部教練能否租場地，從下個月起生效（設定或新的一個月）。')}</p>` : '';
     const packs = `<table>${PT_PACKS.map(pk => `<tr><td>${tx(`${pk.n} sessions`, `${pk.n} 堂`)}${pk.parts.length > 1 ? `<span class="bench" style="color:var(--muted)">${tx(`or ${pk.parts.length} instalments`, `可分 ${pk.parts.length} 期`)}</span>` : ''}</td><td class="n">${nt$(pk.price)}</td></tr>`).join('')}</table>`;
