@@ -24,16 +24,16 @@ function sfx(kind) {
 // ================================================================ boards
 function drawWhiteboard(k) {
   const { ctx: c, cv, tex } = WB; c.fillStyle = '#f2f1ea'; c.fillRect(0, 0, cv.width, cv.height);
-  c.fillStyle = '#2f68ab'; c.font = '700 16px Silkscreen, monospace'; c.fillText('TODAY', 10, 22);
+  c.fillStyle = '#2f68ab'; c.font = '700 16px Digits, Silkscreen, monospace'; c.fillText('TODAY', 10, 22);
   const lines = ['A1 BACK SQUAT 5x5 @80%', 'A2 PULL-UPS 4x8', 'B1 SLED PUSH 6x15M', 'B2 HIP THRUST 3x10', 'C  ROW 2000M'];
-  c.font = '12px Silkscreen, monospace';
+  c.font = '12px Digits, Silkscreen, monospace';
   lines.forEach((l, i) => { const show = clamp(k * lines.length - i, 0, 1); if (show <= 0) return; c.fillStyle = i % 2 ? '#d6403a' : '#1c1f2a'; c.fillText(l.slice(0, Math.ceil(l.length * show)), 10, 44 + i * 19); });
   tex.needsUpdate = true;
 }
 function drawPRBoard() {
   const { ctx: c, cv, tex } = PRB; c.fillStyle = '#1c1f2a'; c.fillRect(0, 0, cv.width, cv.height);
-  c.fillStyle = '#dfe03a'; c.font = '700 16px Silkscreen, monospace'; c.fillText('PR BOARD', 10, 22);
-  c.font = '11px Silkscreen, monospace';
+  c.fillStyle = '#dfe03a'; c.font = '700 16px Digits, Silkscreen, monospace'; c.fillText('PR BOARD', 10, 22);
+  c.font = '11px Digits, Silkscreen, monospace';
   const list = A ? A.prs.slice(-7).reverse() : [];
   if (!list.length) { c.fillStyle = '#959bab'; c.fillText('NO PRS YET TODAY', 10, 46); }
   list.forEach((p, i) => { c.fillStyle = i ? '#f2f1ea' : '#dfe03a'; c.fillText(`${hhmm(p.t)} ${p.name.toUpperCase()} ${p.kg}KG`, 10, 44 + i * 17); c.fillStyle = '#959bab'; c.fillText(p.lift.toUpperCase().slice(0, 14), 150, 44 + i * 17); });
@@ -280,7 +280,7 @@ function plotLine(c, arr, max, col, w = 1, dash) {
 }
 function axes(c, max, unit) {
   const W_ = c.canvas.width, H_ = c.canvas.height; c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
-  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '11px Silkscreen, monospace'; c.fillStyle = '#6b7182';
+  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '11px Digits, Silkscreen, monospace'; c.fillStyle = '#6b7182';
   for (const h of [7, 10, 13, 16, 19, 22]) { const x = 26 + (h - 7) / 17 * (W_ - 30); c.beginPath(); c.moveTo(x, 4); c.lineTo(x, H_ - 12); c.stroke(); c.fillText(String(h).padStart(2, '0'), x - 5, H_ - 2); }
   c.fillText(String(Math.round(max)), 2, 10); c.fillText('0', 2, H_ - 12);
 }
@@ -307,7 +307,7 @@ function drawPlots() {
   c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
   const bins = new Array(12).fill(0); for (const w of A.waits) bins[Math.min(11, Math.floor(w))]++;
   const bm = Math.max(1, ...bins); const bw = (W_ - 30) / 12;
-  c.font = '11px Silkscreen, monospace';
+  c.font = '11px Digits, Silkscreen, monospace';
   bins.forEach((v, i) => { const h = v / bm * (H_ - 22); c.fillStyle = '#4a8acb'; c.fillRect(26 + i * bw + 1, H_ - 12 - h, bw - 2, h); c.fillStyle = '#6b7182'; if (i % 2 === 0) c.fillText(i === 11 ? '11+' : String(i), 26 + i * bw + 2, H_ - 2); });
   c.fillStyle = '#6b7182'; c.fillText(String(bm), 2, 10);
   setText('pHv', tx(`${A.waits.length} waits`, `${A.waits.length} 次等待`));

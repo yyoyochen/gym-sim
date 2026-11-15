@@ -102,10 +102,10 @@ function periodSeg(per) { const on = archOf(per) ? 'year' : per; return `<div cl
 // the year so far (A5): every closed month as booked, the current month projected, and year-to-date totals; tap a closed month for its P&L
 const cashM = (v) => moneyK(v);   /* the year view's cash column stays short so five columns fit a phone */
 function yearHtml() {
-  const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 };
-  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, c, m.interest).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
+  const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 }, share = (days, y, name) => days / daysInMonth(y, name);   /* review I2: a short first month takes its share of depreciation */
+  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: c.depYear * share(m.days, m.year, m.name) }, m.interest).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
     rows.push(`<tr data-k="yr" data-arch="${i}" style="cursor:pointer"><td style="color:var(--accent)">${monthLabel(m.name, m.year)} ›</td><td class="n">${ntn(m.pnl.net)}</td><td class="n">${ntn(m.pnl.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(m.cashEnd)}</td></tr>`); });
-  const pm = projectMonth().total, np = belowEbitda(pm.ebitda, c, BIZ.balance * BIZ.rate / 1200).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
+  const pm = projectMonth().total, f = share(M.cal.length, BIZ.year, M.cfg.month), np = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * f }, BIZ.balance * BIZ.rate / 1200 * f).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
   rows.push(`<tr data-k="yr" data-cur="1"><td>${monthLabel(M.cfg.month, BIZ.year)} <span class="tag">${tx('projected', '預估')}</span></td><td class="n">${ntn(pm.net)}</td><td class="n">${ntn(pm.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(liveCash())}</td></tr>`);
   const head = `<tr class="grp0"><td>${tx('Month', '月份')}</td><td class="n">${tx('Net sales', '銷售淨額')}</td><td class="n">EBITDA</td><td class="n">${tx('Net profit', '淨利')}</td><td class="n">${tx('Cash', '現金')}</td></tr>`;
   const total = `<tr class="sum"><td>${tx('So far', '累計')}</td><td class="n">${ntn(tot.net)}</td><td class="n" data-k="yrEbitda">${ntn(tot.ebitda)}</td><td class="n">${ntn(tot.np)}</td><td class="n"></td></tr>`;
@@ -123,8 +123,8 @@ function booksPeriod(period) {
   return t;
 }
 function booksDep(period) {
-  const c = pnlCosts(), month = c.depYear / 12, days = M ? M.cal.length : 30;
-  const dep = archOf(period) ? month : period === 'today' ? month / days : period === 'mtd' ? month / days * ((M ? M.dayI : 0) + 1) : month;
+  const c = pnlCosts(), month = c.depYear / 12, full = M ? daysInMonth(BIZ ? BIZ.year : 2027, M.cfg.month) : 30, days = M ? M.cal.length : 30, arch = archOf(period);   /* by the day of the calendar month: a short first month gets its share */
+  const dep = arch ? month * arch.days / daysInMonth(arch.year, arch.name) : period === 'today' ? month / full : period === 'mtd' ? month / full * ((M ? M.dayI : 0) + 1) : month * days / full;
   return { dep, equipment: dep * DEP_SPLIT.equipment, fitout: dep * DEP_SPLIT.fitout };
 }
 BOOK_RENDER.Books = {
@@ -132,7 +132,7 @@ BOOK_RENDER.Books = {
     if (BOOKS.period === 'year' && BIZ) return periodSeg('year') + yearHtml();
     const per = BOOKS.period, arch = archOf(per), p = booksPeriod(per), c = pnlCosts(), net = p.net, it = itemiseFixed(p, c), d = booksDep(per);
     // loan interest is booked when the month closes: the month view shows this month's, today and month-to-date show none yet (A2)
-    const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 : 0;
+    const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 * M.cal.length / daysInMonth(BIZ.year, M.cfg.month) : 0;   /* a short first month pays its share */
     const ebit = p.ebitda - d.dep, tax = Math.max(0, ebit - interest) * c.tax, ptCash = (p.deferredChange || 0) + (p.ptEarned || 0);
     const bp = (lo, hi) => `${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(0)}%`;
     const occ = it.premises.rent + it.premises.mgmt;
@@ -353,7 +353,7 @@ function priceBoardKey() { return [S.priceOff, S.pricePeak, S.priceCap, M ? M.cf
 function drawPriceBoard(force) {
   const key = priceBoardKey(); if (!force && key === PRICEBOARD.drawn) return; PRICEBOARD.drawn = key;
   const g = PRICEBOARD.canvas.getContext('2d'), W = 256, H = 160, f2 = (v) => v.toFixed(2), rent = M ? M.cfg.rentP : S.rentP;
-  const put = (t, x, y, px, col, bold, maxW) => { g.fillStyle = col; let k = px; do { g.font = (bold ? '700 ' : '') + k + 'px Silkscreen, monospace'; } while (g.measureText(t).width > maxW && --k > 6); g.fillText(t, x, y); };   /* shrink to fit its column */
+  const put = (t, x, y, px, col, bold, maxW) => { g.fillStyle = col; let k = px; do { g.font = (bold ? '700 ' : '') + k + 'px Digits, Silkscreen, monospace'; } while (g.measureText(t).width > maxW && --k > 6); g.fillText(t, x, y); };   /* shrink to fit its column */
   g.fillStyle = '#10131c'; g.fillRect(0, 0, W, H); g.fillStyle = '#dfe03a'; g.fillRect(0, 0, W, 26);
   g.textBaseline = 'middle'; put('PRICE LIST', 8, 14, 16, '#10131c', true, 150); g.textAlign = 'right'; put('價目表', W - 8, 14, 16, '#10131c', true, 80); g.textAlign = 'left';
   const row = (x, y, label, price) => { put(label, x, y, 10, '#959bab', false, 116); put(price, x, y + 17, 18, '#dfe03a', true, 116); };

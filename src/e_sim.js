@@ -1,17 +1,17 @@
 
 // ================================================================ settings (live ones are read every step; the rest apply on Setup)
 const S = {
-  seed: 20261112, month: 'Jun', peak: DEMAND.peak, visit: DEMAND.stay, weather: 'Clear', setting: 'Urban',
+  seed: 20261112, month: 'Jun', year: 2027, startDay: 1, /* the opening date: boot sets today's (tests keep 1 Jun 2027) */ peak: DEMAND.peak, visit: DEMAND.stay, weather: 'Clear', setting: 'Urban',
   mix: (({ coach, ...m }) => m)(defaultMix(0)),   // four archetypes in whole percents summing to 100; coaching comes from PT client records
   patience: 5, workIn: 30, rest: 2.5, rerack: 75,
-  racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 1, cap: 60, curls: false, speed: 30,
+  racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 1, cap: 60, curls: false, speed: 30, turf: true, layout: null, /* a built gym's pieces (Plan 11); null: laid out by zones */ /* a built gym's turf and sled lane (owner 2026-11-15) */
   priceOff: 1.2, pricePeak: 1.5, priceCap: 180,   // NT$ per minute off-peak and peak, cap per visit (P3.1–P3.3; same as PRICE); live: bill at once, members react from the next morning
   build: 'existing', monthsOpen: 1, shock: 'none',   // new-build ramp-up (P4.13, P4.16) and shocks (D8): engine settings with no control yet
   ptClients: 22, outsideClients: 10, rentP: 250, allowOutside: true,   // floor rental NT$ per 90 min (P3.10) and whether freelancers may rent (setup)   // in-house PT clients (P5.10) and members training with outside coaches (P5.6 ÷ visits)
   area: COSTS.area, rentRate: COSTS.rentRate, staff: COSTS.staff,   // live P&L settings (the floor plan does not change with area)
   finOwn: FIN.own, finLoan: FIN.loan, finRate: FIN.rate, finYears: FIN.years   // financing at opening (B3, setup)
 };
-const SETUP_KEYS = ['seed', 'month', 'peak', 'visit', 'mix', 'racks', 'plats', 'benches', 'cardio', 'machines', 'plates', 'hallW', 'hallD', 'weather', 'setting', 'ptClients', 'outsideClients', 'rentP', 'allowOutside', 'build', 'monthsOpen', 'shock', 'finOwn', 'finLoan', 'finRate', 'finYears'];
+const SETUP_KEYS = ['seed', 'month', 'peak', 'visit', 'mix', 'racks', 'plats', 'benches', 'cardio', 'machines', 'plates', 'hallW', 'hallD', 'turf', 'layout', 'weather', 'setting', 'ptClients', 'outsideClients', 'rentP', 'allowOutside', 'build', 'monthsOpen', 'shock', 'finOwn', 'finLoan', 'finRate', 'finYears'];
 // how members get here, by setting: cumulative [scooter, bus, walk], the rest are dropped off by car
 const MODES = { Urban: [[0.45, 0.7, 0.9], [0.3, 0.65, 0.8]], Suburban: [[0.5, 0.62, 0.72], [0.35, 0.5, 0.58]], Rural: [[0.62, 0.7, 0.76], [0.48, 0.58, 0.63]] };
 const BUS_GAP = { Urban: 12, Suburban: 20, Rural: 30 };
@@ -223,7 +223,7 @@ function newMember(rng, joinedDay, isNew) {
 }
 function setupMonth() {
   const cfg = JSON.parse(JSON.stringify(S)), rng = makeRng(cfg.seed);
-  M = { cfg, cal: calendar(2027, MONTH_NAMES.indexOf(cfg.month) + 1), dayI: 0, pool: [], lapsed: [], days: [], seed: cfg.seed, nextId: 0 };
+  M = { cfg, cal: calendar(cfg.year || 2027, MONTH_NAMES.indexOf(cfg.month) + 1).slice(Math.max(0, (cfg.startDay || 1) - 1)), dayI: 0, pool: [], lapsed: [], days: [], seed: cfg.seed, nextId: 0 };
   // members at the start of the month: about 965 at 35 people at the weekly peak (P4.2); a new build has only reached part of that;
   // a new competitor takes 10% (D8)
   M.steady = Math.round(965 * cfg.peak / 35 * (cfg.shock === 'competitor' ? 0.9 : 1));
@@ -258,15 +258,16 @@ let BUILT = null;
 function applyBuild() {
   if (HALL.w !== (S.hallW || null) || HALL.d !== (S.hallD || null)) setHall(S.hallW, S.hallD);
   if (S.hallW) {   /* lay it out once to see what fits: the gym pays for what is placed, and the counts follow */
+    if (!S.layout) S.layout = autoBuild(S.hallW, S.hallD, S, { turf: S.turf });   /* Plan 11: a built hall is always laid out from pieces */
     buildLayout({ ...S, shock: 'none' }); const p = placedCounts(); Object.assign(S, p.counts);
-    BUILT = buildCost({ w: S.hallW, d: S.hallD, counts: S, kit: p.kit }, { ...COSTS, rentRate: S.rentRate }); COSTS.capex = BUILT.capex; COSTS.depYear = BUILT.depYear; S.area = BUILT.ping;
+    BUILT = buildCost({ w: S.hallW, d: S.hallD, counts: S, kit: p.kit, layout: S.layout }, { ...COSTS, rentRate: S.rentRate }); COSTS.capex = BUILT.capex; COSTS.depYear = BUILT.depYear; S.area = BUILT.ping;
   } else { BUILT = null; Object.assign(COSTS, SAMPLE_CAPEX); }
   if (typeof lockBuiltSliders === 'function') lockBuiltSliders();
 }
 function newBusiness() {
   const deposit = BUILT ? BUILT.deposit : 0;   /* a built gym's rent deposit leaves the bank at opening (refundable, not depreciated) */
   BIZ = { own: S.finOwn, loan: S.finLoan, rate: S.finRate, years: S.finYears, payment: loanPayment(S.finLoan, S.finRate, S.finYears), balance: S.finLoan,
-    cash: S.finOwn + S.finLoan - COSTS.capex - deposit, deposit, cashOutAt: null, months: [], monthIndex: 0, year: 2027, mIn: 0, mOut: 0 };
+    cash: S.finOwn + S.finLoan - COSTS.capex - deposit, deposit, cashOutAt: null, months: [], monthIndex: 0, year: S.year || 2027, mIn: 0, mOut: 0 };
   BIZ.openCash = BIZ.cash;   /* Plan 10: the cash goal knows a gym that opened overdrawn */
 }
 // cash a day's trading moves: what came in (fees, cards, PT packs, rentals, add-ons) minus VAT owed and every cost paid
@@ -282,8 +283,9 @@ function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCas
 function closeMonth() {
   bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec);
   const pnl = {}; for (const d of M.days) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') pnl[k] = (pnl[k] || 0) + d.pnl[k];
-  const lm = loanMonth(BIZ.balance, BIZ.rate, BIZ.payment); BIZ.balance = lm.balance;
-  const tax = belowEbitda(pnl.ebitda || 0, pnlCosts(), lm.interest).tax;
+  const frac = M.cal.length / daysInMonth(BIZ.year, M.cfg.month);   /* a short first month pays its share of the instalment and depreciation */
+  const lm = loanMonth(BIZ.balance, BIZ.rate * frac, BIZ.payment * frac); BIZ.balance = lm.balance;
+  const tax = belowEbitda(pnl.ebitda || 0, { ...pnlCosts(), depYear: pnlCosts().depYear * frac }, lm.interest).tax;
   BIZ.cash -= lm.interest + lm.principal + tax; BIZ.mOut += lm.interest + lm.principal + tax; noteCashOut();
   BIZ.months.push({ name: M.cfg.month, year: BIZ.year, days: M.cal.length, pnl, members: M.pool.length, joined: M.joinedTotal, lapsed: M.lapsedTotal, cashEnd: BIZ.cash,
     interest: lm.interest, principal: lm.principal, tax, cashIn: BIZ.mIn, cashOut: BIZ.mOut, ptDue: M.ptDue || 0 });
@@ -296,7 +298,7 @@ function nextMonth() {
   closeMonth();
   const old = M, L = old.cal.length, mi = MONTH_NAMES.indexOf(old.cfg.month), nmi = (mi + 1) % 12;
   if (nmi === 0) BIZ.year++;
-  BIZ.monthIndex++; S.month = MONTH_NAMES[nmi]; if (S.build === 'new') S.monthsOpen++;
+  BIZ.monthIndex++; S.month = MONTH_NAMES[nmi]; S.year = BIZ.year; S.startDay = 1; if (S.build === 'new') S.monthsOpen++;   /* review I1: a later Setup opens on the 1st of the current month and year */
   applyPublished();
   for (const m of old.pool.concat(old.lapsed)) {
     m.joinedDay -= L; m.visits = m.visits.map(d => d - L).filter(d => d >= -60);

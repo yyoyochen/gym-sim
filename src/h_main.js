@@ -312,11 +312,12 @@ function refreshSnd() { sndBtn.classList.toggle('on', soundOn); sndBtn.setAttrib
 sndBtn.addEventListener('click', () => { soundOn = !soundOn; if (soundOn) ensureAudio(); refreshSnd(); });
 buildPanel(); placePlots(); setLang(LANG);
 document.getElementById('langBtn').addEventListener('click', () => setLang(zh() ? 'en' : 'zh'));
-setupRun(); refreshPending();
+{ const q = new URLSearchParams(location.search); if (!q.has('selftest') && !q.has('shot')) Object.assign(S, todayStart(new Date())); }   /* owner: the gym opens today; tests and screenshots keep 1 Jun 2027 */
+setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshPending();
 goOn = true; refreshGo();
 if (introWanted()) { goOn = false; refreshGo(); openIntro(); }   /* first visit: start by building (Plan 10) */
 if (window.innerWidth < 860) panel.classList.add('closed');
-if (document.fonts && document.fonts.load) document.fonts.load('700 22px Silkscreen').then(() => { drawPriceBoard(true); paintSign(); drawWhiteboard(A ? A.wb : 0); drawPRBoard(); }).catch(() => {});
+if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('700 22px Silkscreen'), document.fonts.load('16px Digits', '0123456789')]).then(() => { drawPriceBoard(true); paintSign(); drawWhiteboard(A ? A.wb : 0); drawPRBoard(); }).catch(() => {});
 function fastForward(gymSeconds) { const n = Math.round(gymSeconds / STEP); for (let i = 0; i < n && !A.done; i++) simStep(); }
 window.__LO = { S, PRICEBOARD, drawPriceBoard, setHall, HALL, get M() { return M; }, get BIZ() { return BIZ; }, nextDay, nextMonth, presetCounts, checkPlot, COSTS, liveCash, /* bot playtests (07, layer 1) */ get A() { return A; }, hourHand, minHand, clock, get OBS() { return OBS; }, get followA() { return followA; }, toScreen: (v) => { const r = canvas.getBoundingClientRect(); _pv.copy(v).project(cam); return [r.left + (_pv.x + 1) / 2 * r.width, r.top + (1 - _pv.y) / 2 * r.height]; }, renderer, scene, get RTC() { return RTC; }, MT, VB, groundAt: (cx, cy) => { const r = canvas.getBoundingClientRect(); ndc.set((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, cam); const h = new V3(); ray.ray.intersectPlane(gPlane, h); return [+h.x.toFixed(2), +h.z.toFixed(2)]; }, STATIONS: () => STATIONS, AGENTS, setupRun, fastForward, tick, view, resultsText, HIST, setGo: (v) => { goOn = v; refreshGo(); } };
 
@@ -357,9 +358,9 @@ function navReach() {   // self-test helper: nav cells reachable from inside the
       if (seen[m] || navBlock[m] || (di && dj && (navBlock[nj * W + a] || navBlock[b * W + ni]))) continue; seen[m] = 1; q.push(m); } }
   return (x, z) => { const [i, j] = cellOf(x, z); return !!seen[j * W + i]; };
 }
-function builtGymDay(w, d, big) {   // self-test helper: build a w x d gym with its preset counts, run a day, check it
+function builtGymDay(w, d, big, grid = true) {   // self-test helper: build a w x d gym with its preset counts (grid: laid out by the Plan 11 placer), run a day, check it
   const keep = JSON.parse(JSON.stringify(S));
-  try { const counts = presetCounts(w, d), r = runDay({ ...counts, hallW: w, hallD: d }), reach = navReach(), H = HALL;   /* runDay keeps the built hall until the next Setup */
+  try { const counts = presetCounts(w, d), r = runDay({ ...counts, hallW: w, hallD: d, ...(grid ? { layout: autoBuild(w, d, counts) } : {}) }), reach = navReach(), H = HALL;   /* runDay keeps the built hall until the next Setup */
     if (H.w !== w) return { ok: false, detail: 'hall not built' };
     const outside = STATIONS.filter(s => s.x < H.x0 + 0.3 || s.x > H.x1 - 0.3 || s.z < H.zb + 0.3 || s.z > HZ - 0.3).map(s => s.type + s.id);
     const cut = STATIONS.filter(s => !reach(s.acc.x, s.acc.z) || !reach(s.waitBase.x, s.waitBase.z)).map(s => s.type + s.id);
@@ -861,15 +862,7 @@ const SELFTESTS = {
   },
   smallGymRuns() { return builtGymDay(10, 8); },    // Plan 8: an S gym (80 坪) runs a whole day: nobody stuck, every station on the floor and reachable from the door
   largeGymRuns() { return builtGymDay(20, 16, true); },   // Plan 8: an L gym (320 坪) gets more equipment than the sample and runs a whole day
-  columnsByBays() {   // Plan 8b (owner): a built hall has interior columns on a grid of bays no longer than 9 m; the sample hall has none; columns are drawn and block walking
-    const keep = JSON.parse(JSON.stringify(S)), got = {};
-    try { for (const [k, w, d] of [['S', 10, 8], ['M', 16, 10], ['L', 20, 16]]) { Object.assign(S, { hallW: w, hallD: d }, presetCounts(w, d)); setupRun();
-        const kids = []; HALLG.g.traverse(o => kids.push(o)); const [i, j] = COLUMNS.length ? cellOf(COLUMNS[0].x, COLUMNS[0].z) : [0, 0];
-        got[k] = { n: COLUMNS.length, blocked: !COLUMNS.length || !!navBlock[j * NAV.w + i] }; }
-      Object.assign(S, keep); setupRun(); got.sample = { n: COLUMNS.length };
-      return { ok: got.S.n === 2 && got.M.n === 6 && got.L.n === 12 && got.sample.n === 0 && got.S.blocked && got.L.blocked, detail: got }; }
-    finally { Object.assign(S, keep); setupRun(); }
-  },
+
   minGymRuns() { return builtGymDay(8, 7); },   // Plan 8 review: the smallest plot allowed (8 x 7 cells) runs a whole day
   buildBlocksBooks() {   // Plan 8 review: the books cannot open over the builder (they could move the day on under the preview)
     try { setupRun(); openBooks(); openBuild(); const a = !BOOKS.open; openBooks(); return { ok: a && !BOOKS.open && BUILD.on, detail: { closedOnBuild: a, open: BOOKS.open } }; }
@@ -879,7 +872,7 @@ const SELFTESTS = {
     const keep = JSON.parse(JSON.stringify(S));
     try { Object.assign(S, { hallW: 10, hallD: 8 }, presetCounts(10, 8), { benches: 10 }); setupRun();
       const placed = STATIONS.filter(s => s.type === 'bench').length, keys = BUILT.items.map(it => it.key), benchLine = BUILT.items.find(it => it.key === 'benches');
-      const okS = S.benches === placed && benchLine.n === placed && !keys.includes('turf') && !keys.includes('pullup') && !STATIONS.some(s => s.type === 'sled');
+      const okS = S.benches === placed && benchLine.n === placed && keys.includes('turf') === STATIONS.some(s => s.type === 'sled') && keys.includes('pullup') === STATIONS.some(s => s.type === 'pullup');   /* Plan 11: kit is charged exactly when it is placed */
       const locked = W.w_benches && W.w_benches.inp.disabled;
       return { ok: okS && locked, detail: { placed, sBenches: S.benches, line: benchLine.n, keys, locked } }; }
     finally { Object.assign(S, keep); setupRun(); syncSetupWidgets(); }
@@ -922,8 +915,8 @@ const SELFTESTS = {
   buildModeOpens() {   // Plan 8: Build a gym pauses, hides the panel and people, shows the toolbar and the grid, and previews the plot live
     try { setupRun(); goOn = true; openBuild(); const sheet = document.getElementById('build');
       const a = { on: BUILD.on, go: goOn, panel: panel.hidden, sheet: !sheet.hidden, grid: BUILD_GRID.visible, both: /Plot|場地/.test(sheet.textContent) && /Open this gym|開這間/.test(sheet.textContent) };
-      buildPick('L'); const b = { w: HALL.w, racks: STATIONS.filter(s => s.type === 'rack').length, cols: +(sheet.querySelector('[data-k="cols"]') || {}).textContent };
-      return { ok: a.on && !a.go && a.panel && a.sheet && a.grid && a.both && b.w === 20 && b.racks > 6 && b.cols === 12, detail: { a, b } }; }
+      buildPick('L'); const b = { w: HALL.w, racks: STATIONS.filter(s => s.type === 'rack').length, cols: !!sheet.querySelector('[data-k="cols"]') };   /* owner 2026-11-15: no pillars, no columns row */
+      return { ok: a.on && !a.go && a.panel && a.sheet && a.grid && a.both && b.w === 20 && b.racks > 6 && !b.cols, detail: { a, b } }; }
     finally { cancelBuild(); goOn = false; refreshGo(); }
   },
   buildCancelKeeps() {   // Plan 8: Cancel puts back the very same hall, stations and lockers, and the day carries on
@@ -1187,7 +1180,7 @@ const SELFTESTS = {
   },
   digitsReadable() {   // personas misread 25% as 88% in Silkscreen: figures use Pixelify Sans
     try { runDay({}); openBooks('Today'); const td = document.querySelector('#bkBody td.n'), f1 = getComputedStyle(td).fontFamily; closeBooks(); updateMonitors(); const f2 = getComputedStyle(document.getElementById('mVisits')).fontFamily;
-      return { ok: /^"?Pixelify Sans/.test(f1) && /^"?Pixelify Sans/.test(f2), detail: { f1, f2 } }; }
+      return { ok: /^"?Digits"?,/.test(f1) && /^"?Digits"?,/.test(f2), detail: { f1, f2 } }; }   /* owner: Pixelify's 5 reads as S */
     finally { closeBooks(); }
   },
   phoneBooksButton() {   // personas: no way into the books on a phone; the sheet's tab row gets a Books button
@@ -1272,6 +1265,140 @@ const SELFTESTS = {
       openIntro(); document.querySelector('#build [data-intro="take"]').click(); const b = { build: S.build, pool: M.pool.length };
       return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 200 && b.build === 'existing' && b.pool > 900, detail: { a, b } }; }
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
+  },
+  noPillars() {   // owner 2026-11-15: no structural columns in built gyms, and the builder no longer lists them
+    const keep = JSON.parse(JSON.stringify(S));
+    try { S.hallW = 16; S.hallD = 10; setupRun(); const n = COLUMNS.length; openBuild(); buildPick('M'); const t = document.getElementById('build').textContent;
+      return { ok: n === 0 && COLUMNS.length === 0 && !/Structural columns/.test(t), detail: { n, cols: COLUMNS.length } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  plusNeverRemoves() {   // owner: + on machines jumped, + on platforms went up then fell back; a press adds exactly one or is refused, and never removes anything else
+    try { setupRun(); openBuild(); const bad = [];
+      for (const size of ['S', 'M', 'L']) { buildPick(size);
+        for (const [k] of BUILD_KEYS) { for (let i = 0; i < 6; i++) { const before = { ...BUILD.counts }; buildCount(k, 1);
+          const grew = BUILD.counts[k] - before[k], lost = BUILD_KEYS.filter(([q]) => q !== k && BUILD.counts[q] < before[q]).map(([q]) => q);
+          if (!(grew === 1 || (grew === 0 && BUILD.full[k])) || lost.length) bad.push({ size, k, i, grew, lost, full: !!BUILD.full[k] }); } } }
+      return { ok: !bad.length, detail: bad.slice(0, 6) }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  turfToggle() {   // owner: the green turf and sled lane matters visually; the player can include it or leave it out
+    try { setupRun(); openBuild(); buildPick('M'); const on0 = !!BUILD.kit.turf; buildTurf(false); const off = !BUILD.kit.turf; buildTurf(true); const on1 = !!BUILD.kit.turf;
+      BUILD.tab = 'Equipment'; renderBuild(); const row = !!document.querySelector('#build [data-turf]');
+      return { ok: on0 && off && on1 && row, detail: { on0, off, on1, row } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  tabTitle() { return { ok: document.title === 'gym-sim', detail: { title: document.title } }; },
+  digitsEverywhere() {   // owner: a 5 must never read as S or 8 anywhere: digits come from a digits-only face first in every font list
+    const fam = (el) => getComputedStyle(el).fontFamily, els = [document.body, document.querySelector('button'), document.getElementById('hudClock')];
+    const rule = [...document.styleSheets].some(ss => { try { return [...ss.cssRules].some(r => r instanceof CSSFontFaceRule && /Digits/.test(r.style.fontFamily) && /U\+30-39|U\+0030-0039/i.test(r.style.getPropertyValue('unicode-range'))); } catch (e) { return false; } });
+    return { ok: rule && els.every(e => /^"?Digits"?,/.test(fam(e))), detail: { rule, fams: els.map(fam) } };
+  },
+  startsToday() {   // owner 2026-11-15: the business opens on today's date; the first month is prorated (costs by the day, the loan instalment by the share of the month), then whole months
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { year: 2026, month: 'Nov', startDay: 15 }); setupRun();
+      const a = { n: M.cal.length, first: M.cal[0].day, date: A.date, year: BIZ.year }, perDay = fixedPerDay(pnlCosts()), depDay = booksDep('today').dep, b0 = BIZ.balance;
+      closeEarlySync('month'); nextMonth(); const m0 = BIZ.months[0], paid = m0.interest + m0.principal;
+      const c = { days: m0.days, fixed: m0.pnl.fixed, want: perDay * 16, paid, wantPaid: BIZ.payment * 16 / 30, next: M.cfg.month, nextN: M.cal.length, nextFirst: M.cal[0].day, depDay, wantDep: pnlCosts().depYear / 12 / 30 };
+      const ok = a.n === 16 && a.first === 15 && a.date === 15 && a.year === 2026 && c.days === 16 && Math.abs(c.fixed - c.want) < c.want * 0.01 && Math.abs(paid - c.wantPaid) < 1 && c.next === 'Dec' && c.nextN === 31 && c.nextFirst === 1 && Math.abs(depDay - c.wantDep) < 1;
+      return { ok, detail: { a, c } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  sampleLayoutDump() {   // Plan 11 task 3: the sample gym's stations and obstacles, compared in node with tests/sample_layout.json (taken before the frame refactor)
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { hallW: null, hallD: null }); setupRun(); const K = ['type', 'zone', 'x', 'z', 'yaw', 'acc', 'rest', 'waitBase', 'waitDir', 'hooks', 'dl', 'bar0', 'spot', 'stackAt', 'stackAt2', 'lane', 'sledX'];
+      const st = STATIONS.map(s => { const o = {}; for (const k of K) if (s[k] !== undefined) o[k] = s[k]; return o; });
+      return { ok: true, detail: JSON.stringify({ st, obst: OBST, db: DBZONE, chalk: CHALK, back: BACKROW }) }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rotatedStationsUsable() {   // Plan 11: every kind in every facing the engine may choose: its station spots are walkable and inside its own clear space
+    const keep = JSON.parse(JSON.stringify(S)), bad = [];
+    try { Object.assign(S, { hallW: 16, hallD: 10 }); setHall(16, 10);
+      for (const kind of Object.keys(KINDS)) for (const rot of KINDS[kind].rots) {
+        const p = { kind, sx: kind === 'turf' ? 2 : 10, sz: 12, rot, id: 1 }; buildLayout({ ...S, layout: { pieces: [p] }, shock: 'none' });
+        const u = useRect(p), X0 = HALL.x0 + u.x0 * SUB - 0.3, X1 = HALL.x0 + u.x1 * SUB + 0.3, Z0 = HALL.zb + u.z0 * SUB - 0.3, Z1 = HALL.zb + u.z1 * SUB + 0.3;
+        const want = ['kit'].includes(KINDS[kind].cat) && kind !== 'cable' && kind !== 'pullup' && kind !== 'turf' && kind !== 'mat' ? 0 : 1;   /* a dumbbell rack's stations are the spots beside it */
+        if (STATIONS.length < 1) { bad.push({ kind, rot, why: 'no station' }); continue; }
+        for (const s of STATIONS) for (const [n, q] of [['acc', s.acc], ['rest', s.rest], ['wait0', waitSpot(s, 0)], ['wait2', waitSpot(s, 2)], ['dl', s.dl], ['spot', s.spot]]) {
+          if (!q) continue; const [i, j] = cellOf(q.x, q.z), free = !navBlock[j * NAV.w + i], inside = q.x >= X0 && q.x <= X1 && q.z >= Z0 && q.z <= Z1;
+          if (!free || !inside) bad.push({ kind, rot, n, free, inside, q: [+q.x.toFixed(2), +q.z.toFixed(2)], box: [+X0.toFixed(2), +Z0.toFixed(2), +X1.toFixed(2), +Z1.toFixed(2)] }); }
+        if (kind === 'turf') { const s = STATIONS.find(t => t.type === 'sled'); if (!s || !(s.lane[0] >= HALL.x0 && s.lane[1] <= HALL.x1)) bad.push({ kind, why: 'lane' }); }
+      }
+      return { ok: !bad.length, detail: bad.slice(0, 60) }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  washroomsAtBack() {   // Plan 11: a built gym's washrooms sit in the back corner of the right wall, at least 1.2 m behind the desk, every locker reachable; the sample's stay put
+    const keep = JSON.parse(JSON.stringify(S)), out = {};
+    try { Object.assign(S, { hallW: null, hallD: null, layout: null }); setupRun(); const sample = { z0: CHG.z0, z1: CHG.z1 };
+      for (const [k, w, d] of [['S', 10, 8], ['M', 16, 10], ['L', 20, 16], ['min', 9, 7]]) { const counts = presetCounts(w, d); Object.assign(S, counts, { hallW: w, hallD: d, layout: autoBuild(w, d, counts) }); setupRun();
+        const reach = navReach(); out[k] = { back: CHG.z0 >= HALL.zb + 0.15 - 1e-9 && CHG.z0 <= HALL.zb + 0.65 + 1e-9, gap: +(6.15 - CHG.z1).toFixed(2), d, lockers: LOCKERS.every(L => reach(L.x, L.z)), door: reach(CHG_DOOR.x, CHG_DOOR.z) }; }
+      for (let d = 7; d <= 18; d++) { Object.assign(S, { hallW: 10, hallD: d, layout: { pieces: [] } }); setupRun(); const reach = navReach(); out['d' + d] = { back: CHG.z0 >= HALL.zb + 0.15 - 1e-9 && CHG.z0 <= HALL.zb + 0.65 + 1e-9, gap: +(6.15 - CHG.z1).toFixed(2), d, lockers: LOCKERS.every(L => reach(L.x, L.z)), door: reach(CHG_DOOR.x, CHG_DOOR.z) }; }   /* every depth: the washroom keeps the sample's alignment to the 0.5 m walking grid */
+      const ok = sample.z0 === -2.2 && sample.z1 === 5.2 && Object.values(out).every(o => o.back && o.gap >= (o.d === 7 ? 0.9 : 1.2) && o.lockers && o.door);   /* a 7-cell-deep hall has room for 0.95 m only */
+      return { ok, detail: { sample, out } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  layoutCancelRestores() {   // Plan 11: the builder edits a copy of the gym's pieces: Cancel leaves the open gym's layout as it was; a language switch keeps the edit
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(20, 16); Object.assign(S, counts, { hallW: 20, hallD: 16, layout: autoBuild(20, 16, counts) }); setupRun(); const before = JSON.stringify(S.layout);   /* L: room for one more rack */
+      openBuild(); buildCount('racks', 1); const added = BUILD.layout.pieces.length; setLang('zh'); const kept = BUILD.layout.pieces.length === added && BUILD.on; setLang('en'); cancelBuild();
+      return { ok: JSON.stringify(S.layout) === before && kept && added === JSON.parse(before).pieces.length + 1, detail: { added, kept, same: JSON.stringify(S.layout) === before } }; }
+    finally { if (BUILD.on) cancelBuild(); setLang('en'); Object.assign(S, keep); setupRun(); }
+  },
+  subGridDrawn() {   // owner: a finer sub-grid in lighter lines under the main 1.82 m grid
+    try { setupRun(); openBuild(); buildPick('M'); const lines = BUILD_GRID.children.filter(o => o.isLineSegments), main = lines.find(o => o.userData.main), sub = lines.find(o => o.userData.sub);
+      return { ok: !!main && !!sub && sub.material.opacity < main.material.opacity && sub.geometry.attributes.position.count > main.geometry.attributes.position.count, detail: { n: lines.length } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  minusRemovesLast() {   // Plan 11: − takes away the newest piece of that kind and leaves every other piece where it was
+    try { setupRun(); openBuild(); buildPick('L'); buildCount('racks', 1); const last = BUILD.layout.pieces[BUILD.layout.pieces.length - 1], others = JSON.stringify(BUILD.layout.pieces.filter(p => p !== last));
+      buildCount('racks', -1); return { ok: last.kind === 'rack' && !BUILD.layout.pieces.includes(last) && JSON.stringify(BUILD.layout.pieces) === others, detail: { last: last && last.kind } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  openGymUsesLayout() {   // Plan 11: an opened gym is laid out from the builder's pieces and charged for exactly them
+    const keep = JSON.parse(JSON.stringify(S));
+    try { setupRun(); openBuild(); buildPick('M'); const want = JSON.stringify(BUILD.layout), cost = layoutCost(BUILD.layout); openGym();
+      return { ok: JSON.stringify(S.layout) === want && BUILT.equipment === cost && STATIONS.filter(s => s.type === 'rack').length === BUILD.layout.pieces.filter(p => p.kind === 'rack').length, detail: { cost, eq: BUILT && BUILT.equipment } }; }
+    finally { goOn = false; INTRO.phase = 'off'; Object.assign(S, keep); setupRun(); }
+  },
+  setupAfterMonths() {   // review I1: a new business started after the months moved on opens on the 1st of the current month and year, not on the boot day of the boot year
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { year: 2026, month: 'Nov', startDay: 15 }); setupRun(); closeEarlySync('month'); nextMonth(); closeEarlySync('month'); nextMonth(); setupRun();
+      return { ok: M.cfg.month === 'Jan' && BIZ.year === 2027 && M.cal[0].day === 1 && M.cal.length === 31, detail: { month: M.cfg.month, year: BIZ.year, first: M.cal[0].day, n: M.cal.length } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  yearViewProrated() {   // review I2: the year view and the projected month take the short first month's share of depreciation and interest, as the closed books do
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { year: 2026, month: 'Nov', startDay: 15 }); setupRun(); const c = pnlCosts(), frac = 16 / 30, pm = projectMonth().total;
+      const wantCur = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * frac }, BIZ.balance * BIZ.rate / 1200 * frac).netProfit;
+      BOOKS.period = 'year'; openBooks('Books'); updateBooks(true); const num = (t) => (t.trim().startsWith('−') ? -1 : 1) * +t.replace(/[^0-9.]/g, ''), cur = num(document.querySelector('#bkBody tr[data-cur] td:nth-child(4)').textContent); closeBooks();
+      closeEarlySync('month'); nextMonth(); const m = BIZ.months[0], wantArch = belowEbitda(m.pnl.ebitda, { ...pnlCosts(), depYear: pnlCosts().depYear * frac }, m.interest).netProfit;
+      BOOKS.period = 'year'; openBooks('Books'); updateBooks(true); const arch = num(document.querySelector('#bkBody tr[data-arch="0"] td:nth-child(4)').textContent);
+      return { ok: Math.abs(cur - wantCur) <= 1 && Math.abs(arch - wantArch) <= 1, detail: { cur, wantCur: Math.round(wantCur), arch, wantArch: Math.round(wantArch) } }; }
+    finally { closeBooks(); BOOKS.period = 'today'; BOOKS.tab = 'Today'; Object.assign(S, keep); setupRun(); }
+  },
+  equipTabMatchesCost() {   // review I3: the Equipment tab's total is what the gym is charged, on every preset
+    const out = {};
+    try { setupRun(); openBuild(); for (const k of ['S', 'M', 'L']) { buildPick(k); BUILD.tab = 'Equipment'; renderBuild(); const t = document.querySelector('#build table.beq tr.sum td.n:last-child').textContent; out[k] = { tab: t, cost: moneyK(buildCostNow().equipment) }; }
+      return { ok: Object.values(out).every(o => o.tab === o.cost), detail: out }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  queueSpotsFree() {   // review I4: in packed layouts every station's spots and its first three queue spots stand on walkable floor
+    const keep = JSON.parse(JSON.stringify(S)), bad = [];
+    try { for (const [w, d] of [[10, 8], [16, 10], [20, 16], [24, 18], [10, 9], [13, 8], [12, 17], [9, 7], [8, 8]]) { const counts = presetCounts(w, d); Object.assign(S, counts, { hallW: w, hallD: d, layout: autoBuild(w, d, counts) }); setupRun();
+        for (const s of STATIONS) for (const [n, q] of [['acc', s.acc], ['rest', s.rest], ['w0', waitSpot(s, 0)], ['w1', waitSpot(s, 1)], ['w2', waitSpot(s, 2)]]) { const [i, j] = cellOf(q.x, q.z); if (navBlock[j * NAV.w + i]) bad.push(`${w}x${d} ${s.type} ${n} @${q.x.toFixed(2)},${q.z.toFixed(2)} st ${s.x.toFixed(2)},${s.z.toFixed(2)} yaw ${s.yaw.toFixed(2)}`); } }
+      return { ok: !bad.length, detail: { n: bad.length, bad: bad.slice(0, 10) } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  canvasDigits() {   // review I5: digits on the boards and plots come from the Digits face too
+    try { setupRun(); drawWhiteboard(1); drawPRBoard(); drawPlots(); const fonts = [WB.ctx.font, PRB.ctx.font, document.getElementById('pOcc').getContext('2d').font];
+      return { ok: fonts.every(f => /Digits/.test(f)), detail: fonts }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+  },
+  turfSwitchMakesRoom() {   // owner 2026-11-15: turning turf In where it does not fit re-plans with the turf placed early and says what no longer fits; Out gives the equipment back
+    try { setupRun(); openBuild(); buildPick('S'); const before = { ...BUILD.counts }, none = !BUILD.kit.turf; document.getElementById('toast').innerHTML = '';
+      buildTurf(true); const inn = !!BUILD.kit.turf, lost = BUILD_KEYS.some(([k]) => BUILD.counts[k] < before[k]), said = /no longer fit/.test(document.getElementById('toast').textContent);
+      buildTurf(false); const out = !BUILD.kit.turf && BUILD_KEYS.every(([k]) => BUILD.counts[k] === before[k]);
+      return { ok: none && inn && lost && said && out, detail: { none, inn, lost, said, out, before, after: { ...BUILD.counts } } }; }
+    finally { if (BUILD.on) cancelBuild(); }
   },
   closeStuckAgent() {   // Plan 7 review I4: a member who never leaves cannot hang a close
     try { setupRun(); fastForward(12 * 3600 - A.t); const m = A.members.find(a => a.visible && a.state !== 'gone' && a.state !== 'pending'); m.state = 'stuckForTest';
@@ -1437,7 +1564,7 @@ const SELFTESTS = {
 }
 // dev screenshots: index.html?shot=<tab>&h=<gym hour>&period=<today|mtd|month|year>&lang=<en|zh>&months=<n closed first> opens the books at that hour
 { const q = new URLSearchParams(location.search);
-  if (q.has('shot')) { if (q.get('lang')) setLang(q.get('lang')); setupRun(); for (let k = 0; k < (+q.get('months') || 0); k++) { closeEarlySync('month'); nextMonth(); } fastForward((+q.get('h') || 19) * 3600 - A.t); if (q.get('period')) BOOKS.period = q.get('period'); if (q.get('shot') !== 'none') openBooks(q.get('shot') || 'Today');
+  if (q.has('shot')) { if (q.get('lang')) setLang(q.get('lang')); if (PRESETS[q.get('gym')]) { const p = PRESETS[q.get('gym')]; Object.assign(S, presetCounts(p.w, p.d), { hallW: p.w, hallD: p.d, layout: null, build: 'existing' }); }   /* &gym=S|M|L: a built gym (Plan 11 screenshots) */ setupRun(); for (let k = 0; k < (+q.get('months') || 0); k++) { closeEarlySync('month'); nextMonth(); } fastForward((+q.get('h') || 19) * 3600 - A.t); if (q.get('period')) BOOKS.period = q.get('period'); if (q.get('shot') !== 'none') openBooks(q.get('shot') || 'Today');
     if (q.get('cam')) { const [x, z, zm, az] = q.get('cam').split(',').map(Number); view.target.set(x, 0, z); view.zoom = view.zoomT = zm || 3; if (az != null && !isNaN(az)) view.az = view.azT = az; window.__clampView = false; } } }
 // dev screenshots of the first session: index.html?shot=none&intro=<welcome|cost|pay|follow|goal|tracker|books>&h=<gym hour for tracker/books>
 { const q = new URLSearchParams(location.search), st = q.get('intro');

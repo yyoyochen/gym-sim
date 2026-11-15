@@ -31,7 +31,9 @@ const HZ = 10, WALL_H = 3.8, CUT_H = 1.2;
 const HALL = { x0: -15, x1: 15, zb: -HZ, zf: HZ, w: null, d: null };   // the sample hall, 30 x 20 m (w, d: cells of a built hall)
 const hallShift = () => ({ R: HALL.x1 - 15, Lf: HALL.x0 + 15, Bk: HALL.zb + HZ });
 const DOOR = { x: 12, z: HZ, w: 1.6 };
-const CHG = { x0: 11, x1: 15, z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };   // two washrooms with changing space, men's north, women's south
+const CHG = { x0: 11, x1: 15, z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };
+const CHG_Z = { z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };   /* the sample's washroom depths; a built hall shifts them all by CHG_DZ */
+let CHG_DZ = 0;   // two washrooms with changing space, men's north, women's south
 const PRICEBOARD_AT = { x: 13.33, y: 1.124, z: 8.12 };   // centre of the price card lying flat on the counter by the customers (Plan 8b, owner); rotate or zoom to read it, tap it for the price list
 const DESK_C = { x: 13.6, z: 7.4 }, DESK_MON = { x: 13.5, y: 1.54, z: 7.0 }, DESK_STAFF_POS = { x: 14.35, z: 7.4 };
 const DOOR_OUT = { x: 12, z: HZ + 0.9 }, DOOR_IN = { x: 12, z: HZ - 0.9 }, DESK_PT = { x: 12.55, z: 7.35 }, CHG_DOOR = { x: 10.5, z: 0.2 };
@@ -46,15 +48,10 @@ function hallAnchors() {   // fixture positions for the current HALL
   DOOR.x = R + 12; Object.assign(CHG, { x0: R + 11, x1: HALL.x1 }); PRICEBOARD_AT.x = R + 13.33;
   DESK_C.x = R + 13.6; DESK_MON.x = R + 13.5; DESK_STAFF_POS.x = R + 14.35;
   DOOR_OUT.x = DOOR_IN.x = DOOR.x; DESK_PT.x = R + 12.55; CHG_DOOR.x = CHG.x0 - 0.5;
+  CHG_DZ = HALL.w == null ? 0 : Math.ceil((HALL.zb + 0.15 - CHG_Z.z0) * 2) / 2;   /* Plan 11: a built hall puts the washrooms in the back corner of the right wall, shifted in whole 0.5 m steps (rounded toward the front) so they sit on the walking grid as in the sample, clear of the back wall */
+  for (const k in CHG_Z) CHG[k] = CHG_Z[k] + CHG_DZ; CHG_DOOR.z = CHG_Z.doorM + CHG_DZ;
   COLUMNS.length = 0;
-  if (HALL.w != null) {
-    const W = HALL.x1 - HALL.x0, D = HZ - HALL.zb, nx = Math.ceil(W / COL_BAY), nz = Math.ceil(D / COL_BAY);
-    for (let i = 1; i < nx; i++) for (let k = 1; k < nz; k++) {
-      let x = HALL.x0 + i * W / nx, z = HALL.zb + k * D / nz;
-      if (x > R + 11 - 1.0 && z > CHG.z0 - 1.0) { x = R + 11; if (z > CHG.z1 - 0.3) z = CHG.z1; for (const dz of [CHG.doorM, CHG.doorF]) if (Math.abs(z - dz) < 0.95) z = dz + (z >= dz ? 0.95 : -0.95); }
-      if (!COLUMNS.some(c => Math.hypot(c.x - x, c.z - z) < 1)) COLUMNS.push({ x, z });
-    }
-  }
+  /* owner 2026-11-15: no interior pillars (distracting); COLUMNS stays empty and the layout guards that read it are inert */
   if (HALL.w == null) { WB_AT.x = Lf - 13.0; PRB_AT.x = Lf - 10.4; WB_AT.z = PRB_AT.z = Bk - 5.6; }   /* the sample hall: on posts by the dumbbells */
   else { WB_AT.x = HALL.x0 + 1.6; PRB_AT.x = HALL.x0 + 4.2; WB_AT.z = PRB_AT.z = HALL.zb + 0.08; }   /* a built hall: on the back wall above the stretch corner, clear of every zone */
 }
@@ -172,14 +169,14 @@ function buildHallFixtures() {
   box(CHG.x1 - CHG.x0, CUT_H, 0.2, c, (CHG.x0 + CHG.x1) / 2, 0, CHG.mid);   // divider
   box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.mid - CHG.z0 - 0.2, '#959bab', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.z0 + CHG.mid) / 2);
   box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.z1 - CHG.mid - 0.2, '#a5a39a', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.mid + CHG.z1) / 2);
-  const lockers = (list, zs, col) => zs.forEach((z, i) => { box(0.5, 1.8, 0.56, i % 2 ? col[0] : col[1], x1 - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', x1 - 0.82, 1.1, z + 0.15); const L = { x: x1 - 1.25, z }; list.push(L); LOCKERS.push(L); });
+  const dz = CHG_DZ, lockers = (list, zs, col) => zs.map(z => z + dz).forEach((z, i) => { box(0.5, 1.8, 0.56, i % 2 ? col[0] : col[1], x1 - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', x1 - 0.82, 1.1, z + 0.15); const L = { x: x1 - 1.25, z }; list.push(L); LOCKERS.push(L); });
   lockers(LOCKERS_M, [-1.6, -1.0, -0.4, 0.2, 0.8], ['#2f68ab', '#1e4a85']);
   lockers(LOCKERS_F, [2.0, 2.6, 3.2, 3.8, 4.4], ['#b0506a', '#8a3a52']);
   // a toilet cubicle (door on its east face) and a shower (glass, tiled tray) in each room; benches between them and the lockers
   const cubicle = (z) => { box(1.0, 1.9, 0.9, '#d9dde4', R + 11.65, 0, z); box(0.04, 1.6, 0.6, '#6b7182', R + 12.17, 0.1, z); box(0.06, 0.06, 0.06, '#dfe03a', R + 12.2, 0.95, z + 0.2); };
   const shower = (z) => { box(0.9, 0.06, 0.6, '#74abe0', R + 11.6, 0, z); box(0.9, 2.0, 0.04, '#9fc3e6', R + 11.6, 0, z + 0.3); box(0.04, 2.0, 0.6, '#9fc3e6', R + 12.05, 0, z); box(0.06, 0.25, 0.06, '#c4c9d4', R + 11.25, 1.85, z); };
-  cubicle(-1.65); shower(1.2); cubicle(4.65); shower(2.0);
-  box(0.45, 0.42, 0.9, '#a9733f', R + 12.8, 0, -0.95); box(0.45, 0.42, 0.8, '#a9733f', R + 12.8, 0, 4.3);
+  cubicle(-1.65 + dz); shower(1.2 + dz); cubicle(4.65 + dz); shower(2.0 + dz);
+  box(0.45, 0.42, 0.9, '#a9733f', R + 12.8, 0, -0.95 + dz); box(0.45, 0.42, 0.8, '#a9733f', R + 12.8, 0, 4.3 + dz);
   // door signs (Plan 8b, owner): a small plaque standing on the low wall beside each door, square to the walls; the letter on both faces; M blue, W red
   const plaque = (letter, bg, z) => { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, 32, 32); g.fillStyle = '#f2f1ea'; g.font = '700 22px Silkscreen, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter, 16, 17);
     const t = new THREE.CanvasTexture(cv); t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; const face = new THREE.MeshLambertMaterial({ map: t }), edge = L(bg);

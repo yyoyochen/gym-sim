@@ -81,7 +81,7 @@ function updateHover() {
   // the name and an expand icon (a box with an arrow out of its corner)
   const top = hull.reduce((m, p) => p[1] < m[1] ? p : m), cx = hull.reduce((s, p) => s + p[0], 0) / hull.length, text = hoverLabel(t);
   const fz = parseFloat(fs(12)), bh = Math.round(fz + 8);   /* the tag grows with the UI text size */
-  g.font = fz + 'px Silkscreen, "Cubic 11", monospace'; const w = g.measureText(text).width + 34, x = Math.max(4, Math.min(W - w - 4, cx - w / 2)), y = Math.max(4, top[1] - bh - 8);
+  g.font = fz + 'px Digits, Silkscreen, "Cubic 11", monospace'; const w = g.measureText(text).width + 34, x = Math.max(4, Math.min(W - w - 4, cx - w / 2)), y = Math.max(4, top[1] - bh - 8);
   g.fillStyle = 'rgba(16,19,28,.92)'; g.fillRect(x, y, w, bh); g.strokeStyle = '#dfe03a'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, bh - 1);
   g.fillStyle = '#f2f1ea'; g.textBaseline = 'middle'; g.fillText(text, x + 7, y + bh / 2 + 0.5);
   const ix = x + w - 20, iy = y + Math.round((bh - 12) / 2); g.strokeStyle = '#dfe03a'; g.lineWidth = 1.5; g.strokeRect(ix + 0.5, iy + 3.5, 9, 9);

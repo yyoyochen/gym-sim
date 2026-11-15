@@ -2,7 +2,29 @@
 
 All money is in NT dollars and shown as `$`.
 
-## Unreleased: the gym as a business (`pnl-sandbox`)
+## 2026-11-15: gyms laid out by rules
+
+Built gyms are now planned piece by piece on a finer grid, by the same rules a real gym follows.
+
+### Layout
+- Every piece of equipment has its real footprint on a 0.455 m sub-grid (each 1.82 m cell split 4 × 4); the builder draws the sub-grid in lighter lines.
+- Auto-layout follows general rules: racks and platforms along the back wall, dumbbells on the left wall with benches beside them, the turf and sled lane across the middle, cardio facing the windows, machines in rows. The game picks which way each piece faces.
+- Every piece keeps clear floor for the lifter, a rest spot and a short queue, and stays reachable from the door.
+- The washrooms move to the back corner, away from reception.
+- No more pillars inside built gyms.
+
+### Builder
+- "+" adds exactly one piece where it fits, or says the floor is full; it never moves or removes anything else. "−" takes away the newest piece of that kind.
+- Changing the plot size re-plans the layout.
+- The turf and sled lane has an In / Out switch. Where it does not fit, switching it In re-plans the gym with the lane placed first and says what no longer fits; Out gives that equipment back.
+- Equipment is priced per piece.
+
+### Other
+- The gym opens on today's date; the first month is the rest of this month, with costs, the loan payment and depreciation for those days only.
+- Digits everywhere use a clearer pixel font, so a 5 no longer reads as an S or an 8.
+- The browser tab reads "gym-sim".
+
+## The gym as a business
 
 The day simulation becomes a business you run month after month: money, members, a builder, and a first session that starts by opening your own gym.
 

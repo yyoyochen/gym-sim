@@ -1,7 +1,7 @@
 // ================================================================ the gym builder (Plan 8, rectangles first): a mode of the diorama. Build a gym pauses the day,
 // hides the panel and the people, lays a cell grid over the plot and previews the hall and equipment live; Open this gym starts a new business
 // in it; Cancel puts back the very same hall, stations and lockers so the day carries on.
-const BUILD = { on: false, w: null, d: null, want: {}, counts: {}, fitted: {}, kit: null, full: {}, tab: 'Plot', snap: null, intro: false, step: 'welcome' };   /* intro: the first-session steps (Plan 10) in front of the tabs */   /* want: what the learner asked for; counts: what fits */
+const BUILD = { layout: null, turf: true, on: false, w: null, d: null, want: {}, counts: {}, fitted: {}, kit: null, full: {}, tab: 'Plot', snap: null, intro: false, step: 'welcome' };   /* intro: the first-session steps (Plan 10) in front of the tabs */   /* want: what the learner asked for; counts: what fits */
 const BUILD_KEYS = [['cardio', 'Cardio machines', '有氧器材'], ['machines', 'Pin-loaded machines', '插銷式器械'], ['racks', 'Power racks', '深蹲架'], ['plats', 'Olympic platforms', '舉重平台'], ['benches', 'Benches', '訓練椅'], ['plates', 'Plate-loaded machines', '掛片式器械']];
 const BUILD_GRID = new THREE.Group(); BUILD_GRID.visible = false; world.add(BUILD_GRID);
 { // the buildable grid: 24 x 18 cells of 1.82 m, centred on x = 0, front row on the street wall
@@ -9,12 +9,17 @@ const BUILD_GRID = new THREE.Group(); BUILD_GRID.visible = false; world.add(BUIL
   for (let i = 0; i <= BUILD_LIMITS.maxW; i++) { const x = -W / 2 + i * CELL; pts.push(x, 0.06, HZ, x, 0.06, HZ - D); }
   for (let k = 0; k <= BUILD_LIMITS.maxD; k++) { const z = HZ - k * CELL; pts.push(-W / 2, 0.06, z, W / 2, 0.06, z); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  BUILD_GRID.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.35, fog: false })));
+  const main = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.35, fog: false })); main.userData.main = true; BUILD_GRID.add(main);
+  const sp = [], n = 4;   /* owner: the 0.455 m sub-grid in lighter lines (the main lines are drawn above) */
+  for (let i = 0; i <= BUILD_LIMITS.maxW * n; i++) if (i % n) { const x = -W / 2 + i * CELL / n; sp.push(x, 0.055, HZ, x, 0.055, HZ - D); }
+  for (let k = 0; k <= BUILD_LIMITS.maxD * n; k++) if (k % n) { const z = HZ - k * CELL / n; sp.push(-W / 2, 0.055, z, W / 2, 0.055, z); }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+  const sub = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: '#f2f1ea', transparent: true, opacity: 0.12, fog: false })); sub.userData.sub = true; BUILD_GRID.add(sub);
   const plot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#dfe03a', transparent: true, opacity: 0.18, depthWrite: false, fog: false }));
   plot.position.y = 0.05; plot.renderOrder = 4; BUILD_GRID.add(plot); BUILD_GRID.userData.plot = plot;
 }
 const buildEl = () => document.getElementById('build');
-const buildPlan = () => ({ w: BUILD.w, d: BUILD.d, counts: BUILD.counts });
+const buildPlan = () => ({ w: BUILD.w, d: BUILD.d, counts: BUILD.counts, layout: BUILD.layout });
 function buildCostNow() { return BUILD.w ? buildCost({ ...buildPlan(), kit: BUILD.kit }, { ...COSTS, rentRate: S.rentRate }) : null; }
 function openBuildFromBooks() { if (typeof closing !== 'undefined' && closing) return; closeBooks(); openBuild(); }   /* the books' link to the builder, not during an early close */
 function openBuild() {
@@ -22,30 +27,57 @@ function openBuild() {
   if (BOOKS.open) closeBooks(); if (typeof hideGoalCard === 'function') hideGoalCard();
   BUILD.snap = { w: HALL.w, d: HALL.d, EQUIP, STATIONS, OBST, BACKROW, CHALK, DBZONE, nav: navBlock.slice(), lockers: [LOCKERS_M.slice(), LOCKERS_F.slice(), LOCKERS.slice()], finOwn: S.finOwn, finLoan: S.finLoan, go: goOn };
   world.remove(EQUIP); EQUIP = new THREE.Group();   /* keep today's equipment untouched while the preview builds its own */
-  goOn = false; refreshGo(); BUILD.on = true; BUILD.tab = 'Plot';
+  goOn = false; refreshGo(); BUILD.on = true; BUILD.tab = 'Plot'; BUILD.turf = S.turf !== false;
   BUILD.w = S.hallW; BUILD.d = S.hallD; BUILD.counts = {}; BUILD.want = {}; for (const [k] of BUILD_KEYS) BUILD.want[k] = BUILD.counts[k] = S[k];
+  BUILD.layout = S.hallW ? JSON.parse(JSON.stringify(S.layout || autoBuild(S.hallW, S.hallD, BUILD.want, { turf: BUILD.turf }))) : null;   /* Plan 11: the builder edits a copy of the gym's pieces */
   panel.hidden = true; document.body.classList.add('building'); if (typeof clearFollow === 'function') clearFollow(); buildEl().hidden = false; BUILD_GRID.visible = true; positionUI();
   view.target.set(0, 0, -2); view.zoomT = Math.min(view.zoomT, innerWidth < 860 ? 0.75 : 1.1); view.follow = null;
   buildPreview();
 }
 function buildPreview() {
-  setHall(BUILD.w, BUILD.d); buildLayout({ ...S, ...(BUILD.w ? BUILD.want : SAMPLE_COUNTS), shock: 'none' });
-  const pc = placedCounts(); BUILD.fitted = pc.counts; BUILD.kit = pc.kit;
-  BUILD.full = {}; for (const [k] of BUILD_KEYS) { if (BUILD.w && BUILD.want[k] > BUILD.fitted[k]) BUILD.full[k] = true; BUILD.counts[k] = BUILD.w ? Math.min(BUILD.want[k], BUILD.fitted[k]) : SAMPLE_COUNTS[k]; }   /* only what fits is bought; say so when a + was refused */
-  BUILD_GRID.children[0].position.x = HALL.x0 - CELL * Math.round(HALL.x0 / CELL);   /* grid lines on the plot's edges (the right wall snaps to a whole metre) */
+  setHall(BUILD.w, BUILD.d); buildLayout({ ...S, ...(BUILD.w ? countsOf(BUILD.layout) : SAMPLE_COUNTS), layout: BUILD.w ? BUILD.layout : null, turf: BUILD.turf, shock: 'none' });
+  const pc = placedCounts(); BUILD.fitted = pc.counts; BUILD.kit = BUILD.w ? kitOf(BUILD.layout) : pc.kit;
+  BUILD.full = {}; for (const [k] of BUILD_KEYS) { BUILD.counts[k] = BUILD.w ? countsOf(BUILD.layout)[k] : SAMPLE_COUNTS[k]; if (BUILD.w && BUILD.want[k] > BUILD.counts[k]) BUILD.full[k] = true; }   /* only what is placed is bought; say so when the floor ran out */
+  for (const o of BUILD_GRID.children) if (o.isLineSegments) o.position.x = HALL.x0 - CELL * Math.round(HALL.x0 / CELL);   /* grid lines on the plot's edges (the right wall snaps to a whole metre) */
   const p = BUILD_GRID.userData.plot; p.scale.set(HALL.x1 - HALL.x0, 1, HZ - HALL.zb); p.position.x = (HALL.x0 + HALL.x1) / 2; p.position.z = (HALL.zb + HZ) / 2;
   renderBuild();
 }
 function buildPick(k) {
   if (k === 'sample') { BUILD.w = BUILD.d = null; Object.assign(BUILD.want, SAMPLE_COUNTS); }
   else { const p = PRESETS[k]; BUILD.w = p.w; BUILD.d = p.d; Object.assign(BUILD.want, presetCounts(p.w, p.d)); }
+  BUILD.layout = BUILD.w ? autoBuild(BUILD.w, BUILD.d, BUILD.want, { turf: BUILD.turf }) : null;
   buildPreview();
 }
 function buildSize(dw, dd) {
   if (!BUILD.w) { BUILD.w = PRESETS.M.w; BUILD.d = PRESETS.M.d; }
-  BUILD.w = clamp(BUILD.w + dw, 6, BUILD_LIMITS.maxW); BUILD.d = clamp(BUILD.d + dd, 7, BUILD_LIMITS.maxD); buildPreview();
+  BUILD.w = clamp(BUILD.w + dw, 6, BUILD_LIMITS.maxW); BUILD.d = clamp(BUILD.d + dd, 7, BUILD_LIMITS.maxD);
+  BUILD.layout = autoBuild(BUILD.w, BUILD.d, BUILD.want, { turf: BUILD.turf }); buildPreview();   /* a new size: the layout is redone from the counts asked for */
+  if (BUILD.on && BUILD.layout.pieces.length) showToast(tx('The layout was redone for the new size.', '換了大小，擺設已重新安排。'));
 }
-function buildCount(k, delta) { BUILD.want[k] = Math.max(k === 'racks' ? 1 : 0, BUILD.counts[k] + delta); buildPreview(); }
+function buildCount(k, delta) {   /* Plan 11: + places one more piece by the rules or is refused; − takes away the newest of that kind; nothing else moves */
+  if (!BUILD.w) return;
+  if (delta > 0) {
+    if (!addPiece(BUILD.layout, nextKind(BUILD.layout, k), BUILD.w, BUILD.d)) { buildPreview(); BUILD.full[k] = true; renderBuild(); showToast(tx('No room for another one: the floor is full.', '放不下了：場地已滿。')); return; }
+    BUILD.want[k] = countsOf(BUILD.layout)[k];
+  } else {
+    if (countsOf(BUILD.layout)[k] <= (k === 'racks' ? 1 : 0)) return;
+    const last = [...BUILD.layout.pieces].reverse().find(p => KINDS[p.kind].cat === k); if (last) removeLast(BUILD.layout, last.kind);
+    BUILD.want[k] = countsOf(BUILD.layout)[k];
+  }
+  buildPreview();
+}
+function buildTurf(on) {   /* owner: the turf and sled lane is the player's choice; where it does not fit, In re-plans with the turf placed early and says what no longer fits */
+  BUILD.turf = !!on; if (!BUILD.w) return buildPreview();
+  const has = () => BUILD.layout.pieces.some(p => p.kind === 'turf');
+  if (!on) { if (BUILD.layout.turfFirst) BUILD.layout = autoBuild(BUILD.w, BUILD.d, BUILD.want, { turf: false }); else removeLast(BUILD.layout, 'turf'); }   /* Out gives the equipment back */
+  else if (!has() && !addPiece(BUILD.layout, 'turf', BUILD.w, BUILD.d)) {
+    const before = countsOf(BUILD.layout), L = autoBuild(BUILD.w, BUILD.d, BUILD.want, { turf: true, turfFirst: true });
+    if (!L.pieces.some(p => p.kind === 'turf')) showToast(tx('No room for the turf lane even with less equipment.', '就算少放器材，草皮道也放不下。'));
+    else { BUILD.layout = L; const after = countsOf(L), lost = BUILD_KEYS.filter(([k]) => after[k] < before[k]).map(([k, en, zh]) => `${before[k] - after[k]} ${tx(en.toLowerCase(), zh)}`);
+      showToast(lost.length ? tx(`Turf added: ${lost.join(', ')} no longer fit.`, `已加入草皮道：${lost.join('、')}放不下了。`) : tx('Turf added.', '已加入草皮道。')); }
+  }
+  buildPreview();
+}
 function closeBuildUI() { BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
 function cancelBuild() {
   if (!BUILD.on) return; const z = BUILD.snap;
@@ -58,7 +90,7 @@ function openGym() {
   if (!BUILD.on || (BUILD.w && !checkPlot(BUILD.w, BUILD.d).ok)) return false;
   const wasIntro = BUILD.intro;
   BUILD.snap.EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); }); BUILD.snap = null;
-  S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts);
+  S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts); S.turf = BUILD.turf; S.layout = BUILD.w ? JSON.parse(JSON.stringify(BUILD.layout)) : null;
   if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; } else { S.build = 'existing'; S.monthsOpen = 1; }   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
   closeBuildUI(); setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshGo(); if (typeof refreshPending === 'function') refreshPending();
   if (typeof onGymOpened === 'function') onGymOpened(wasIntro);
@@ -111,13 +143,15 @@ function renderBuild() {
       <div class="bstep"><span>${tx('Depth', '深')}</span>${btn('data-size="0,-1"', '−')}<b>${BUILD.d} ${tx('cells', '格')} · ${(BUILD.d * CELL).toFixed(1)} m</b>${btn('data-size="0,1"', '+')}</div>`;
     const rules = sample ? '' : (() => { const r = checkPlot(BUILD.w, BUILD.d), L = { area: tx('At least 60 坪', '至少 60 坪'), size: tx('At least 8 × 7 cells (desk, door and two washrooms)', '至少 8 × 7 格（櫃檯、大門與兩間浴廁）'), fits: tx('Fits the site (24 × 18 cells)', '在基地範圍內（24 × 18 格）'), door: tx('Door on the street', '大門面向街道'), connected: tx('One connected shape', '單一連續形狀') };
       return `<section class="grp"><h2><span>${tx('Rules', '規則')}</span></h2><ul class="brules">${r.rules.map(x => `<li class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✓' : '✗'} ${L[x.key]}</li>`).join('')}</ul></section>`; })();
-    const money = c ? `<table><tr><td>${tx('Floor', '面積')}</td><td class="n">${c.ping} 坪 · ${Math.round(c.ping * 3.3058)} m²</td></tr><tr><td>${tx('Rent + management a month', '每月租金 + 管理費')}</td><td class="n">${bnt(c.rentMonth)}</td></tr><tr><td>${tx('Fit-out (floor, air con, lights, washrooms, permit)', '裝修（地板、空調、燈具、浴廁、許可）')}</td><td class="n">${bnt(c.fitOut)}</td></tr><tr><td>${tx('Structural columns (concrete frame, bays up to 9 m)', '結構柱（RC 構架，柱距最多 9 公尺）')}</td><td class="n" data-k="cols">${COLUMNS.length}</td></tr><tr><td>${tx(`Deposit (${DEPOSIT_MONTHS} months)`, `押金（${DEPOSIT_MONTHS} 個月）`)}</td><td class="n">${bnt(c.deposit)}</td></tr><tr><td>${tx('Rent-free first month', '第一個月免租')}</td><td class="n">${bnt(-(c.rentMonth - c.ping * COSTS.mgmtPerPing))}</td></tr></table>` : '';
+    const money = c ? `<table><tr><td>${tx('Floor', '面積')}</td><td class="n">${c.ping} 坪 · ${Math.round(c.ping * 3.3058)} m²</td></tr><tr><td>${tx('Rent + management a month', '每月租金 + 管理費')}</td><td class="n">${bnt(c.rentMonth)}</td></tr><tr><td>${tx('Fit-out (floor, air con, lights, washrooms, permit)', '裝修（地板、空調、燈具、浴廁、許可）')}</td><td class="n">${bnt(c.fitOut)}</td></tr><tr><td>${tx(`Deposit (${DEPOSIT_MONTHS} months)`, `押金（${DEPOSIT_MONTHS} 個月）`)}</td><td class="n">${bnt(c.deposit)}</td></tr><tr><td>${tx('Rent-free first month', '第一個月免租')}</td><td class="n">${bnt(-(c.rentMonth - c.ping * COSTS.mgmtPerPing))}</td></tr></table>` : '';
     body = `<div class="bpre">${pre}</div>${size}${money}${rules}`;
   } else if (BUILD.tab === 'Equipment') {
     const rows = BUILD_KEYS.map(([k, en, zh]) => { const n = BUILD.counts[k], full = !sample && BUILD.full[k];
       return `<tr><td>${tx(en, zh)}<span class="unit">${moneyK(EQUIP_PRICE[k])} ${tx('each', '每台')}</span>${full ? `<span class="bench">${tx('the floor is full', '空間已滿')}</span>` : ''}</td><td class="n">${sample ? n : `${btn(`data-count="${k},-1"`, '−')} <b>${n}</b> ${btn(`data-count="${k},1"`, '+', full ? 'dim' : '')}`}</td><td class="n">${bnt(n * EQUIP_PRICE[k])}</td></tr>`; }).join('');
-    const kit = FIXED_KIT.filter(([key]) => sample || !BUILD.kit || BUILD.kit[key]).reduce((s, [, v]) => s + v, 0), eq = BUILD_KEYS.reduce((s, [k]) => s + BUILD.counts[k] * EQUIP_PRICE[k], 0) + kit;
-    body = `<table class="beq">${rows}<tr><td>${tx('Dumbbells, cable tower, turf and sled, pull-up, mats', '啞鈴、滑輪架、草皮與雪橇、引體向上架、軟墊')}</td><td></td><td class="n">${bnt(kit)}</td></tr><tr class="sum"><td>${tx('Equipment', '器材')}</td><td></td><td class="n">${bnt(eq)}</td></tr></table>
+    const kitOfLayout = (q) => BUILD.layout.pieces.filter(p => KINDS[p.kind].cat === 'kit' && p.kind !== 'turf' && (!q || p.kind === q)).reduce((t, p) => t + KINDS[p.kind].price, 0);   /* review I3: by the pieces placed, as buildCost charges */
+    const kit = sample ? FIXED_KIT.reduce((t, [, v]) => t + v, 0) : kitOfLayout(), turf$ = sample ? 0 : BUILD.layout.pieces.filter(p => p.kind === 'turf').reduce((t, p) => t + KINDS.turf.price, 0), eq = BUILD_KEYS.reduce((t, [k]) => t + BUILD.counts[k] * EQUIP_PRICE[k], 0) + kit + turf$;
+    const turfRow = sample ? '' : `<tr><td>${tx('Turf and sled lane', '草皮與雪橇道')}${BUILD.turf && !(BUILD.kit && BUILD.kit.turf) ? `<span class="bench">${tx('no room at this size', '這個大小放不下')}</span>` : ''}</td><td class="n">${btn('data-turf="1"', tx('In', '要'), BUILD.turf ? 'on' : '')} ${btn('data-turf="0"', tx('Out', '不要'), BUILD.turf ? '' : 'on')}</td><td class="n">${bnt(BUILD.kit && BUILD.kit.turf ? FIXED_KIT.find(([q]) => q === 'turf')[1] : 0)}</td></tr>`;
+    body = `<table class="beq">${rows}${turfRow}<tr><td>${sample ? tx('Dumbbells, cable tower, turf and sled, pull-up, mats', '啞鈴、滑輪架、草皮與雪橇、引體向上架、軟墊') : tx('Dumbbells, cable tower, pull-up, mats', '啞鈴、滑輪架、引體向上架、軟墊')}</td><td></td><td class="n">${bnt(kit)}</td></tr><tr class="sum"><td>${tx('Equipment', '器材')}</td><td></td><td class="n">${bnt(eq)}</td></tr></table>
       <p class="note">${sample ? tx('The sample gym\'s equipment is fixed. Pick S, M, L or a custom size to choose counts.', '範例健身房的器材是固定的。選 S、M、L 或自訂大小即可調整數量。') : tx('Equipment is placed for you along the walls; when a zone is full, + stops.', '器材會自動沿牆擺放；區域滿了就不能再加。')}</p>`;
   } else {
     const capex = c ? c.capex : SAMPLE_CAPEX.capex, dep = c ? c.deposit : 0, cash = S.finOwn + S.finLoan - capex - dep, m$ = (v) => moneyK(v);
@@ -141,6 +175,7 @@ document.addEventListener('click', (e) => {
   else if (d.btab) { BUILD.tab = d.btab; renderBuild(); }
   else if (d.pick) buildPick(d.pick);
   else if (d.size) { const [a, c] = d.size.split(',').map(Number); buildSize(a, c); }
+  else if (d.turf) buildTurf(d.turf === '1');
   else if (d.count) { const [k, v] = d.count.split(','); buildCount(k, +v); }
   else if (d.fin) { const [k, v] = d.fin.split(','); S[k] = clamp(S[k] + v * 5e5, 0, 20e6); renderBuild(); }
   else if (d.bact === 'cancel') cancelBuild();

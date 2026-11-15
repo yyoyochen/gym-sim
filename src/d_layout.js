@@ -42,6 +42,7 @@ function waitSpot(s, i) { return { x: s.waitBase.x + s.waitDir.x * i, z: s.waitB
 function obst(x0, z0, x1, z1) { OBST.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]); }
 const Z_FRONT = Math.PI / 2;   // facing +z
 function buildLayout(cfg) {
+  if (HALL.w != null && cfg.layout && cfg.layout.pieces) return buildLayoutGrid(cfg);   /* Plan 11: a built hall is drawn from its list of pieces */
   // clear
   EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   world.remove(EQUIP); EQUIP = new THREE.Group(); world.add(EQUIP);
@@ -175,7 +176,7 @@ function buildLayout(cfg) {
   }
   // ---------------- plate-loaded machines + turf lane + pull-up station
   const pz = twoRows ? 1.0 : 0.5, turfZ = twoRows ? -1.6 : -2.6;
-  const keepMid = sample || pz - 1.0 > backWait + 0.3, keepTurf = sample || (turfZ - 0.8 > backEdge + 0.2 && (R + 7.0) - (Lf - 6.2) >= 8 && !colIn(Lf - 7.8, turfZ - 1.3, R + 8.1, turfZ + 1.3));
+  const keepMid = sample || pz - 1.0 > backWait + 0.3, keepTurf = sample || (cfg.turf !== false && turfZ - 0.8 > backEdge + 0.2 && (R + 7.0) - (Lf - 6.2) >= 8 && !colIn(Lf - 7.8, turfZ - 1.3, R + 8.1, turfZ + 1.3));
   const PLATE_M = [['legpress', -4.6], ['hack', -1.6], ['hipthrust', 1.4], ['beltsquat', 4.4]], nP = keepMid ? cfg.plates ?? 4 : 0;
   const plate = (nP === 4 ? PLATE_M : Array.from({ length: nP }, (_, i) => [PLATE_M[i % 4][0], i < 4 ? PLATE_M[i][1] : 4.4 + (i - 3) * 3.0])).map(([t, x]) => [t, Lf + x]).filter(([, x]) => sample || (x + 1.35 <= R + 7.9 && !colIn(x - 0.7, pz - 1.2, x + 1.6, pz + 1.7)));
   for (const [type, x] of plate) {
@@ -246,6 +247,132 @@ function buildLayout(cfg) {
   buildNav();
 }
 
+// ================================================================ Plan 11: built halls drawn from a list of pieces; every piece in a local frame whose facing the engine chose
+const ROTCS = [[1, 0], [0, 1], [-1, 0], [0, -1]];   /* cos, sin of rot × 90°: the front turns from +z to +x, −z, −x */
+function pieceFrame(px, pz, rot, B, EB) {
+  const [c, s] = ROTCS[rot], ry = rot * Math.PI / 2;
+  const at = (lx, lz) => ({ x: px + (lx * c + lz * s), z: pz + (lz * c - lx * s) }), vec = (v) => ({ x: v.x * c + v.z * s, z: v.z * c - v.x * s });
+  const F = {
+    rot, at, B, EB, sub: (lx, lz) => { const o = at(lx, lz); return pieceFrame(o.x, o.z, rot, B, EB); },
+    box: (w, h, d, col, lx, y, lz, lry = 0, o = B) => { const q = at(lx, lz); box(w, h, d, col, q.x, y, q.z, ry + lry, o); },
+    cyl: (rt, rb, h, seg, col, lx, y, lz, o = {}) => { const q = at(lx, lz); cyl(rt, rb, h, seg, col, q.x, y, q.z, { b: EB, ...o, ry: (o.ry || 0) + ry }); },
+    disc: (r, t, col, lx, y, lz, axis) => { const q = at(lx, lz); disc(r, t, col, q.x, y, q.z, rot % 2 ? (axis === 'x' ? 'z' : 'x') : axis, EB); },
+    geo: (g, lx, y, lz, m) => { const q = at(lx, lz); EB.add(place(g, q.x, y, q.z, ry), mOf(m)); },
+    obst: (x0, z0, x1, z1) => { const a = at(x0, z0), b = at(x1, z1); obst(a.x, a.z, b.x, b.z); },
+    st: (type, zone, lx, lz, yaw, o = {}) => { const q = at(lx, lz), w = {};
+      for (const k in o) w[k] = k === 'waitDir' ? vec(o[k]) : k === 'lane' || k === 'sledX' ? o[k] : (o[k] && typeof o[k] === 'object' && 'x' in o[k]) ? at(o[k].x, o[k].z) : o[k];
+      return addStation(type, zone, q.x, q.z, yaw - ry, w); },
+  };
+  return F;
+}
+const P2 = (x, z) => ({ x, z });
+const STEEL = '#1c1f2a', PAD = '#2f3340', CHROME = '#c4c9d4', SHROUD = '#565c6c';
+function stackTowerF(F, h = 2.3) {
+  for (const dx of [-0.32, 0.32]) F.box(0.076, h, 0.076, STEEL, dx, 0, 0);
+  F.box(0.72, 0.076, 0.076, STEEL, 0, h - 0.076, 0); F.box(0.72, 0.1, 0.5, STEEL, 0, 0, 0);
+  for (const dx of [-0.11, 0.11]) F.box(0.025, h - 0.25, 0.025, CHROME, dx, 0.1, 0);
+  for (let i = 0; i < 12; i++) F.box(0.36, 0.055, 0.2, i % 2 ? '#2f3340' : '#1c1f2a', 0, 0.12 + i * 0.06, 0);
+  for (const dz of [-0.13, 0.13]) F.box(0.6, 1.25, 0.02, SHROUD, 0, 0.1, dz);
+  F.cyl(0.075, 0.075, 0.05, 12, CHROME, 0, h - 0.2, 0, { rx: Math.PI / 2 });
+}
+// drawing origin relative to the footprint's centre (local metres, front +z), so each drawing sits on its footprint
+const ORG = { pullup: [0, -0.36], cable: [0, 0.13], turf: [0, 0] };
+const DRAW = {
+  treadmill(F, type) { F.box(0.85, 0.18, 1.9, '#565c6c', 0, 0, 0); F.box(0.6, 0.02, 1.5, '#0d0f14', 0, 0.18, -0.1); for (const dx of [-0.38, 0.38]) F.box(0.06, 1.2, 0.06, '#959bab', dx, 0.18, 0.8); F.box(0.8, 0.3, 0.2, '#7a8090', 0, 1.3, 0.82); F.box(0.5, 0.18, 0.04, '#13305a', 0, 1.36, 0.71);
+    F.st(type, 'cardio', 0, -0.15, Z_FRONT, { rest: P2(0.8, -1.6), waitBase: P2(0.8, -2.2), waitDir: P2(0, -0.6) }); F.obst(-0.42, 0.6, 0.42, 1.0); },
+  rower(F, type) { F.box(0.18, 0.12, 2.4, '#959bab', 0, 0.05, 0); F.box(0.5, 0.5, 0.4, '#1c1f2a', 0, 0.1, 1.0); F.disc(0.24, 0.12, '#7a8090', 0, 0.45, 1.0, 'x'); F.box(0.5, 0.06, 0.2, '#1c1f2a', 0, 0.15, 0.6);
+    F.st(type, 'cardio', 0, -0.3, Z_FRONT, { rest: P2(0.7, -1.8), waitBase: P2(0.7, -2.4), waitDir: P2(0, -0.6) }); F.obst(-0.3, 0.7, 0.3, 1.25); },
+  bike(F, type) { F.box(0.12, 0.08, 1.1, '#7a8090', 0, 0, 0); F.box(0.08, 0.85, 0.08, '#7a8090', 0, 0, -0.25); F.box(0.25, 0.08, 0.3, '#1c1f2a', 0, 0.88, -0.25); F.box(0.08, 1.05, 0.08, '#7a8090', 0, 0, 0.35); F.box(0.5, 0.06, 0.08, '#1c1f2a', 0, 1.05, 0.4);
+    if (type === 'airbike') F.disc(0.4, 0.2, '#565c6c', 0, 0.45, 0.55, 'x'); else F.disc(0.2, 0.1, '#6b7182', 0, 0.35, 0.4, 'x');
+    F.st(type, 'cardio', 0, -0.25, Z_FRONT, { rest: P2(0.6, -1.6), waitBase: P2(0.6, -2.2), waitDir: P2(0, -0.6) }); F.obst(-0.25, 0.2, 0.25, 0.75); },
+  pin(F, type) {
+    const T = F.sub(0, -0.95); stackTowerF(T); F.box(0.1, 0.1, 1.3, STEEL, 0, 0, -0.35); F.box(0.6, 0.012, 0.012, '#0d0f14', 0, 2.2, -0.95);
+    if (type !== 'row') { F.box(0.076, 0.42, 0.076, STEEL, 0, 0, 0); F.box(0.46, 0.09, 0.42, PAD, 0, 0.42, 0); }
+    if (['chestpress', 'pecdeck', 'shoulderpress', 'legext', 'legcurl'].includes(type)) { const tall = type === 'shoulderpress' ? 0.85 : 0.72; F.box(0.076, 0.5 + tall, 0.076, STEEL, 0, 0.3, -0.3); F.box(0.42, tall, 0.09, PAD, 0, 0.6, -0.22); }
+    if (type === 'pulldown') { F.box(0.076, 2.5, 0.076, STEEL, 0, 0, -0.62); F.box(0.076, 0.076, 1.2, STEEL, 0, 2.42, -0.4); F.cyl(0.075, 0.075, 0.05, 12, CHROME, 0, 2.33, 0.15, { rz: Math.PI / 2 }); F.box(0.012, 0.012, 1.1, '#0d0f14', 0, 2.4, -0.4); F.box(0.076, 0.7, 0.076, STEEL, 0, 0, 0.34); for (const dx of [-0.2, 0.2]) F.cyl(0.07, 0.07, 0.24, 8, PAD, dx - 0.12, 0.72, 0.32, { rz: Math.PI / 2 }); }
+    if (type === 'row') { F.box(0.076, 0.42, 0.076, STEEL, 0, 0, -0.1); F.box(0.42, 0.09, 0.5, PAD, 0, 0.42, -0.1); F.box(0.1, 0.1, 1.2, STEEL, 0, 0, 0.55); F.box(0.52, 0.34, 0.05, '#959bab', 0, 0.04, 0.82); F.box(0.076, 0.42, 0.076, STEEL, 0, 0, 1.1); F.cyl(0.075, 0.075, 0.05, 12, CHROME, 0, 0.26, 1.06, { rz: Math.PI / 2 }); F.box(0.012, 0.012, 2.0, '#0d0f14', 0, 0.11, 0.06); }
+    if (['chestpress', 'pecdeck', 'shoulderpress'].includes(type)) { for (const dx of [-0.45, 0.45]) F.box(0.076, 2.0, 0.076, STEEL, dx, 0, -0.5); F.box(0.98, 0.076, 0.076, STEEL, 0, 1.95, -0.5);
+      if (type === 'pecdeck') F.box(0.32, 0.076, 0.44, STEEL, 0, 1.9, -0.3); else for (const dx of [-0.38, 0.38]) F.cyl(0.05, 0.05, 0.1, 10, CHROME, dx - 0.05, type === 'shoulderpress' ? 0.98 : 1.88, -0.5, { rz: Math.PI / 2 }); }
+    if (type === 'legext' || type === 'legcurl') { F.box(0.1, 0.5, 0.12, STEEL, -0.3, 0.3, 0.42); if (type === 'legcurl') { F.box(0.076, 0.35, 0.076, STEEL, 0.3, 0.42, 0.3); F.box(0.42, 0.09, 0.2, PAD, 0, 0.74, 0.3); } }
+    F.st(type, 'machines', 0, 0, Z_FRONT, { rest: P2(0.95, 0.9), waitBase: P2(0.95, 1.5), waitDir: P2(0, 0.55), stackAt: P2(0, -0.95) }); T.obst(-0.4, -0.3, 0.4, 0.3);
+  },
+  plate(F, type) {
+    if (type === 'legpress') { F.box(1.1, 0.1, 2.3, '#565c6c', 0, 0, 0); F.box(0.6, 0.1, 0.6, '#1c1f2a', 0, 0.4, -0.6); F.box(0.6, 0.7, 0.12, '#1c1f2a', 0, 0.45, -0.95, 0, { b: F.EB, rx: -0.6 }); for (const dx of [-0.45, 0.45]) F.box(0.08, 0.08, 1.6, '#959bab', dx, 0.6, 0.45, 0, { b: F.EB, rx: -0.75 }); F.obst(-0.5, 0.1, 0.5, 1.2); }
+    if (type === 'hack') { F.box(1.1, 0.1, 1.9, '#565c6c', 0, 0, 0); for (const dx of [-0.45, 0.45]) F.box(0.08, 2.0, 0.08, '#959bab', dx, 0, -0.75, 0, { b: F.EB, rx: 0.35 }); F.box(0.55, 0.9, 0.1, '#1c1f2a', 0, 0.6, -0.6, 0, { b: F.EB, rx: 0.35 }); F.obst(-0.5, -1.0, 0.5, -0.6); }
+    if (type === 'hipthrust') { F.box(1.2, 0.42, 0.35, '#1c1f2a', 0, 0, -0.55); F.box(1.3, 0.05, 1.6, '#565c6c', 0, 0, 0); F.obst(-0.6, -0.75, 0.6, -0.38); }
+    if (type === 'beltsquat') { F.box(1.1, 0.12, 1.8, '#565c6c', 0, 0, 0); F.box(0.1, 1.0, 0.1, '#7a8090', 0, 0, 0.75); F.box(0.8, 0.06, 0.06, '#959bab', 0, 1.0, 0.75); F.box(0.14, 0.14, 1.4, '#7a8090', 0, 0.12, -0.3); F.obst(-0.1, 0.65, 0.1, 0.85); }
+    F.st(type, 'machines', 0, 0, Z_FRONT, { rest: P2(1.0, 0.8), waitBase: P2(1.05, 1.4), waitDir: P2(0, 0.55) });
+  },
+  rack(F) {
+    F.box(2.4, 0.06, 2.4, '#1c1f2a', 0, 0, 0); F.box(1.2, 0.065, 2.38, '#c99a5e', 0, 0, 0);
+    for (const dx of [-0.6, 0.6]) for (const dz of [-1.0, 0.2]) { F.box(0.076, 2.3, 0.076, '#1c1f2a', dx, 0.06, dz); F.obst(dx - 0.1, dz - 0.1, dx + 0.1, dz + 0.1); for (let y = 0.5; y < 2.2; y += 0.12) F.box(0.02, 0.025, 0.08, '#6b7182', dx + (dx < 0 ? 0.03 : -0.03), y, dz); }
+    for (const dz of [-1.0, 0.2]) F.box(1.28, 0.076, 0.076, '#1c1f2a', 0, 2.32, dz);
+    F.box(1.25, 0.04, 0.04, '#c4c9d4', 0, 2.22, 0.32);
+    for (const dx of [-0.6, 0.6]) { F.box(0.076, 0.076, 1.28, '#1c1f2a', dx, 2.32, -0.4); F.box(0.03, 0.03, 1.25, '#d6403a', dx, 0.62, -0.4); F.box(0.09, 0.1, 0.1, '#c4c9d4', dx, 1.2, 0.25); F.box(0.09, 0.1, 0.1, '#c4c9d4', dx, 0.9, 0.25);
+      const hx = dx + (dx < 0 ? -0.2 : 0.2), sd = dx < 0 ? -1 : 1, store = dx < 0 ? [[25, 0.32, 2], [15, 0.8, 2], [5, 1.28, 3]] : [[20, 0.32, 2], [10, 0.8, 3], [2.5, 1.28, 2]];
+      for (const [w, y, n] of store) { F.box(0.32, 0.05, 0.05, '#c4c9d4', hx, y, -1.0); for (let k = 0; k < n; k++) F.disc(PLATE[w][1] / 2, PLATE[w][2], PLATE[w][0], hx + sd * (0.05 + k * (PLATE[w][2] + 0.008)), Math.max(y + 0.02, PLATE[w][1] / 2 + 0.07), -1.0, 'x'); } }
+    F.st('rack', 'racks', 0, -0.45, Z_FRONT, { acc: P2(0, -0.45), hooks: P2(0, 0.2), dl: P2(0, 0.75), bar0: P2(0, 0.95), rest: P2(-0.85, 1.55), waitBase: P2(0.7, 1.8), waitDir: P2(0, 0.55), spot: P2(0, 0.65), load: 20, mode: 'squat' });
+  },
+  olyplat(F) {
+    F.box(2.4, 0.06, 2.4, '#1c1f2a', 0, 0, 0); F.box(1.2, 0.065, 2.38, '#a9733f', 0, 0, 0); F.box(1.6, 0.9, 0.35, '#565c6c', 0, 0, -1.15);
+    [[20, -0.45], [15, -0.15], [10, 0.15], [5, 0.45]].forEach(([w, dx], ix) => { for (let n = 0; n < 3; n++) F.disc(0.225, 0.06, PLATE[w][0], dx, 0.95, -1.15 + (n - 1) * 0.08 + (ix % 2) * 0.04, 'z'); });
+    F.obst(-0.8, -1.35, 0.8, -0.95);
+    F.st('olyplat', 'platforms', 0, 0.05, Z_FRONT, { bar0: P2(0, 0.3), rest: P2(-0.9, 1.55), waitBase: P2(0.75, 1.8), waitDir: P2(0, 0.55), load: 20 });
+  },
+  bench(F) { F.box(1.2, 0.1, 0.32, '#1c1f2a', 0, 0.38, 0); F.box(0.06, 0.38, 0.06, '#7a8090', -0.45, 0, 0); F.box(0.06, 0.38, 0.06, '#7a8090', 0.45, 0, 0); F.box(0.1, 0.06, 0.4, '#7a8090', -0.5, 0, 0); F.box(0.1, 0.06, 0.4, '#7a8090', 0.5, 0, 0);
+    F.st('bench', 'dumbbells', 0, 0, 0, { rest: P2(0.3, 0.7), waitBase: P2(-0.45, 0.8), waitDir: P2(-0.5, 0) }); F.obst(-0.55, -0.12, 0.55, 0.12); },
+  dbrack(F) {   /* a 3.3 m two-tier run along local z, the lifters stand on its +x side */
+    const z0 = -1.65, z1 = 1.65, len = z1 - z0; let w = 2.5;
+    for (const zz of [z0 + 0.05, z1 - 0.05]) { F.box(0.06, 0.9, 0.06, STEEL, -0.3, 0, zz); F.box(0.06, 0.6, 0.06, STEEL, 0.3, 0, zz); F.box(0.7, 0.06, 0.06, STEEL, 0, 0, zz); }
+    F.box(0.36, 0.04, len, STEEL, 0.17, 0.5, 0, 0, { b: F.B.b, rz: -0.12 }); F.box(0.36, 0.04, len, STEEL, -0.2, 0.86, 0, 0, { b: F.B.b, rz: -0.12 });
+    for (const [tier, cx] of [[0.9, -0.2], [0.54, 0.17]]) { const slot = (len - 0.2) / 5;
+      for (let p = 0; p < 5; p++) { const r = 0.065 + w * 0.0012, hl = 0.05 + w * 0.0016; let z = z0 + 0.1 + p * slot + (slot - 4 * r - 0.015) / 2;
+        for (let n = 0; n < 2; n++) { const zz = z + r; F.disc(0.018, 0.14, CHROME, cx, tier + r, zz, 'x');
+          for (const sd of [-1, 1]) { const g = new THREE.CylinderGeometry(r, r, hl, 6); g.rotateZ(Math.PI / 2); F.geo(g, cx + sd * (0.07 + hl / 2), tier + r, zz, '#3b3f4c'); F.disc(r * 0.45, 0.012, '#959bab', cx + sd * (0.07 + hl + 0.006), tier + r, zz, 'x'); }
+          z += 2 * r + 0.015; }
+        w += 2.5; } }
+    F.obst(-0.45, z0, 0.4, z1);
+    for (const z of [-0.8, 0.8]) F.st('dbspot', 'dumbbells', 1.0, z, Math.PI, { rest: P2(1.6, z + 0.45), waitBase: P2(1.7, z + 0.2), waitDir: P2(0.4, 0) });
+  },
+  cable(F) {
+    for (const dx of [-1.8, 1.8]) { stackTowerF(F.sub(dx, -0.3), 2.45); const U = F.sub(dx, 0); for (const ddx of [-0.32, 0.32]) U.box(0.076, 2.45, 0.076, STEEL, ddx, 0, 0.2); U.obst(-0.4, -0.6, 0.4, 0.3); F.cyl(0.075, 0.075, 0.05, 12, CHROME, dx * 0.92, 2.1, 0.2, { rx: Math.PI / 2 }); }
+    F.box(3.9, 0.076, 0.076, STEEL, 0, 2.42, 0.2); F.box(2.2, 0.05, 0.05, CHROME, 0, 2.3, 0.35);
+    F.st('cable', 'machines', 0, -0.1, Z_FRONT, { rest: P2(0, 1.2), waitBase: P2(0.7, 1.4), waitDir: P2(0, 0.55), stackAt: P2(-1.8, -0.3), stackAt2: P2(1.8, -0.3) });
+  },
+  pullup(F) {
+    for (const dx of [-0.6, 0.6]) { F.box(0.076, 2.5, 0.076, '#1c1f2a', dx, 0, 0); F.box(0.076, 0.076, 0.9, '#1c1f2a', dx, 0, 0); F.obst(dx - 0.12, -0.12, dx + 0.12, 0.12); }
+    F.box(1.3, 0.05, 0.05, '#c4c9d4', 0, 2.33, 0); F.box(1.28, 0.076, 0.076, '#1c1f2a', 0, 2.45, 0);
+    for (const dx of [-0.28, 0.28]) { F.box(0.045, 0.045, 0.6, '#c4c9d4', dx, 1.23, 0.55); for (const dz of [0.28, 0.82]) F.box(0.06, 1.23, 0.06, '#1c1f2a', dx * 1.15, 0, dz); F.box(0.06, 0.06, 0.6, '#1c1f2a', dx * 1.15, 0.0, 0.55); }
+    F.st('pullup', 'other', 0, 0, Z_FRONT, { rest: P2(-1.0, 0.9), waitBase: P2(-1.1, 1.5), waitDir: P2(0, 0.55) });
+  },
+  mat(F, type, i) { F.box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i % 4], 0, 0.0, 0); F.st('mat', 'other', 0, -0.35, Z_FRONT, { rest: P2(0.6, 0), waitBase: P2(0.7, 0.9), waitDir: P2(0, 0.5) }); },
+  turf(F) {   /* the sled lane runs along local x (facing 0 only: the sled moves along world x) */
+    const L = 24 * SUB, a = -L / 2;
+    F.box(L, 0.04, 1.6, '#317033', 0, 0.0, 0); F.box(0.1, 0.045, 1.6, '#f2f1ea', a + 0.4, 0.0, 0); F.box(0.1, 0.045, 1.6, '#f2f1ea', -a - 0.4, 0.0, 0);
+    const p0 = F.at(a + 0.8, 0), p1 = F.at(-a - 1.0, 0);
+    F.st('sled', 'other', a + 0.8, 0, 0, { lane: [p0.x, p1.x], sledX: p0.x + 0.8, rest: P2(a + 1.0, 1.4), waitBase: P2(a + 2.0, -1.3), waitDir: P2(-0.55, 0) });   /* the queue lines up behind the start line, along the lane */
+  },
+};
+const DRAW_OF = (kind) => ({ treadmill: 'treadmill', rower: 'rower', bike: 'bike', airbike: 'bike', rack: 'rack', olyplat: 'olyplat', bench: 'bench', dbrack: 'dbrack', cable: 'cable', pullup: 'pullup', mat: 'mat', turf: 'turf' })[kind] || (KINDS[kind].cat === 'plates' ? 'plate' : 'pin');
+function buildLayoutGrid(cfg) {
+  EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  world.remove(EQUIP); EQUIP = new THREE.Group(); world.add(EQUIP);
+  STATIONS = []; OBST = [];
+  const EB = new Builder(), B = { b: EB };
+  let racksLeft = cfg.racks != null ? cfg.racks : Infinity, mats = 0;   /* the broken-rack scenario lays out one rack fewer */
+  for (const p of cfg.layout.pieces) {
+    if (p.kind === 'rack' && racksLeft-- <= 0) continue;
+    const f = footprint(p), o = ORG[p.kind] || [0, 0], C = pieceFrame(HALL.x0 + (f.x0 + f.x1) / 2 * SUB, HALL.zb + (f.z0 + f.z1) / 2 * SUB, p.rot, B, EB);
+    DRAW[DRAW_OF(p.kind)](C.sub(o[0], o[1]), p.kind, p.kind === 'mat' ? mats++ : 0);
+  }
+  const db = cfg.layout.pieces.filter(p => p.kind === 'dbrack').map(footprint);
+  DBZONE = db.length ? { x: HALL.x0 + (db[0].x1 + 0.6) * SUB, zc: HALL.zb + (db[0].z0 + db[0].z1) / 2 * SUB, span: 2 } : { x: HALL.x0 + 1.4, zc: (HALL.zb + HZ) / 2, span: 1 };
+  const r0 = STATIONS.find(s => s.type === 'rack'); CHALK = r0 ? { x: r0.x - 1.2, z: r0.z + 2.4 } : { x: HALL.x0 + 2, z: HALL.zb + 2 };
+  BACKROW = { z: r0 ? r0.z : HALL.zb + 2, rows: 1 };
+  EB.flush(EQUIP);
+  buildNav();
+}
+
 // ================================================================ navigation grid + A*
 const NAV = { x0: -37, z0: -27, cs: 0.5, w: 148, h: 124 };
 let navBlock = new Uint8Array(NAV.w * NAV.h);
@@ -266,8 +393,9 @@ function buildNav() {
   // two washrooms: west wall with two doors, divider, lockers, benches, cubicles and showers (Plan 7b)
   blockRect(CHG.x0 - 0.15, CHG.z0, CHG.x0 + 0.15, CHG.doorM - 0.6); blockRect(CHG.x0 - 0.15, CHG.doorM + 0.6, CHG.x0 + 0.15, CHG.doorF - 0.6); blockRect(CHG.x0 - 0.15, CHG.doorF + 0.6, CHG.x0 + 0.15, CHG.z1);
   blockRect(CHG.x0, CHG.z0 - 0.15, CHG.x1, CHG.z0 + 0.15); blockRect(CHG.x0, CHG.z1 - 0.15, CHG.x1, CHG.z1 + 0.15); blockRect(CHG.x0, CHG.mid - 0.15, CHG.x1, CHG.mid + 0.15);
-  blockRect(hx1 - 0.85, CHG.z0, hx1, CHG.z1); blockRect(R + 12.55, -1.4, R + 13.05, -0.5); blockRect(R + 12.55, 3.9, R + 13.05, 4.7);
-  blockRect(R + 11.1, -2.1, R + 12.2, -1.2); blockRect(R + 11.1, 0.9, R + 12.1, 1.5); blockRect(R + 11.1, 4.2, R + 12.2, 5.1); blockRect(R + 11.1, 1.7, R + 12.1, 2.3);
+  const dz = CHG_DZ;   /* 0 in the sample hall; a built hall's washrooms sit in the back corner */
+  blockRect(hx1 - 0.85, CHG.z0, hx1, CHG.z1); blockRect(R + 12.55, -1.4 + dz, R + 13.05, -0.5 + dz); blockRect(R + 12.55, 3.9 + dz, R + 13.05, 4.7 + dz);
+  blockRect(R + 11.1, -2.1 + dz, R + 12.2, -1.2 + dz); blockRect(R + 11.1, 0.9 + dz, R + 12.1, 1.5 + dz); blockRect(R + 11.1, 4.2 + dz, R + 12.2, 5.1 + dz); blockRect(R + 11.1, 1.7 + dz, R + 12.1, 2.3 + dz);
   // desk, turnstile posts, fountain, boards, mirror
   blockRect(R + 13.15, 6.15, R + 14.05, 8.65); blockRect(DOOR.x - 0.9, 7.9, DOOR.x - 0.6, 8.5); blockRect(DOOR.x + 0.6, 7.9, DOOR.x + 0.9, 8.5);
   blockRect(R + 10.4, 5.55, R + 10.9, 6.05); if (HALL.w == null) { blockRect(Lf - 14.2, WB_AT.z - 0.15, Lf - 11.8, WB_AT.z + 0.15); blockRect(Lf - 11.7, PRB_AT.z - 0.15, Lf - 9.1, PRB_AT.z + 0.15); }   /* a built hall hangs them on the back wall */
