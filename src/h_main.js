@@ -1032,8 +1032,8 @@ const SELFTESTS = {
     const keep = { az: view.az, zoom: view.zoom, zoomT: view.zoomT, t: view.target.clone() };
     try { setupRun(); clearFollow(); const rack = STATIONS.find(s => s.type === 'rack'); const at = screenOf(rack.x, 0, rack.z);
       const t = pickTarget(at[0], at[1]), lab = t ? hoverLabel(t) : '', hull = t ? hoverHull(t) : [];
-      const edges = t ? hoverEdges(t) : [], shaded = edges.length >= 9 && new Set(edges.map(e => e.shade)).size >= 2 && edges.every(e => e.a && e.b);   /* Plan 8b (owner): an outline only, its edges shaded so they read as having thickness */
-      return { ok: !!t && t.kind === 'station' && t.s === rack && lab === 'Power rack' && hull.length >= 4 && shaded && !followA && !focusS, detail: { kind: t && t.kind, lab, hull: hull.length, edges: edges.length } }; }
+      const edges = t ? hoverBase(t) : [], flat = edges.length === 4 && edges.every(e => e.a && e.b);   /* (owner, 2026-11-15): a dotted footprint on the floor */
+      return { ok: !!t && t.kind === 'station' && t.s === rack && lab === 'Power rack' && hull.length >= 4 && flat && !followA && !focusS, detail: { kind: t && t.kind, lab, hull: hull.length, edges: edges.length } }; }
     finally { view.az = view.azT = keep.az; view.zoom = keep.zoom; view.zoomT = keep.zoomT; view.target.copy(keep.t); }
   },
   hoverFindsBoard() {   // Plan 7b: hovering the price sign says it opens the price list
@@ -1049,6 +1049,15 @@ const SELFTESTS = {
       const at = m.P && m.P.H ? m.P.H : m.pos, fx = FOLLOW_MARK.position.x - HALL.x0, fz = FOLLOW_MARK.position.z - HALL.zb;   /* Plan 8b (owner): the floor tile the person stands on, on the floor's 1 m grid */
       const on = FOLLOW_MARK.visible && Math.abs(fx - Math.floor(fx) - 0.5) < 1e-6 && Math.abs(fz - Math.floor(fz) - 0.5) < 1e-6 && Math.abs(FOLLOW_MARK.position.x - at.x) <= 0.5 && Math.abs(FOLLOW_MARK.position.z - at.z) <= 0.5;
       clearFollow(); updateFollowMark(0.6); return { ok: !!m && on && steady && !FOLLOW_MARK.visible, detail: { on, steady, s0, s1, lo, hi, after: FOLLOW_MARK.visible } }; }
+    finally { clearFollow(); }
+  },
+  selectMarksMachine() {   // (owner, 2026-11-15): a selected machine wears the same floor mark, at its footprint, turned with it; every station has a real extent
+    try { setupRun(); clearFollow(); const s = STATIONS.find(s => s.type === 'chestpress') || STATIONS.find(s => s.fit); actOn({ kind: 'station', s }); updateFollowMark(0.5);
+      const b = hoverBox({ kind: 'station', s }), E = FOLLOW_MARK.userData.edges, near = (p, q) => Math.abs(p - q) < 1e-6;
+      const on = FOLLOW_MARK.visible && near(FOLLOW_MARK.position.x, b[0]) && near(FOLLOW_MARK.position.z, b[1]) && near(FOLLOW_MARK.rotation.y, -s.yaw);
+      const reach = Math.max(...E.map(m => Math.abs(m.position.x))) >= b[3] / 2 && Math.max(...E.map(m => Math.abs(m.position.z))) >= b[5] / 2;   /* past the footprint, not inside it */
+      const bad = STATIONS.filter(s => s.type !== 'sled' && !(s.fit && s.fit.a > 0.3 && s.fit.c > 0.3 && s.fit.h > 0.03 && s.fit.a < 3.5 && s.fit.c < 4.5)).map(s => s.type);
+      clearFollow(); updateFollowMark(0.1); return { ok: on && reach && !bad.length && !FOLLOW_MARK.visible, detail: { on, reach, bad } }; }
     finally { clearFollow(); }
   },
   priceBoardOpensPricing() {   // Plan 7b: tapping the price board opens the Pricing tab

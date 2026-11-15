@@ -267,10 +267,13 @@ function updateCamera(dt) {
 // ================================================================ materials & static geometry builder
 const matCache = new Map();
 function L(c) { if (!matCache.has(c)) matCache.set(c, new THREE.MeshLambertMaterial({ color: c })); return matCache.get(c); }
+// every static piece's world bounds since the last station was placed; addStation fits the hover box to the pieces drawn for it
+let KIT = [];
 class Builder {
   constructor() { this.b = new Map(); }
   add(geo, m) {
     let g = geo.index ? geo.toNonIndexed() : geo;
+    g.computeBoundingBox(); KIT.push(g.boundingBox.clone());
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
     if (!g.attributes.normal) g.computeVertexNormals();
     for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);

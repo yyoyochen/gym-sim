@@ -17,7 +17,20 @@ function addStation(type, zone, x, z, yaw, o = {}) {
   s.rest = s.rest || loc(s, 0.6, 1.1);
   s.waitBase = s.waitBase || loc(s, 1.4, 1.2);
   s.waitDir = s.waitDir || { x: Math.cos(s.yaw) * 0.6, z: Math.sin(s.yaw) * 0.6 };
+  if (s.fit === undefined) s.fit = kitFit(x, z, yaw); KIT = [];   /* a station can pass its own extent when its kit is shared or drawn later */
   STATIONS.push(s); return s;
+}
+// the extent of the kit drawn for a station: the pieces built since the last station, near this one (not floor-sized), measured along its facing
+function kitFit(x, z, yaw) {
+  const f = [Math.cos(yaw), Math.sin(yaw)], r = [-Math.sin(yaw), Math.cos(yaw)]; let a0 = 1e9, a1 = -1e9, c0 = 1e9, c1 = -1e9, y0 = 1e9, y1 = -1e9, n = 0;
+  for (const b of KIT) {
+    if (b.max.x - b.min.x > 6 || b.max.z - b.min.z > 6) continue;
+    if (Math.hypot((b.min.x + b.max.x) / 2 - x, (b.min.z + b.max.z) / 2 - z) > 3) continue;
+    for (const px of [b.min.x, b.max.x]) for (const pz of [b.min.z, b.max.z]) { const dx = px - x, dz = pz - z, da = dx * f[0] + dz * f[1], dc = dx * r[0] + dz * r[1];
+      a0 = Math.min(a0, da); a1 = Math.max(a1, da); c0 = Math.min(c0, dc); c1 = Math.max(c1, dc); }
+    y0 = Math.min(y0, b.min.y); y1 = Math.max(y1, b.max.y); n++;
+  }
+  return n ? { ca: (a0 + a1) / 2, cc: (c0 + c1) / 2, a: a1 - a0, c: c1 - c0, y0: Math.max(0, y0), h: y1 - Math.max(0, y0) } : null;
 }
 // what a layout actually placed: counts per kind and which fixed-kit zones exist (Plan 8: a built gym pays for these)
 function placedCounts() {
@@ -32,7 +45,7 @@ function buildLayout(cfg) {
   // clear
   EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   world.remove(EQUIP); EQUIP = new THREE.Group(); world.add(EQUIP);
-  STATIONS = []; OBST = [];
+  STATIONS = []; OBST = []; KIT = [];   /* the hall shell built before this isn't any station's kit */
   const EB = new Builder(); const B = { b: EB };
   // Plan 8: zones keep to their wall — cardio and machines to the street wall, racks and platforms to the back wall, dumbbells, mats and the bar
   // holder to the left wall — at today's coordinates plus that wall's shift; counts come from cfg and are clipped to what fits a built hall.
@@ -147,7 +160,10 @@ function buildLayout(cfg) {
       obst(Lf - 14.7, z0, Lf - 13.85, z1);
     }
   }
-  [-4.0, -2.2, -0.4, 1.4].filter(z => segs.some(([z0, z1]) => z >= z0 && z <= z1)).forEach(z => addStation('dbspot', 'dumbbells', Lf - 12.75, z, Math.PI, { rest: { x: Lf - 11.95, z: z + 0.65 }, waitBase: { x: Lf - 11.7, z: z + 0.9 }, waitDir: { x: 0.5, z: 0 } }));
+  // each spot's extent is its slice of the rack (the racks are built in one go above, so the kit can't be told apart per spot); facing -x, so the rack lies ahead
+  const dbFit = (z) => { const [z0, z1] = segs.find(([z0, z1]) => z >= z0 && z <= z1), lo = Math.max(z0, z - 0.85), hi = Math.min(z1, z + 0.85);
+    return { ca: (Lf - 12.75) - (Lf - 14.275), cc: z - (lo + hi) / 2, a: 0.85, c: hi - lo, y0: 0, h: 1.05 }; };
+  [-4.0, -2.2, -0.4, 1.4].filter(z => segs.some(([z0, z1]) => z >= z0 && z <= z1)).forEach(z => addStation('dbspot', 'dumbbells', Lf - 12.75, z, Math.PI, { fit: dbFit(z), rest: { x: Lf - 11.95, z: z + 0.65 }, waitBase: { x: Lf - 11.7, z: z + 0.9 }, waitDir: { x: 0.5, z: 0 } }));
   const bz0 = sample ? -4.0 : Math.max(-4.0, backWait + 0.7), nB = sample ? cfg.benches : Math.min(cfg.benches, 2 * Math.max(0, Math.floor((2.0 - bz0) / 1.6) + 1));
   for (let i = 0; i < nB; i++) {
     const col = i % 2, row = Math.floor(i / 2);
@@ -170,7 +186,7 @@ function buildLayout(cfg) {
     addStation(type, 'machines', x, pz, Z_FRONT, { rest: { x: x + 1.3, z: pz + 0.8 }, waitBase: { x: x + 1.35, z: pz + 1.4 }, waitDir: { x: 0, z: 0.55 } });
   }
   if (keepTurf) { box(15 + R - Lf, 0.04, 1.6, '#317033', 0.5 + (R + Lf) / 2, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', Lf - 6.6, 0.0, turfZ, 0, B); box(0.1, 0.045, 1.6, '#f2f1ea', R + 7.6, 0.0, turfZ, 0, B);
-    addStation('sled', 'other', Lf - 6.2, turfZ, 0, { lane: [Lf - 6.2, R + 7.0], sledX: Lf - 5.4, rest: { x: Lf - 7.6, z: turfZ + 1.1 }, waitBase: { x: Lf - 7.4, z: turfZ - 1.05 }, waitDir: { x: 0, z: -0.55 } }); }
+    addStation('sled', 'other', Lf - 6.2, turfZ, 0, { fit: null, lane: [Lf - 6.2, R + 7.0], sledX: Lf - 5.4, rest: { x: Lf - 7.6, z: turfZ + 1.1 }, waitBase: { x: Lf - 7.4, z: turfZ - 1.05 }, waitDir: { x: 0, z: -0.55 } }); }
   if (keepMid && !colIn(R + 8.9 - 1.6, pz - 0.1, R + 8.9 + 0.9, pz + 2.0)) { const x = R + 8.9, z = pz + 0.2;
     for (const dx of [-0.6, 0.6]) { box(0.076, 2.5, 0.076, '#1c1f2a', x + dx, 0, z, 0, B); box(0.076, 0.076, 0.9, '#1c1f2a', x + dx, 0, z, 0, B); obst(x + dx - 0.12, z - 0.12, x + dx + 0.12, z + 0.12); }
     box(1.3, 0.05, 0.05, '#c4c9d4', x, 2.33, z, 0, B); box(1.28, 0.076, 0.076, '#1c1f2a', x, 2.45, z, 0, B);
@@ -223,6 +239,7 @@ function buildLayout(cfg) {
   for (let i = 0; i < 6; i++) box(0.04, 1.6, 0.04, '#959bab', Lf + (-11.6 + (i % 3) * 0.08), 0.2, Bk + (-9.4 + Math.floor(i / 3) * 0.08), 0, B);
   box(0.4, 0.2, 0.4, '#565c6c', Lf - 11.52, 0, Bk - 9.36, 0, B); obst(Lf - 11.8, Bk - 9.6, Lf - 11.3, Bk - 9.1);
   // stretch corner
+  KIT = [];   /* the chalk stand and barbell holder above belong to no station */
   [[-14.0, -9.1], [-12.6, -9.1], [-14.0, -7.4], [-12.6, -7.4]].map(([x, z]) => [Lf + x, Bk + z]).forEach(([x, z], i) => { box(0.75, 0.04, 1.7, ['#2f68ab', '#8a4f7d', '#448c3a', '#d6403a'][i], x, 0.0, z, 0, B); addStation('mat', 'other', x, z - 0.35, Z_FRONT, { rest: { x: x + 0.6, z }, waitBase: { x: x + 0.7, z: z + 0.9 }, waitDir: { x: 0, z: 0.5 } }); });
   for (let i = 0; i < 4; i++) cyl(0.08, 0.08, 0.45, 8, '#dfe03a', Lf - 11.75, 0.0, Bk + (-8.6 + i * 0.25), { b: EB, rz: Math.PI / 2 });
   EB.flush(EQUIP);

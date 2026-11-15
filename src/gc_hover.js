@@ -1,32 +1,52 @@
 // ================================================================ what you can tap (Plan 7b): a mouse hover outlines the thing under the pointer
 // and names it; a steady glow on the floor marks the person being followed.
+// hover and select (owner, 2026-11-15): hovering shows a thin dotted footprint and the name; the selected person or machine wears a solid footprint
+// on the floor (the mark below) and nothing else, even under the pointer
 const HOVER = { at: null, t: null, cv: null };
 { const cv = document.createElement('canvas'); cv.id = 'hover'; cv.setAttribute('aria-hidden', 'true'); canvas.insertAdjacentElement('afterend', cv);   /* above the scene, under the HUD and panels */ HOVER.cv = cv; }
-// the followed person's floor tile (Plan 8b, owner): the 1 m tile of the floor grid they stand on, outlined like a hovered machine (no fill) — a deep-gold edge with a lighter bevel on top — built as thin strips on the floor so the person stands over it; steady, no flashing
+// the ring's size in art pixels (owner, 2026-11-15): thin strips, pushed out past the tile edge by a fixed number of screen pixels, so it reaches further
+// beyond the 1 m tile the further out you zoom and stays visible; floor strips look ~half as wide on screen as in plan, hence the 1.8x
+const FOLLOW_PX = { base: 2 * 1.8, lite: 1 * 1.8, out: 3 };
+// the selection mark (Plan 8b, owner): for the followed person, the 1 m tile of the floor grid they stand on; for a selected machine, its footprint.
+// An outline (no fill) — a deep-gold edge with a lighter bevel on top — built as thin strips on the floor so the person or machine stands over it
 const FOLLOW_MARK = (() => {
-  const gr = new THREE.Group(), edges = [], base = new THREE.MeshBasicMaterial({ color: '#a6961e', fog: false }), lite = new THREE.MeshBasicMaterial({ color: '#f5f382', fog: false });
-  for (const [x, z, rot] of [[0, -0.5, 0], [0, 0.5, 0], [-0.5, 0, 1], [0.5, 0, 1]]) for (const [mat, w, t, y] of [[base, 1.07, 0.07, 0.006], [lite, 1.03, 0.03, 0.014]]) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.012, t), mat); m.position.set(x, y, z); if (rot) m.rotation.y = Math.PI / 2; gr.add(m); edges.push(m); }
+  const gr = new THREE.Group(), edges = [], base = new THREE.MeshBasicMaterial({ color: '#a6961e', fog: false }), lite = new THREE.MeshBasicMaterial({ color: '#f5f382', fog: false }), unit = new THREE.BoxGeometry(1, 0.012, 1);
+  for (const [sx, sz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) for (const [mat, y, px] of [[base, 0.006, FOLLOW_PX.base], [lite, 0.014, FOLLOW_PX.lite]]) {
+    const m = new THREE.Mesh(unit, mat); m.position.y = y; m.userData = { sx, sz, px }; gr.add(m); edges.push(m); }
   gr.userData = { edges }; return gr;
 })();
 FOLLOW_MARK.visible = false; FOLLOW_MARK.renderOrder = 3; world.add(FOLLOW_MARK);
 // a select-cursor feel (owner): on a new pick the outline snaps in from 1.6x with a small overshoot, then breathes ±3% every 1.2 s; never flashes
+function personTile(a) {   // the floor tile under a person: the hips, since on a machine the body sits away from the walking spot
+  const at = a.P && a.P.H ? a.P.H : a.pos; return [HALL.x0 + Math.floor(at.x - HALL.x0) + 0.5, HALL.zb + Math.floor(at.z - HALL.zb) + 0.5];
+}
 function updateFollowMark(dt = 0) {
-  const a = followA, on = !!(a && a.visible && !(a.P && a.P.hidden)); FOLLOW_MARK.visible = on; if (!on) { FOLLOW_MARK.userData.who = null; return; }
-  const u = FOLLOW_MARK.userData; if (u.who !== a) { u.who = a; u.t = 0; } u.t += dt;
+  const a = followA, person = !!(a && a.visible && !(a.P && a.P.hidden)), who = person ? a : focusS || null; FOLLOW_MARK.visible = !!who;
+  if (!who) { FOLLOW_MARK.userData.who = null; return; }
+  const u = FOLLOW_MARK.userData; if (u.who !== who) { u.who = who; u.t = 0; } u.t += dt;
+  let cx, cz, ha = 0.5, hc = 0.5, yaw = 0;
+  if (person) [cx, cz] = personTile(a);
+  else { const b = hoverBox({ kind: 'station', s: who }); cx = b[0]; cz = b[1]; ha = b[3] / 2; hc = b[5] / 2; yaw = b[6]; }
   const lock = Math.min(1, u.t / 0.35), ease = 1 - Math.pow(1 - lock, 3), over = Math.sin(lock * Math.PI) * 0.08;   /* 0 → 1 with a little overshoot */
   const k = lock < 1 ? 1.6 - 0.6 * ease - over : 1 + 0.03 * Math.sin((u.t - 0.35) * 2 * Math.PI / 1.2);
   FOLLOW_MARK.scale.set(k, 1, k);
-  const at = a.P && a.P.H ? a.P.H : a.pos;   /* the hips: on a machine the body sits away from the walking spot */
-  FOLLOW_MARK.position.set(HALL.x0 + Math.floor(at.x - HALL.x0) + 0.5, 0.035, HALL.zb + Math.floor(at.z - HALL.zb) + 0.5);   /* the floor tile under them */
+  const wpp = (view.baseH / view.zoom) / rtH, out = FOLLOW_PX.out * wpp / k, A_ = ha + out, C_ = hc + out;   /* local units: the group's scale k is undone so the strips stay thin while it breathes */
+  for (const m of u.edges) { const { sx, sz, px } = m.userData, w = px * wpp / k;
+    m.position.x = sx * A_; m.position.z = sz * C_; m.scale.set(sx ? w : 2 * A_ + w, 1, sx ? 2 * C_ + w : w); }
+  FOLLOW_MARK.rotation.y = -yaw;   /* local x runs along the machine's facing */
+  FOLLOW_MARK.position.set(cx, 0.035, cz);
 }
 // the box that stands for each kind of thing: [centre x, z, bottom y, size along its facing, height, size across, facing angle]
 const STATION_BOX = { rack: [1.4, 2.4, 1.5], olyplat: [2.6, 0.4, 2.4], bench: [1.3, 0.7, 0.6], dbspot: [1.0, 1.0, 1.8], cable: [1.0, 2.2, 1.2], sled: [1.0, 1.0, 0.8], pullup: [1.0, 2.4, 1.2], mat: [0.8, 0.15, 1.7] };
 function hoverBox(t) {
-  if (t.kind === 'agent') return [t.a.pos.x, t.a.pos.z, 0, 0.7, t.a.P && t.a.P.H ? t.a.P.H.y + 0.2 : 1.9, 0.7, 0];
+  if (t.kind === 'agent') { const [x, z] = personTile(t.a); return [x, z, 0, 1, t.a.P && t.a.P.H ? t.a.P.H.y + 0.2 : 1.9, 1, 0]; }   /* the tile they'd get if picked */
   if (t.kind === 'board') return [PRICEBOARD_AT.x, PRICEBOARD_AT.z, 1.11, 0.42, 0.04, 0.66, 0];   /* flat on the counter */
   if (t.kind === 'desk') return [DESK_C.x, DESK_C.z, 0, 1.0, 1.6, 2.6, 0];
-  const s = t.s, [a, h, c] = STATION_BOX[s.type] || [1.2, 1.5, 1.2]; return [s.x, s.z, 0, a, h, c, s.yaw];
+  const s = t.s, F = s.fit;
+  if (s.type === 'sled') return [s.sledX, s.z, 0, 0.75, 1.1, 0.75, 0];   /* the sled itself, wherever it is on the lane (it's drawn each frame, not built) */
+  if (F) { const f = [Math.cos(s.yaw), Math.sin(s.yaw)], r = [-Math.sin(s.yaw), Math.cos(s.yaw)], pad = 0.06;
+    return [s.x + f[0] * F.ca + r[0] * F.cc, s.z + f[1] * F.ca + r[1] * F.cc, F.y0, F.a + pad, F.h + pad, F.c + pad, s.yaw]; }
+  const [a, h, c] = STATION_BOX[s.type] || [1.2, 1.5, 1.2]; return [s.x, s.z, 0, a, h, c, s.yaw];
 }
 function hoverHull(t) {   // the screen outline of that box: the convex hull of its eight corners
   const [x, z, y0, a, h, c, yaw] = hoverBox(t), f = [Math.cos(yaw), Math.sin(yaw)], r = [-Math.sin(yaw), Math.cos(yaw)], R = canvas.getBoundingClientRect(), pts = [];
@@ -41,21 +61,10 @@ function hoverHull(t) {   // the screen outline of that box: the convex hull of 
 function hoverLabel(t) {   // Plan 8b (owner): just the name; the expand icon beside it says it can be opened
   return t.kind === 'agent' ? (A && t.a === A.desk ? tx('Front desk', '櫃檯') : trName(t.a.name)) : t.kind === 'board' ? tx('Price list', '價目表') : t.kind === 'desk' ? tx('Front desk', '櫃檯') : stationName(t.s);
 }
-// the box's outline on screen (Plan 8b, owner): the edges of its visible faces, each shaded by how it catches the light (top edges brightest),
-// drawn thick with a bevel so the outline reads as having some thickness; no filled panels
-function hoverEdges(t) {
-  const [x, z, y0, a, h, c, yaw] = hoverBox(t), f = [Math.cos(yaw), Math.sin(yaw)], r = [-Math.sin(yaw), Math.cos(yaw)], R = canvas.getBoundingClientRect();
-  const ce = Math.cos(view.el), toCam = [ce * Math.sin(view.az), Math.sin(view.el), ce * Math.cos(view.az)];
-  const P = (sa, sc, sy) => { _pv.set(x + f[0] * sa * a / 2 + r[0] * sc * c / 2, sy ? y0 + h : y0, z + f[1] * sa * a / 2 + r[1] * sc * c / 2).project(cam); return [R.left + (_pv.x + 1) / 2 * R.width, R.top + (1 - _pv.y) / 2 * R.height]; };
-  const K = (sa, sc, sy) => sa + ',' + sc + ',' + sy, faces = [
-    { n: [0, 1, 0], v: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },
-    { n: [f[0], 0, f[1]], v: [[1, -1, 0], [1, 1, 0], [1, 1, 1], [1, -1, 1]] }, { n: [-f[0], 0, -f[1]], v: [[-1, -1, 0], [-1, 1, 0], [-1, 1, 1], [-1, -1, 1]] },
-    { n: [r[0], 0, r[1]], v: [[-1, 1, 0], [1, 1, 0], [1, 1, 1], [-1, 1, 1]] }, { n: [-r[0], 0, -r[1]], v: [[-1, -1, 0], [1, -1, 0], [1, -1, 1], [-1, -1, 1]] }];
-  const seen = new Map();
-  for (const F of faces) { const d = F.n[0] * toCam[0] + F.n[1] * toCam[1] + F.n[2] * toCam[2]; if (d <= 0.02) continue;
-    for (let i = 0; i < 4; i++) { const p = F.v[i], q = F.v[(i + 1) % 4], key = [K(...p), K(...q)].sort().join('|'), shade = p[2] && q[2] ? 1 : p[2] !== q[2] ? 0.75 : 0.55;
-      if (!seen.has(key)) seen.set(key, { a: P(...p), b: P(...q), shade }); } }
-  return [...seen.values()].sort((e1, e2) => e1.shade - e2.shade);
+function hoverBase(t) {   // the box's footprint: its four bottom edges, all drawn (it lies flat, nothing hides it)
+  const [x, z, y0, a, , c, yaw] = hoverBox(t), f = [Math.cos(yaw), Math.sin(yaw)], r = [-Math.sin(yaw), Math.cos(yaw)], R = canvas.getBoundingClientRect();
+  const P = (sa, sc) => { _pv.set(x + f[0] * sa * a / 2 + r[0] * sc * c / 2, y0, z + f[1] * sa * a / 2 + r[1] * sc * c / 2).project(cam); return [R.left + (_pv.x + 1) / 2 * R.width, R.top + (1 - _pv.y) / 2 * R.height]; };
+  const v = [P(-1, -1), P(1, -1), P(1, 1), P(-1, 1)]; return v.map((p, i) => ({ a: p, b: v[(i + 1) % 4], shade: 0 }));
 }
 function updateHover() {
   const cv = HOVER.cv, dpr = Math.min(2, window.devicePixelRatio || 1), W = innerWidth, H = innerHeight;
@@ -63,13 +72,12 @@ function updateHover() {
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   const t = HOVER.at && !(typeof BOOKS !== 'undefined' && BOOKS.open) ? pickTarget(HOVER.at.x, HOVER.at.y) : null; HOVER.t = t;
   canvas.style.cursor = t ? 'pointer' : ''; if (!t) return;
+  if ((t.kind === 'agent' && t.a === followA) || (t.kind === 'station' && t.s === focusS)) return;   /* already selected: the floor mark is enough (owner, 2026-11-15) */
   const hull = hoverHull(t); if (hull.length < 3) return;
-  // the outline: each edge drawn thick in a deep gold, then a lighter face shifted up a pixel — a bevel that reads as thickness; top edges brightest
-  g.lineCap = 'round';
-  const edges = hoverEdges(t);
-  for (const pass of [0, 1]) for (const e of edges) {
-    const k = e.shade, col = pass ? `rgb(${Math.round(200 + 45 * k)},${Math.round(200 + 45 * k)},${Math.round(60 + 70 * k)})` : `rgb(${Math.round(120 + 40 * k)},${Math.round(110 + 40 * k)},20)`;
-    g.strokeStyle = col; g.lineWidth = pass ? 2 : 4.5; g.beginPath(); g.moveTo(e.a[0], e.a[1] - pass); g.lineTo(e.b[0], e.b[1] - pass); g.stroke(); }
+  // the footprint (owner, 2026-11-15): thin dotted lines on the floor; the name tag still sits above the whole thing
+  g.lineCap = 'butt'; g.lineWidth = 1.25; g.setLineDash([3, 3]); g.strokeStyle = '#dfe03a';
+  const edges = hoverBase(t);
+  g.beginPath(); for (const e of edges) { g.moveTo(e.a[0], e.a[1]); g.lineTo(e.b[0], e.b[1]); } g.stroke(); g.setLineDash([]);
   // the name and an expand icon (a box with an arrow out of its corner)
   const top = hull.reduce((m, p) => p[1] < m[1] ? p : m), cx = hull.reduce((s, p) => s + p[0], 0) / hull.length, text = hoverLabel(t);
   g.font = '12px Silkscreen, "Cubic 11", monospace'; const w = g.measureText(text).width + 34, x = Math.max(4, Math.min(W - w - 4, cx - w / 2)), y = Math.max(4, top[1] - 28);
