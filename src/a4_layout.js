@@ -60,6 +60,7 @@ const CYCLE = { cardio: ['treadmill', 'treadmill', 'treadmill', 'treadmill', 'ro
 function countsOf(L) { const c = { cardio: 0, machines: 0, racks: 0, plats: 0, benches: 0, plates: 0 }; for (const p of L.pieces) { const k = KINDS[p.kind].cat; if (k in c) c[k]++; } return c; }
 function kitOf(L) { const has = (k) => L.pieces.some(p => p.kind === k); return { dumbbells: has('dbrack'), cable: has('cable'), turf: has('turf'), pullup: has('pullup'), mats: has('mat') }; }
 function nextKind(L, cat) { const cy = CYCLE[cat]; return cy[countsOf(L)[cat] % cy.length]; }
+function bookValue(p, monthIndex) { return KINDS[p.kind].price * Math.min(1, Math.max(0, 1 - (monthIndex - (p.bought || 0)) / 60)); }   /* Plan 12: straight-line over 5 years from the month bought (absent: bought at opening) */
 function layoutCost(L) { return L.pieces.reduce((s, p) => s + KINDS[p.kind].price, 0); }
 // the turf is floor: nothing stands on it or keeps its clear space on it, but people walk across it (code 4)
 function gridFor(L, Wc, Dc, skip) {
@@ -120,4 +121,26 @@ function autoBuild(Wc, Dc, counts, opts = {}) {
   for (let i = 0; i < (counts.benches || 0); i++) want.push('bench'); want.push('mat', 'mat', 'mat', 'mat');
   for (const k of want) if (!addPiece(L, k, Wc, Dc)) refused.push(k);
   L.refused = refused; if (opts.turfFirst) L.turfFirst = true; return L;
+}
+// ---------------------------------------------------------------- Plan 12: what a rearrange changes, what it costs, and where a dropped piece goes
+const REARRANGE = { mover: 3000, resale: 0.4, heavyPerDay: 4 };
+function diffLayouts(a, b) {
+  const was = new Map(a.pieces.map(p => [p.id, p])), now = new Set(b.pieces.map(p => p.id));
+  const moved = [], bought = [], sold = a.pieces.filter(p => !now.has(p.id));
+  for (const p of b.pieces) { const o = was.get(p.id); if (!o) bought.push(p); else if (o.sx !== p.sx || o.sz !== p.sz || o.rot !== p.rot) moved.push({ p, heavy: KINDS[p.kind].heavy }); }
+  return { moved, bought, sold };
+}
+function quote(d) {
+  const heavy = d.moved.filter(m => m.heavy).length, buy = d.bought.reduce((t, p) => t + KINDS[p.kind].price, 0), sell = REARRANGE.resale * d.sold.reduce((t, p) => t + KINDS[p.kind].price, 0), movers = REARRANGE.mover * heavy;
+  return { movers, buy, sell, cost: movers + buy - sell, days: Math.ceil(heavy / REARRANGE.heavyPerDay) + (d.bought.length ? 1 : 0), heavy };
+}
+// the player drops piece `id` with its centre near sub-cell (sx, sz); the engine picks the facing and the nearest spot within 2 sub-cells, or refuses
+function dropPiece(L, id, sx, sz, Wc, Dc) {
+  const p = L.pieces.find(q => q.id === id); if (!p) return null;
+  const others = L.pieces.filter(q => q !== p), G = gridFor({ pieces: others }, Wc, Dc); let best = null, bs = Infinity;
+  KINDS[p.kind].rots.forEach((rot, ri) => { const [w, d] = dims({ kind: p.kind, rot });
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) { const c = { kind: p.kind, sx: sx + dx - Math.floor(w / 2), sz: sz + dz - Math.floor(d / 2), rot }, s = (Math.abs(dx) + Math.abs(dz)) * 10 + ri;
+      if (s >= bs || !canPlace(G, c)) continue;
+      const all = others.concat([c]); if (!reachableIn(gridFor({ pieces: all }, Wc, Dc), all)) continue; best = c; bs = s; } });
+  if (!best) return null; p.sx = best.sx; p.sz = best.sz; p.rot = best.rot; return p;
 }

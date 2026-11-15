@@ -78,8 +78,20 @@ function panBy(dx, dy) {   // screen pixels -> ground movement so the ground fol
   if (window.__clampView !== false) keepViewOnBoard();
   view.follow = null;
 }
-canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 1) { downAt = { x: e.clientX, y: e.clientY }; panLast = { x: e.clientX, y: e.clientY }; panning = false; } if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = view.zoomT; downAt = null; panning = false; panLast = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } });
+// Plan 12: while Rearrange is open, a press on a piece drags it (a ghost shows where it would go, green or red); a tap selects it
+const RDRAG = { id: null, moved: false, at: null };
+function subAt(cx, cy) { const r = canvas.getBoundingClientRect(); ndc.set((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, cam); const h = new V3(); if (!ray.ray.intersectPlane(gPlane, h)) return null; return [Math.floor((h.x - HALL.x0) / SUB), Math.floor((h.z - HALL.zb) / SUB)]; }
+function rDown(cx, cy) { if (!BUILD.on || BUILD.mode !== 'rearrange') return false; const s = subAt(cx, cy), p = s && pieceAt(s[0], s[1]); if (!p) return false; RDRAG.id = p.id; RDRAG.moved = false; RDRAG.at = { x: cx, y: cy }; return true; }
+function rMove(cx, cy) {
+  if (RDRAG.id == null) return false; if (!BUILD.on || BUILD.mode !== 'rearrange') { RDRAG.id = null; RGHOST.visible = false; return false; } if (Math.hypot(cx - RDRAG.at.x, cy - RDRAG.at.y) > 6) RDRAG.moved = true; if (!RDRAG.moved) return true;
+  const s = subAt(cx, cy); if (!s) return true; const T = JSON.parse(JSON.stringify(BUILD.layout)), p = dropPiece(T, RDRAG.id, s[0], s[1], BUILD.w, BUILD.d), q = p || T.pieces.find(x => x.id === RDRAG.id);
+  const k = KINDS[q.kind], w = (q.rot % 2 ? k.d : k.w) * SUB, d = (q.rot % 2 ? k.w : k.d) * SUB, cx0 = p ? HALL.x0 + (p.sx * SUB + w / 2) : HALL.x0 + (s[0] + 0.5) * SUB, cz0 = p ? HALL.zb + (p.sz * SUB + d / 2) : HALL.zb + (s[1] + 0.5) * SUB;
+  RGHOST.scale.set(w, 1, d); RGHOST.position.x = cx0; RGHOST.position.z = cz0; RGHOST.material.color.set(p ? '#5ee08a' : '#d6403a'); RGHOST.visible = true; return true;
+}
+function rUp(cx, cy) { if (RDRAG.id == null) return false; const id = RDRAG.id; RDRAG.id = null; RGHOST.visible = false; if (!BUILD.on || BUILD.mode !== 'rearrange') return true; if (RDRAG.moved) { const s = subAt(cx, cy); if (s) rearrangeDrop(id, s[0], s[1]); } else { BUILD.sel = id; renderBuild(); } return true; }
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; if (rDown(e.clientX, e.clientY)) { canvas.setPointerCapture(e.pointerId); return; } canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 1) { downAt = { x: e.clientX, y: e.clientY }; panLast = { x: e.clientX, y: e.clientY }; panning = false; } if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = view.zoomT; downAt = null; panning = false; panLast = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } });
 canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'touch' && rMove(e.clientX, e.clientY)) return;
   if (e.pointerType === 'touch' || !ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2 && pinch0 > 0) { const [a, b] = [...ptrs.values()]; view.zoomT = clamp(zoom0 * Math.hypot(a.x - b.x, a.y - b.y) / pinch0, ZMIN, ZMAX); const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; panBy(m.x - panLast.x, m.y - panLast.y); panLast = m; return; }
   if (ptrs.size === 1 && panLast) {
@@ -88,7 +100,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
 });
 canvas.addEventListener('pointerup', (e) => {
-  if (e.pointerType === 'touch') return;
+  if (e.pointerType === 'touch') return; if (rUp(e.clientX, e.clientY)) return;
   if (ptrs.size === 1 && downAt && !panning && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 8) pickAt(e.clientX, e.clientY);
   ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = 0; if (ptrs.size === 0) { downAt = null; panning = false; canvas.classList.remove('panning'); }
   else if (ptrs.size === 1) { const p = [...ptrs.values()][0]; panLast = { x: p.x, y: p.y }; downAt = null; }
@@ -103,14 +115,16 @@ const TCH = { mode: null, d0: 0, z0: 1, last: null, start: null, moved: false };
 const tMid = (ts) => ({ x: (ts[0].clientX + ts[1].clientX) / 2, y: (ts[0].clientY + ts[1].clientY) / 2 });
 const tDist = (ts) => Math.max(1, Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY));
 function screenCentre() { const r = canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height * (0.5 - (view.yOff || 0)) }; }
-function twoStart(ts) { TCH.mode = 'two'; TCH.d0 = tDist(ts); TCH.z0 = view.zoom = view.zoomT; TCH.last = tMid(ts); TCH.moved = true; }
+function twoStart(ts) { if (typeof RDRAG !== 'undefined' && RDRAG.id != null) { RDRAG.id = null; RGHOST.visible = false; }   /* a pinch ends a piece drag */ TCH.mode = 'two'; TCH.d0 = tDist(ts); TCH.z0 = view.zoom = view.zoomT; TCH.last = tMid(ts); TCH.moved = true; }
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault(); const ts = e.touches;
+  if (ts.length === 1 && rDown(ts[0].clientX, ts[0].clientY)) { TCH.mode = 'rdrag'; return; }   /* Plan 12: drag a piece with one finger */
   if (ts.length === 1) { TCH.mode = 'one'; TCH.start = { x: ts[0].clientX, y: ts[0].clientY }; TCH.last = { ...TCH.start }; TCH.moved = false; }
   else twoStart(ts);
 }, { passive: false });
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault(); const ts = e.touches;
+  if (TCH.mode === 'rdrag' && ts.length === 1) { rMove(ts[0].clientX, ts[0].clientY); return; }
   if (ts.length >= 2) {
     if (TCH.mode !== 'two') twoStart(ts);
     const m = tMid(ts); panBy(m.x - TCH.last.x, m.y - TCH.last.y); TCH.last = m;
@@ -125,6 +139,7 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: false });
 function touchEnd(e) {
   e.preventDefault(); const ts = e.touches;
+  if (TCH.mode === 'rdrag') { const t = e.changedTouches[0]; rUp(t.clientX, t.clientY); TCH.mode = null; return; }
   if (ts.length === 0) { if (TCH.mode === 'one' && !TCH.moved && TCH.start && e.type === 'touchend') pickAt(TCH.start.x, TCH.start.y); TCH.mode = null; TCH.last = null; canvas.classList.remove('panning'); }
   else if (ts.length === 1) { TCH.mode = 'one'; TCH.moved = true; TCH.last = { x: ts[0].clientX, y: ts[0].clientY }; }   // lifting one finger of a pinch never counts as a tap
   else twoStart(ts);
@@ -1400,6 +1415,129 @@ const SELFTESTS = {
       return { ok: none && inn && lost && said && out, detail: { none, inn, lost, said, out, before, after: { ...BUILD.counts } } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
+  rearrangeMoney() {   // Plan 12: a rearrange pays movers through today's P&L, buys as capex from cash, sells at 40% with the loss against book value below EBITDA
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun(); fastForward(12 * 3600 - A.t);
+      const L2 = JSON.parse(JSON.stringify(S.layout)), rack = L2.pieces.find(p => p.kind === 'rack'); L2.pieces = L2.pieces.filter(p => p !== rack); const bench = addPiece(L2, 'bench', 16, 10);
+      const cash0 = BIZ.cash, capex0 = COSTS.capex, dep0 = COSTS.depYear;
+      applyRearrange({ layout: L2, movers: 6000, bought: [bench], sold: [rack], days: 1 });
+      const got = { cash: BIZ.cash - cash0, capex: COSTS.capex - capex0, dep: Math.round(COSTS.depYear - dep0), movers: A.pnl.rearrange, loss: BIZ.mLoss, bought: bench.bought, closedTomorrow: !!M.cal[M.dayI + 1].rearrange };
+      const want = { cash: -20000 + 48000, capex: 20000, dep: Math.round(20000 / 5 - 120000 / 5), movers: 6000, loss: 72000, bought: BIZ.monthIndex, closedTomorrow: true };
+      return { ok: JSON.stringify(got) === JSON.stringify(want), detail: { got, want } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeAcrossMonth() {   // Plan 12: three closed days from the second-to-last day close the month's last day and the next month's first two; the new layout opens on day 3
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun(); skimDays(M.cal.length - 1);
+      const L2 = JSON.parse(JSON.stringify(S.layout)), mat = L2.pieces.find(p => p.kind === 'mat'); L2.pieces = L2.pieces.filter(p => p !== mat); const mats0 = STATIONS.filter(s => s.type === 'mat').length;
+      applyRearrange({ layout: L2, movers: 0, bought: [], sold: [mat], days: 3 }); const lastClosed = !!M.cal[M.cal.length - 1].rearrange, todayOpen = !M.cal[M.dayI].rearrange;
+      nextDay(); nextMonth(); const a = [0, 1, 2].map(i => !!M.cal[i].rearrange), still = STATIONS.filter(s => s.type === 'mat').length;
+      nextDay(); nextDay(); const after = STATIONS.filter(s => s.type === 'mat').length;
+      const ok = lastClosed && todayOpen && a[0] && a[1] && !a[2] && still === mats0 && after === mats0 - 1 && !BIZ.pending;
+      return { ok, detail: { lastClosed, todayOpen, a, mats0, still, after, pending: !!BIZ.pending } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeZeroDays() {   // Plan 12: light moves close nothing: today keeps its layout, tomorrow opens with the new one
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun();
+      const L2 = JSON.parse(JSON.stringify(S.layout)), mat = L2.pieces.find(p => p.kind === 'mat'); L2.pieces = L2.pieces.filter(p => p !== mat); const n0 = STATIONS.filter(s => s.type === 'mat').length;
+      applyRearrange({ layout: L2, movers: 0, bought: [], sold: [mat], days: 0 }); const today = STATIONS.filter(s => s.type === 'mat').length; nextDay(); const tomorrow = STATIONS.filter(s => s.type === 'mat').length;
+      return { ok: today === n0 && tomorrow === n0 - 1 && !A.closed, detail: { n0, today, tomorrow, closed: A.closed } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeOpens() {   // Plan 12: Rearrange pauses the day and opens a sheet with a zero quote
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun(); goOn = true; const ok0 = openRearrange(), t = document.getElementById('build').textContent;
+      return { ok: ok0 && BUILD.on && BUILD.mode === 'rearrange' && !goOn && /Rearrange/.test(t) && /\$0/.test(t) && /none/.test(t), detail: { ok0, mode: BUILD.mode, t: t.slice(0, 200) } }; }
+    finally { if (BUILD.on) cancelBuild(); goOn = false; Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeCancel() {   // Review focus 3: Cancel after edits leaves the gym, cash and capex untouched
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(20, 16); Object.assign(S, counts, { hallW: 20, hallD: 16, layout: autoBuild(20, 16, counts) }); setupRun(); const L0 = JSON.stringify(S.layout), cash = BIZ.cash, capex = COSTS.capex;
+      openRearrange(); rearrangeAdd('bench'); rearrangeSell(BUILD.layout.pieces.find(p => p.kind === 'rack').id); cancelBuild();
+      return { ok: JSON.stringify(S.layout) === L0 && BIZ.cash === cash && COSTS.capex === capex && !BIZ.pending && !BUILD.on, detail: { same: JSON.stringify(S.layout) === L0, cash: BIZ.cash - cash } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  dropRefused() {   // Review focus 4: a drop on the washrooms, the desk or outside the hall is refused with a toast
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun(); openRearrange(); const F = fixedRooms(16, 10), id = BUILD.layout.pieces.find(p => p.kind === 'bench').id, L0 = JSON.stringify(BUILD.layout);
+      const mid = (r) => [Math.floor((r.x0 + r.x1) / 2), Math.floor((r.z0 + r.z1) / 2)]; document.getElementById('toast').innerHTML = '';
+      const a = rearrangeDrop(id, ...mid(F.washroom)), b = rearrangeDrop(id, ...mid(F.desk)), c = rearrangeDrop(id, -10, 5), said = /can't go there/.test(document.getElementById('toast').textContent);
+      return { ok: !a && !b && !c && said && JSON.stringify(BUILD.layout) === L0, detail: { a, b, c, said } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeApply() {   // Plan 12: a heavy move + Apply: movers on today's P&L, one closed day from tomorrow, the new layout waits; the toast names the cost and the days
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(20, 16); Object.assign(S, counts, { hallW: 20, hallD: 16, layout: autoBuild(20, 16, counts) }); setupRun(); const L0 = JSON.stringify(S.layout); openRearrange();
+      const p = BUILD.layout.pieces.find(q => q.kind === 'pulldown'); let moved = false; for (let z = 4; z < 60 && !moved; z += 2) for (let x = 4; x < 70 && !moved; x += 2) { const was = [p.sx, p.sz, p.rot].join(); if (rearrangeDrop(p.id, x, z) && [p.sx, p.sz, p.rot].join() !== was) moved = true; }
+      document.getElementById('toast').innerHTML = ''; rearrangeApply(); const t = document.getElementById('toast').textContent;
+      return { ok: moved && !BUILD.on && !!BIZ.pending && !!M.cal[M.dayI + 1].rearrange && JSON.stringify(S.layout) === L0 && A.pnl.rearrange === 3000 && /Closed for 1 day/.test(t) && /\$3,000/.test(t), detail: { moved, pending: !!BIZ.pending, t } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  rearrangeGuards() {   // Plan 12: no Rearrange during an early close or while one is already booked
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); setupRun(); closing = { kind: 'day' }; const a = openRearrange(); closing = null;
+      BIZ.pending = JSON.parse(JSON.stringify(S.layout)); const b = openRearrange(); BIZ.pending = null;
+      return { ok: a === false && b === false && !BUILD.on, detail: { a, b } }; }
+    finally { closing = null; if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  booksRearrangeLines() {   // Plan 12: the books show the movers, the loss on equipment sold, purchases and sales in the bank, and a closed-for-rearranging day; opening cash stays put
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(20, 16); Object.assign(S, counts, { hallW: 20, hallD: 16, layout: autoBuild(20, 16, counts) }); setupRun(); fastForward(12 * 3600 - A.t); const open0 = BIZ.openCash;
+      openRearrange(); const p = BUILD.layout.pieces.find(q => q.kind === 'pulldown'); let moved = false; for (let z = 4; z < 60 && !moved; z += 2) for (let x = 4; x < 70 && !moved; x += 2) { const was = [p.sx, p.sz, p.rot].join(); if (rearrangeDrop(p.id, x, z) && [p.sx, p.sz, p.rot].join() !== was) moved = true; }
+      rearrangeAdd('bench'); rearrangeSell(BUILD.layout.pieces.find(q => q.kind === 'rack').id); rearrangeApply();
+      BOOKS.period = 'mtd'; openBooks('Books'); updateBooks(true); const pl = document.getElementById('bkBody').textContent; openBooks('Bank'); updateBooks(true); const bank = document.getElementById('bkBody').textContent;
+      const openCell = document.querySelector('#bkBody [data-k="openCash"]'); closeBooks(); nextDay(); openBooks('Today'); updateBooks(true); const today = document.getElementById('bkBody').textContent; closeBooks(); updateMonitors(); const hud = document.getElementById('hudClock').textContent;
+      const ok = moved && /Rearranging \(movers\)/.test(pl) && /Loss on equipment sold/.test(pl) && /Equipment bought/.test(bank) && /Equipment sold/.test(bank) && !!openCell && openCell.textContent.includes(Math.abs(Math.round(open0)).toLocaleString('en-US')) && /Closed today for rearranging/.test(today) && /rearranging/.test(hud);
+      return { ok, detail: { moved, pl: /Rearranging/.test(pl), loss: /Loss on equipment sold/.test(pl), bank: /Equipment bought/.test(bank), open: openCell && openCell.textContent, open0, today: today.slice(0, 120), hud } }; }
+    finally { closeBooks(); BOOKS.tab = 'Today'; BOOKS.period = 'today'; if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  sampleUntouchedUntilRearrange() {   // Plan 12: opening Rearrange in the sample gym and cancelling leaves the sample exactly as it was
+    try { setupRun(); const n = STATIONS.length, ok0 = openRearrange(), t = document.getElementById('build').textContent, conv = /converted to grid pieces/.test(t); cancelBuild();
+      return { ok: ok0 && conv && S.hallW === null && HALL.w === null && STATIONS.length === n, detail: { ok0, conv, hallW: S.hallW, n, now: STATIONS.length } }; }
+    finally { if (BUILD.on) cancelBuild(); setupRun(); }
+  },
+  sampleConvertsOnce() {   // Plan 12: Apply in the sample converts it to grid pieces when it reopens; the business carries on (same money record, same month, rent area kept)
+    const keep = JSON.parse(JSON.stringify(S));
+    try { setupRun(); const biz = BIZ, month = M.cfg.month, area = S.area; openRearrange();
+      const p = BUILD.layout.pieces.find(q => q.kind === 'pulldown'); let moved = false; for (let z = 4; z < 40 && !moved; z += 2) for (let x = 4; x < 60 && !moved; x += 2) { const was = [p.sx, p.sz, p.rot].join(); if (rearrangeDrop(p.id, x, z) && [p.sx, p.sz, p.rot].join() !== was) moved = true; }
+      rearrangeApply(); const todaySample = S.hallW === null && HALL.w === null; nextDay(); nextDay();
+      const ok = moved && todaySample && S.hallW === 16 && HALL.w === 16 && !!S.layout && BIZ === biz && M.cfg.month === month && S.area === area && STATIONS.some(s => s.type === 'rack') && !BIZ.pending;
+      return { ok, detail: { moved, todaySample, hallW: S.hallW, same: BIZ === biz, area: S.area } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); S.hallW = S.hallD = null; S.layout = null; setupRun(); }
+  },
+  sampleSetupKeepsDeal() {   // owner 2026-11-15 (review I3, option B): Setup after the sample was converted keeps the sample deal (rent area, no fit-out, deposit or rent-free month) and its pieces
+    const keep = JSON.parse(JSON.stringify(S));
+    try { setupRun(); const area = S.area, capex = COSTS.capex, dep = COSTS.depYear; openRearrange();
+      const p = BUILD.layout.pieces.find(q => q.kind === 'pulldown'); let moved = false; for (let z = 4; z < 40 && !moved; z += 2) for (let x = 4; x < 60 && !moved; x += 2) { const was = [p.sx, p.sz, p.rot].join(); if (rearrangeDrop(p.id, x, z) && [p.sx, p.sz, p.rot].join() !== was) moved = true; }
+      rearrangeApply(); nextDay(); nextDay(); const conv = S.hallW === 16 && !!S.layout; setupRun();
+      const ok = moved && conv && S.hallW === 16 && !!S.layout && S.area === area && BUILT === null && BIZ.deposit === 0 && COSTS.capex === capex && Math.abs(COSTS.depYear - dep) < 1 && BIZ.cash === S.finOwn + S.finLoan - capex && pnlCosts().rentRate === S.rentRate;
+      return { ok, detail: { moved, conv, hallW: S.hallW, area: S.area, area0: area, built: !!BUILT, deposit: BIZ.deposit, capex: COSTS.capex, capex0: capex, dep: COSTS.depYear, dep0: dep } }; }
+    finally { if (BUILD.on) cancelBuild(); Object.assign(S, keep); S.hallW = S.hallD = null; S.layout = null; S.sampleGrid = false; setupRun(); }
+  },
+  escDuringDrag() {   // review C1: Escape (or a cancel) in the middle of a drag leaves the running gym exactly as it was, built or sample
+    const keep = JSON.parse(JSON.stringify(S)), out = {};
+    try { for (const k of ['built', 'sample']) { if (k === 'built') { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); } else Object.assign(S, keep, { hallW: null, hallD: null, layout: null });
+        setupRun(); const n = STATIONS.length, eq = EQUIP, hw = HALL.w; openRearrange(); RDRAG.id = BUILD.layout.pieces[0].id; RDRAG.moved = true; RDRAG.at = { x: 0, y: 0 };
+        const id = RDRAG.id, f = footprint(BUILD.layout.pieces[0]); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); rUp(200, 200); rMove(220, 220); rearrangeDrop(id, f.x0 + 1, f.z0 + 1);   /* the release after Escape: what rUp would call on a floor hit */
+        out[k] = { same: STATIONS.length === n && EQUIP === eq && HALL.w === hw, cleared: RDRAG.id == null, ghost: !RGHOST.visible }; }
+      return { ok: Object.values(out).every(o => o.same && o.cleared && o.ghost), detail: out }; }
+    finally { RDRAG.id = null; if (BUILD.on) cancelBuild(); Object.assign(S, keep); setupRun(); }
+  },
+  setupClearsBought() {   // review I1: a new business starts with every piece bought at opening
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(16, 10), L = autoBuild(16, 10, counts); for (const p of L.pieces) p.bought = 3; Object.assign(S, counts, { hallW: 16, hallD: 10, layout: L }); setupRun();
+      return { ok: S.layout.pieces.every(p => p.bought == null) && bookValue({ kind: 'rack', bought: 5 }, 0) === 120000, detail: { left: S.layout.pieces.filter(p => p.bought != null).length, bv: bookValue({ kind: 'rack', bought: 5 }, 0) } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  archivedBooksFixed() {   // review I2: a purchase or sale this month leaves closed months' books exactly as booked
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const counts = presetCounts(20, 16); Object.assign(S, counts, { hallW: 20, hallD: 16, layout: autoBuild(20, 16, counts) }); setupRun(); closeEarlySync('month'); nextMonth();
+      const read = () => { BOOKS.period = 'year'; openBooks('Books'); updateBooks(true); const y = document.querySelector('#bkBody tr[data-arch="0"] td:nth-child(4)').textContent; BOOKS.period = 'arch:0'; updateBooks(true); const m = document.querySelector('#bkBody [data-k="netProfit"]').textContent; closeBooks(); return y + '|' + m; };
+      const before = read(), L2 = JSON.parse(JSON.stringify(S.layout)), r = addPiece(L2, 'rack', 20, 16); applyRearrange({ layout: L2, movers: 0, bought: r ? [r] : [], sold: [], days: 1 }); const after = read();
+      return { ok: !!r && before === after, detail: { before, after, r: !!r } }; }
+    finally { closeBooks(); BOOKS.period = 'today'; BOOKS.tab = 'Today'; Object.assign(S, keep); setupRun(); }
+  },
   closeStuckAgent() {   // Plan 7 review I4: a member who never leaves cannot hang a close
     try { setupRun(); fastForward(12 * 3600 - A.t); const m = A.members.find(a => a.visible && a.state !== 'gone' && a.state !== 'pending'); m.state = 'stuckForTest';
       const r = closeEarlySync('day'); return { ok: A.done && r.days === 1 && m.state === 'gone', detail: { done: A.done, r, state: m.state } }; }
@@ -1576,4 +1714,11 @@ const SELFTESTS = {
       if (st === 'tracker' || st === 'books') { document.querySelector('#goalCard [data-goal="members500"]').click(); goOn = false; refreshGo(); fastForward((+q.get('h') || 15) * 3600 - A.t); updateMonitors(); }
       if (st === 'books') { BOOKS.period = 'today'; openBooks('Books'); }
       if (st === 'follow' || st === 'goal') S.speed = 1; } } }
+// dev screenshots of Rearrange: &gym=L&rearr=quote (a moved machine, a new bench, a red ghost on the washrooms) or &rearr=closed (applied, the next day closed)
+{ const q = new URLSearchParams(location.search), r = q.get('rearr');
+  if (q.has('shot') && r) { closeBooks(); openRearrange(); const p = BUILD.layout.pieces.find(x => x.kind === 'pulldown'); let moved = false;
+    for (let z = 4; z < 60 && !moved; z += 2) for (let x = 4; x < 70 && !moved; x += 2) { const was = [p.sx, p.sz, p.rot].join(); if (dropPiece(BUILD.layout, p.id, x, z, BUILD.w, BUILD.d) && [p.sx, p.sz, p.rot].join() !== was) moved = true; }
+    addPiece(BUILD.layout, 'bench', BUILD.w, BUILD.d); buildPreview();
+    if (r === 'quote') { const F = fixedRooms(BUILD.w, BUILD.d), k = KINDS.pulldown; RGHOST.scale.set(k.w * SUB, 1, k.d * SUB); RGHOST.position.x = HALL.x0 + (F.washroom.x0 + 4) * SUB; RGHOST.position.z = HALL.zb + 8 * SUB; RGHOST.material.color.set('#d6403a'); RGHOST.visible = true; }
+    if (r === 'closed') { rearrangeApply(); nextDay(); fastForward(10 * 3600 - A.t); updateMonitors(); openBooks('Today'); } } }
 if (!new URLSearchParams(location.search).has('selftest')) requestAnimationFrame(frame);   // self-test pages don't render

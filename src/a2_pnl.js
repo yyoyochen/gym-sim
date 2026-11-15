@@ -14,7 +14,8 @@ function dailyPnl(t, frac, c = COSTS) {
   r.net = r.gross / (1 + c.vat); r.vat = r.gross - r.net;
   r.coach = r.ptEarned * (1 - c.gymShare / 100); r.mkt = r.net * c.mktPct / 100; r.card = r.net * c.cardPct / 100;
   r.retain = t.retain || 0;   /* Plan 9: retention actions paid today (taster coach pay, win-back SMS) */
-  r.contribution = r.net - r.coach - r.mkt - r.card - r.retain;
+  r.rearrange = t.rearrange || 0;   /* Plan 12: movers paid today for a rearrange */
+  r.contribution = r.net - r.coach - r.mkt - r.card - r.retain - r.rearrange;
   r.occupancy = c.area * (c.rentRate + c.mgmtPerPing) / d * frac; r.elec = c.elec / d * frac; r.otherOpex = c.otherOpex / d * frac; r.staff = c.staff / d * frac;
   r.fixed = r.occupancy + r.elec + r.otherOpex + r.staff;
   r.ebitda = r.contribution - r.fixed;

@@ -2,6 +2,23 @@
 
 All money is in NT dollars and shown as `$`.
 
+## 2026-11-15: rearrange your gym
+
+You can change the floor of a running gym at any time. The gym closes while the work is done.
+
+### Rearrange
+- Press Rearrange to pause and see your gym as pieces on the grid. Drag a piece to move it; the game picks which way it faces and refuses a spot without room for it and its clear floor.
+- Add any piece at its catalogue price, or tap a piece to sell it for 40% of its price.
+- The sheet shows the running cost and the days closed before you apply. Cancel changes nothing.
+- Movers cost $3,000 per heavy piece moved; light pieces move free.
+- The gym closes for 1 day per 4 heavy pieces moved, plus 1 day if anything new is installed. The days start tomorrow and can run into the next month. Today finishes on the old layout.
+- The sample gym converts to grid pieces the first time you apply a rearrange; its rent area and deal stay the same, including after Setup.
+
+### Books
+- New P&L lines: "Rearranging (movers)", and "Loss on equipment sold" below EBITDA (book value less what the sale brought).
+- Equipment bought later is depreciated over 5 years from the month it was bought; closed months keep the figures they were booked with.
+- The Bank tab shows equipment bought and sold since opening; the Today tab says when the gym is closed for rearranging.
+
 ## 2026-11-15: gyms laid out by rules
 
 Built gyms are now planned piece by piece on a finer grid, by the same rules a real gym follows.

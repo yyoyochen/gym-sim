@@ -64,3 +64,35 @@ test('the washrooms are reserved in the back corner of the right wall, clear of 
   for (const [w, d] of [[8, 8], [10, 8], [16, 10], [20, 16], [24, 18]]) { const r = T.fixedRooms(w, d), wc = r.washroom, desk = r.desk;
     assert.equal(wc.z0, 0, `${w}x${d} back`); assert.equal(wc.x1, w * 4, `${w}x${d} right`); assert.ok(desk.z0 >= wc.z1, `${w}x${d} overlap`); }   /* the 1.2 m gap is checked on the real walls (self-test washroomsAtBack) */
 });
+
+// ---------------------------------------------------------------- Plan 12: book value of a piece
+test('book value: full price in the month bought, straight-line to zero over 60 months', () => {
+  const T = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js', 'src/a4_layout.js'], ['bookValue']);
+  assert.equal(T.bookValue({ kind: 'rack', bought: 2 }, 2), 120000); assert.equal(T.bookValue({ kind: 'rack', bought: 2 }, 32), 60000);
+  assert.equal(T.bookValue({ kind: 'rack' }, 70), 0); assert.equal(T.bookValue({ kind: 'rack' }, 0), 120000);
+});
+
+// ---------------------------------------------------------------- Plan 12: diff, quote, drop
+const Q = () => loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js', 'src/a4_layout.js'], ['autoBuild', 'presetCounts', 'addPiece', 'diffLayouts', 'quote', 'dropPiece', 'footprint', 'KINDS']);
+const copyL = (L) => JSON.parse(JSON.stringify(L));
+test('quote: 5 heavy moves and a bench move cost $15,000 in movers and close 2 days', () => {
+  const T = Q(), a = T.autoBuild(16, 10, T.presetCounts(16, 10)), b = copyL(a);
+  const heavy = b.pieces.filter(p => T.KINDS[p.kind].heavy).slice(0, 5), bench = b.pieces.find(p => p.kind === 'bench');
+  for (const p of heavy) p.sz += 1; bench.sz += 1;
+  const q = T.quote(T.diffLayouts(a, b)); assert.equal(`${q.movers} ${q.buy} ${q.sell} ${q.cost} ${q.days}`, '15000 0 0 15000 2');
+});
+test('quote: buying a rack costs its price and one install day', () => {
+  const T = Q(), a = T.autoBuild(20, 16, T.presetCounts(20, 16)), b = copyL(a); assert.ok(T.addPiece(b, 'rack', 20, 16));
+  const q = T.quote(T.diffLayouts(a, b)); assert.equal(`${q.buy} ${q.cost} ${q.days}`, '120000 120000 1');
+});
+test('quoteSellBuy: selling a rack and buying another counts one sale and one purchase', () => {
+  const T = Q(), a = T.autoBuild(20, 16, T.presetCounts(20, 16)), b = copyL(a), r = b.pieces.find(p => p.kind === 'rack'); b.pieces = b.pieces.filter(p => p !== r); assert.ok(T.addPiece(b, 'rack', 20, 16));
+  const d = T.diffLayouts(a, b), q = T.quote(d); assert.equal(`${d.sold.length} ${d.bought.length} ${q.buy} ${q.sell} ${q.cost}`, '1 1 120000 48000 72000');
+});
+test('dropPiece moves a piece to a free spot with an engine-chosen facing, refuses a spot on another piece, and never overlaps', () => {
+  const T = Q(), L = T.autoBuild(20, 16, T.presetCounts(20, 16)), bench = L.pieces.find(p => p.kind === 'bench'), rack = L.pieces.find(p => p.kind === 'rack');
+  const fr = T.footprint(rack); assert.equal(T.dropPiece(copyL(L), bench.id, fr.x0 + 1, fr.z0 + 1, 20, 16), null);
+  let moved = null; for (let z = 30; z < 60 && !moved; z += 2) for (let x = 10; x < 50 && !moved; x += 2) { const M = copyL(L), p = T.dropPiece(M, bench.id, x, z, 20, 16); if (p && (p.sx !== bench.sx || p.sz !== bench.sz)) moved = M; }
+  assert.ok(moved, 'found a free spot'); const fp = moved.pieces.map(T.footprint);
+  assert.ok(!fp.some((a, i) => fp.some((b, j) => j > i && a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1)));
+});

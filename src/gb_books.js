@@ -86,7 +86,7 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('Turned away at the door', '門口被擋下')}</td><td class="n">${A.balked || 0}</td></tr>
       <tr><td>${tx('Bad visits (long waits)', '不愉快的到訪（久候）')}</td><td class="n">${A.bad || 0}</td></tr></table>`
       + `<p class="note">${tx(`${A.checkins || 0} checked in · ${A.paidVisits || 0} have paid so far. Everyone pays by the minute on the way out, so the two meet at closing.`, `${A.checkins || 0} 人進場 · 目前 ${A.paidVisits || 0} 人已付款。每個人離場時按分鐘付費，打烊時兩個數字會相同。`)}</p>`;
-    const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
+    const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'rearrange' ? (() => { const left = M.cal.slice(M.dayI + 1).filter(d => d.rearrange).length + (BIZ.closedLeft || 0); return tx(`Closed today for rearranging${left ? `: ${left} more day${left === 1 ? '' : 's'} after today` : '; it reopens tomorrow with the new layout'}. No sales, the fixed costs still run.`, `今日重新擺設休館${left ? `：之後還有 ${left} 天` : '，明天以新擺設開門'}。沒有營收，固定成本照付。`); })() : A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
     const stamp = A.done ? `<div class="stamp">${tx('Day closed', '本日結帳')} · EBITDA ${nt$(p.ebitda)}</div>` : '';
     const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
@@ -103,9 +103,9 @@ function periodSeg(per) { const on = archOf(per) ? 'year' : per; return `<div cl
 const cashM = (v) => moneyK(v);   /* the year view's cash column stays short so five columns fit a phone */
 function yearHtml() {
   const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 }, share = (days, y, name) => days / daysInMonth(y, name);   /* review I2: a short first month takes its share of depreciation */
-  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: c.depYear * share(m.days, m.year, m.name) }, m.interest).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
+  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: (m.depYear != null ? m.depYear : c.depYear) * share(m.days, m.year, m.name) }, m.interest + (m.loss || 0)).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
     rows.push(`<tr data-k="yr" data-arch="${i}" style="cursor:pointer"><td style="color:var(--accent)">${monthLabel(m.name, m.year)} ›</td><td class="n">${ntn(m.pnl.net)}</td><td class="n">${ntn(m.pnl.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(m.cashEnd)}</td></tr>`); });
-  const pm = projectMonth().total, f = share(M.cal.length, BIZ.year, M.cfg.month), np = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * f }, BIZ.balance * BIZ.rate / 1200 * f).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
+  const pm = projectMonth().total, f = share(M.cal.length, BIZ.year, M.cfg.month), np = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * f }, BIZ.balance * BIZ.rate / 1200 * f + (BIZ.mLoss || 0)).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
   rows.push(`<tr data-k="yr" data-cur="1"><td>${monthLabel(M.cfg.month, BIZ.year)} <span class="tag">${tx('projected', '預估')}</span></td><td class="n">${ntn(pm.net)}</td><td class="n">${ntn(pm.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(liveCash())}</td></tr>`);
   const head = `<tr class="grp0"><td>${tx('Month', '月份')}</td><td class="n">${tx('Net sales', '銷售淨額')}</td><td class="n">EBITDA</td><td class="n">${tx('Net profit', '淨利')}</td><td class="n">${tx('Cash', '現金')}</td></tr>`;
   const total = `<tr class="sum"><td>${tx('So far', '累計')}</td><td class="n">${ntn(tot.net)}</td><td class="n" data-k="yrEbitda">${ntn(tot.ebitda)}</td><td class="n">${ntn(tot.np)}</td><td class="n"></td></tr>`;
@@ -123,7 +123,7 @@ function booksPeriod(period) {
   return t;
 }
 function booksDep(period) {
-  const c = pnlCosts(), month = c.depYear / 12, full = M ? daysInMonth(BIZ ? BIZ.year : 2027, M.cfg.month) : 30, days = M ? M.cal.length : 30, arch = archOf(period);   /* by the day of the calendar month: a short first month gets its share */
+  const c = pnlCosts(), arch0 = archOf(period), month = (arch0 && arch0.depYear != null ? arch0.depYear : c.depYear) / 12, full = M ? daysInMonth(BIZ ? BIZ.year : 2027, M.cfg.month) : 30, days = M ? M.cal.length : 30, arch = archOf(period);   /* by the day of the calendar month: a short first month gets its share */
   const dep = arch ? month * arch.days / daysInMonth(arch.year, arch.name) : period === 'today' ? month / full : period === 'mtd' ? month / full * ((M ? M.dayI : 0) + 1) : month * days / full;
   return { dep, equipment: dep * DEP_SPLIT.equipment, fitout: dep * DEP_SPLIT.fitout };
 }
@@ -133,7 +133,8 @@ BOOK_RENDER.Books = {
     const per = BOOKS.period, arch = archOf(per), p = booksPeriod(per), c = pnlCosts(), net = p.net, it = itemiseFixed(p, c), d = booksDep(per);
     // loan interest is booked when the month closes: the month view shows this month's, today and month-to-date show none yet (A2)
     const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 * M.cal.length / daysInMonth(BIZ.year, M.cfg.month) : 0;   /* a short first month pays its share */
-    const ebit = p.ebitda - d.dep, tax = Math.max(0, ebit - interest) * c.tax, ptCash = (p.deferredChange || 0) + (p.ptEarned || 0);
+    const loss = arch ? (arch.loss || 0) : (per === 'mtd' || per === 'month') && BIZ ? (BIZ.mLoss || 0) : 0;   /* Plan 12: a sale below its book value */
+    const ebit = p.ebitda - d.dep, tax = Math.max(0, ebit - interest - loss) * c.tax, ptCash = (p.deferredChange || 0) + (p.ptEarned || 0);
     const bp = (lo, hi) => `${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(0)}%`;
     const occ = it.premises.rent + it.premises.mgmt;
     const seg = periodSeg(per) + (arch ? `<p class="note" style="color:var(--accent)">${monthLabel(arch.name, arch.year)} · ${tx('closed', '已結帳')}</p>` : '');
@@ -153,6 +154,7 @@ BOOK_RENDER.Books = {
       + bkGroup(tx('Variable costs', '變動成本'))
       + bkRow('coach', tx('Coach payout', '教練分潤'), -p.coach, net, '', tx(`The gym keeps ${c.gymShare}% of PT; Taipei gyms keep 40–60%`, `健身房保留教練課 ${c.gymShare}%；台北常見 40–60%`))
       + bkRow('mkt', tx('Marketing', '行銷'), -p.mkt, net)
+      + (p.rearrange ? bkRow('rearrange', tx('Rearranging (movers)', '重新擺設（搬運）'), -p.rearrange, net) : '')   /* Plan 12 */
       + (p.retain ? bkRow('retain', tx('Retention actions', '留客行動'), -p.retain, net, '', tx('PT tasters (coach pay) and win-back SMS', '體驗課（教練費）與回流簡訊')) : '')
       + bkRow('card', tx('Card and e-payment fees', '刷卡與電子支付手續費'), -p.card, net)
       + bkRow('contribution', tx('Contribution', '邊際貢獻'), p.contribution, net, 'sum');
@@ -175,8 +177,9 @@ BOOK_RENDER.Books = {
       + bkRow('depFit', tx('Depreciation, fit-out', '折舊（裝修）'), -d.fitout, net)
       + bkRow('ebit', 'EBIT', ebit, net)
       + (per === 'month' || arch ? bkRow('interest', tx('Loan interest', '貸款利息'), -interest, net) : '')
+      + (loss ? bkRow('loss', tx('Loss on equipment sold', '出售器材損失'), -loss, net) : '')
       + bkRow('tax', tx('Income tax (20% of a profit)', '營利事業所得稅（獲利的 20%）'), -tax, net)
-      + bkRow('netProfit', tx('Net profit', '稅後淨利'), ebit - interest - tax, net, 'sum');
+      + bkRow('netProfit', tx('Net profit', '稅後淨利'), ebit - interest - loss - tax, net, 'sum');
     let extra = '';
     if (per === 'month') {
       const yrs = belowEbitda(p.ebitda, c).paybackYears, band = 0.1 * (p.restNet || 0), perPing = p.gross / c.area;
@@ -334,7 +337,7 @@ BOOK_RENDER.Bank = {
       ${BUILT ? `<tr><td>${tx('Fit-out (floor, air con, lights, washrooms, permit)', '裝修（地板、空調、燈具、浴廁、許可）')}</td><td class="n" data-k="fitOut">${ntn(-BUILT.fitOut)}</td></tr>
       <tr><td>${tx('Equipment', '器材')}</td><td class="n" data-k="equip">${ntn(-BUILT.equipment)}</td></tr>
       <tr><td>${tx('Rent deposit (refundable)', '租金押金（可退）')}</td><td class="n" data-k="deposit">${ntn(-BIZ.deposit)}</td></tr>` : `<tr><td>${tx('Build and equipment (capex)', '裝修與器材（資本支出）')}</td><td class="n">${ntn(-COSTS.capex)}</td></tr>`}
-      <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n">${ntn(BIZ.own + BIZ.loan - COSTS.capex - (BIZ.deposit || 0))}</td></tr></table>
+      <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n" data-k="openCash">${ntn(BIZ.openCash)}</td></tr></table>${BIZ.eqBought || BIZ.eqSold ? `<table><tr><td>${tx('Equipment bought since opening', '開幕後購買器材')}</td><td class="n" data-k="eqBought">${ntn(-(BIZ.eqBought || 0))}</td></tr><tr><td>${tx('Equipment sold since opening', '開幕後出售器材')}</td><td class="n" data-k="eqSold">${ntn(BIZ.eqSold || 0)}</td></tr></table>` : ''}
       <div style="display:flex;height:10px;margin:6px 0 2px;border:1px solid var(--edge)"><div style="flex:${BIZ.own};background:var(--accent)"></div><div style="flex:${BIZ.loan};background:var(--hi)"></div></div>
       <p class="note">${tx('Yellow is yours to lose; blue must be repaid whatever happens.', '黃色是你自己的錢，虧了就沒了；藍色不論如何都要還。')}</p>`;
     const loan = `<table><tr><td>${tx('Still owed to the bank', '尚欠銀行')}</td><td class="n" data-k="loanBal">${ntn(BIZ.balance)}</td></tr>

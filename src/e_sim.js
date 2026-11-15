@@ -254,24 +254,41 @@ function applyPublished() {
 let BIZ = null;
 // Plan 8: a built gym (S.hallW x S.hallD cells) sets the hall, the floor area, capex and depreciation; the sample gym keeps today's figures
 const SAMPLE_CAPEX = { capex: COSTS.capex, depYear: COSTS.depYear };
-let BUILT = null;
+let BUILT = null, SAMPLE_GRID_COST = null;   /* the pieces' value of the sample laid out on its grid hall, worked out once */
 function applyBuild() {
   if (HALL.w !== (S.hallW || null) || HALL.d !== (S.hallD || null)) setHall(S.hallW, S.hallD);
   if (S.hallW) {   /* lay it out once to see what fits: the gym pays for what is placed, and the counts follow */
     if (!S.layout) S.layout = autoBuild(S.hallW, S.hallD, S, { turf: S.turf });   /* Plan 11: a built hall is always laid out from pieces */
     buildLayout({ ...S, shock: 'none' }); const p = placedCounts(); Object.assign(S, p.counts);
-    BUILT = buildCost({ w: S.hallW, d: S.hallD, counts: S, kit: p.kit, layout: S.layout }, { ...COSTS, rentRate: S.rentRate }); COSTS.capex = BUILT.capex; COSTS.depYear = BUILT.depYear; S.area = BUILT.ping;
-  } else { BUILT = null; Object.assign(COSTS, SAMPLE_CAPEX); }
+    if (S.sampleGrid) {   /* owner 2026-11-15 (review I3, B): the converted sample keeps the sample deal on Setup: its rent area, no fit-out, deposit or rent-free month; capex moves only by equipment bought or sold */
+      if (SAMPLE_GRID_COST === null) SAMPLE_GRID_COST = layoutCost(autoBuild(S.hallW, S.hallD, SAMPLE_COUNTS));
+      const delta = layoutCost(S.layout) - SAMPLE_GRID_COST; BUILT = null; COSTS.capex = SAMPLE_CAPEX.capex + delta; COSTS.depYear = SAMPLE_CAPEX.depYear + delta / EQUIP_YEARS;
+    } else {
+    BUILT = buildCost({ w: S.hallW, d: S.hallD, counts: S, kit: p.kit, layout: S.layout }, { ...COSTS, rentRate: S.rentRate }); COSTS.capex = BUILT.capex; COSTS.depYear = BUILT.depYear; S.area = BUILT.ping; }
+  } else { BUILT = null; S.sampleGrid = false; Object.assign(COSTS, SAMPLE_CAPEX); }   /* the plain sample hall: the grid flag never outlives it */
   if (typeof lockBuiltSliders === 'function') lockBuiltSliders();
 }
+// Plan 12: post a rearrange. Movers go through today's P&L; purchases are capex paid now and depreciated from this month; a sale brings 40% now and books
+// the gap to its book value as a loss below EBITDA; the gym closes for q.days from tomorrow (into next month if needed) and reopens with q.layout
+function applyRearrange(q) {
+  const price = (p) => KINDS[p.kind].price, buy = q.bought.reduce((t, p) => t + price(p), 0), soldAt = q.sold.reduce((t, p) => t + price(p), 0), back = 0.4 * soldAt;
+  for (const p of q.bought) p.bought = BIZ.monthIndex;
+  BIZ.cash += back - buy; BIZ.mIn += back; BIZ.mOut += buy; BIZ.eqBought = (BIZ.eqBought || 0) + buy; BIZ.eqSold = (BIZ.eqSold || 0) + back; noteCashOut();
+  BIZ.mLoss = (BIZ.mLoss || 0) + q.sold.reduce((t, p) => t + bookValue(p, BIZ.monthIndex) - 0.4 * price(p), 0);
+  COSTS.capex += buy; COSTS.depYear += (buy - soldAt) / EQUIP_YEARS;
+  A.rearrange = (A.rearrange || 0) + (q.movers || 0); A.pnl = computePnl();
+  let left = q.days || 0; for (let i = M.dayI + 1; i < M.cal.length && left > 0; i++, left--) M.cal[i].rearrange = M.cal[i].closure = true;
+  BIZ.closedLeft = left; BIZ.pending = JSON.parse(JSON.stringify(q.layout)); BIZ.pendingHall = q.hall || null;   /* the sample gym's hall becomes a grid hall when it reopens */
+}
 function newBusiness() {
+  if (S.layout) for (const p of S.layout.pieces) delete p.bought;   /* review I1: a new business owns every piece from its opening */
   const deposit = BUILT ? BUILT.deposit : 0;   /* a built gym's rent deposit leaves the bank at opening (refundable, not depreciated) */
   BIZ = { own: S.finOwn, loan: S.finLoan, rate: S.finRate, years: S.finYears, payment: loanPayment(S.finLoan, S.finRate, S.finYears), balance: S.finLoan,
     cash: S.finOwn + S.finLoan - COSTS.capex - deposit, deposit, cashOutAt: null, months: [], monthIndex: 0, year: S.year || 2027, mIn: 0, mOut: 0 };
   BIZ.openCash = BIZ.cash;   /* Plan 10: the cash goal knows a gym that opened overdrawn */
 }
 // cash a day's trading moves: what came in (fees, cards, PT packs, rentals, add-ons) minus VAT owed and every cost paid
-function dayCash(p) { return p ? p.cashIn - p.vat - p.coach - p.mkt - p.card - (p.retain || 0) - p.fixed : 0; }
+function dayCash(p) { return p ? p.cashIn - p.vat - p.coach - p.mkt - p.card - (p.retain || 0) - (p.rearrange || 0) - p.fixed : 0; }
 function liveCash() { return BIZ ? BIZ.cash + (A && A.pnl ? dayCash(A.pnl) : 0) : 0; }
 function noteCashOut() { if (BIZ.cash < 0 && !BIZ.cashOutAt) BIZ.cashOutAt = { month: M.cfg.month, year: BIZ.year, day: A.date, mi: BIZ.monthIndex }; }
 function bookCash(p) { if (!BIZ || !p) return; BIZ.cash += dayCash(p); BIZ.mIn += p.cashIn; BIZ.mOut += p.cashIn - dayCash(p); noteCashOut(); }
@@ -285,10 +302,10 @@ function closeMonth() {
   const pnl = {}; for (const d of M.days) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') pnl[k] = (pnl[k] || 0) + d.pnl[k];
   const frac = M.cal.length / daysInMonth(BIZ.year, M.cfg.month);   /* a short first month pays its share of the instalment and depreciation */
   const lm = loanMonth(BIZ.balance, BIZ.rate * frac, BIZ.payment * frac); BIZ.balance = lm.balance;
-  const tax = belowEbitda(pnl.ebitda || 0, { ...pnlCosts(), depYear: pnlCosts().depYear * frac }, lm.interest).tax;
+  const loss = BIZ.mLoss || 0, tax = belowEbitda(pnl.ebitda || 0, { ...pnlCosts(), depYear: pnlCosts().depYear * frac }, lm.interest + loss).tax;   /* Plan 12: a loss on equipment sold lowers the taxable profit */
   BIZ.cash -= lm.interest + lm.principal + tax; BIZ.mOut += lm.interest + lm.principal + tax; noteCashOut();
   BIZ.months.push({ name: M.cfg.month, year: BIZ.year, days: M.cal.length, pnl, members: M.pool.length, joined: M.joinedTotal, lapsed: M.lapsedTotal, cashEnd: BIZ.cash,
-    interest: lm.interest, principal: lm.principal, tax, cashIn: BIZ.mIn, cashOut: BIZ.mOut, ptDue: M.ptDue || 0 });
+    interest: lm.interest, principal: lm.principal, tax, loss, depYear: pnlCosts().depYear,   /* review I2: the depreciation rate this month was booked at */ cashIn: BIZ.mIn, cashOut: BIZ.mOut, ptDue: M.ptDue || 0 }); BIZ.mLoss = 0;
   BIZ.mIn = 0; BIZ.mOut = 0;
 }
 // the next calendar month of the same business: same members (history rebased to the new month's day 0), balances, prices and settings;
@@ -316,6 +333,7 @@ function nextMonth() {
   M.joinedTotal = 0; M.lapsedTotal = 0; M.returnedTotal = 0; M.ptDue = old.ptDue || 0; M.balkedTotal = 0; M.badTotal = 0;
   const season = WEATHER_DAY.typhoonMonths.includes(nmi + 1);
   for (const d of M.cal) { const u = rng(); d.typhoon = season && u < WEATHER_DAY.typhoonPerYear / 123; d.closure = cfg.shock === 'closure'; }
+  for (let i = 0; i < M.cal.length && BIZ.closedLeft > 0; i++, BIZ.closedLeft--) M.cal[i].rearrange = M.cal[i].closure = true;   /* Plan 12: a rearrange closure carried over from last month */
   // who rents the floor follows this month's rental policy (P5.17): a ban ends rentals, otherwise the count moves toward its target
   const outBase = cfg.outsideClients * cfg.peak / 35, target = cfg.allowOutside ? Math.round(outBase * Math.pow(cfg.rentP / DEMAND_RESP.rentBase, DEMAND_RESP.rentElastic) * M.level) : 0;
   const renters = M.pool.filter(m => m.outside);
@@ -430,13 +448,15 @@ function setupDay(i) {
   for (const a of AGENTS) a.visible = false;
   AGENTS.length = 0;
   applyPublished();
+  if (BIZ && BIZ.pending && !M.cal[i].rearrange && BIZ.pendingHall) { const h = BIZ.pendingHall; S.hallW = M.cfg.hallW = h.w; S.hallD = M.cfg.hallD = h.d; S.sampleGrid = true; setHall(h.w, h.d); BIZ.pendingHall = null; }   /* Plan 12: the converted sample keeps its rent area (S.area) */
+  if (BIZ && BIZ.pending && !M.cal[i].rearrange) { S.layout = M.cfg.layout = BIZ.pending; BIZ.pending = null; const n = countsOf(S.layout); Object.assign(S, n); Object.assign(M.cfg, n); }   /* Plan 12: a rearranged gym reopens with its new layout */
   const cfg = JSON.parse(JSON.stringify(M.cfg)), day = M.cal[i];
   M.dayI = i;
   const rng = makeRng((M.seed ^ Math.imul(i + 1, 0x9E3779B1)) >>> 0);
   buildLayout(cfg.shock === 'brokenRack' ? { ...cfg, racks: Math.max(1, cfg.racks - 1) } : cfg);   // one rack out for repair all month
   A = { cfg, rng, t: T_START, inside: 0, members: [], spawnI: 0, outQ: [], cars: [], scoot: new Array(SCOOT.length).fill(null), buses: [],
     waits: [], longestQ: 0, prs: [], occ: new Float32Array(17 * 60).fill(NaN), q: new Float32Array(17 * 60).fill(NaN), zones: [], lastMin: -1, done: false, label: `seed ${cfg.seed} · ${cfg.racks} racks`, wb: 0, visits: 0,
-    dayI: i, dow: day.dow, date: day.day, closed: !!(day.typhoon || day.closure), closedWhy: day.closure ? 'closure' : 'typhoon', visitsExpected: 0 };
+    dayI: i, dow: day.dow, date: day.day, closed: !!(day.typhoon || day.closure), closedWhy: day.rearrange ? 'rearrange' : day.closure ? 'closure' : 'typhoon', visitsExpected: 0 };
   // who comes today: each member's own rate, scaled by the weekday's busyness and the month (P2.2, P2.8); a heatwave cuts midday
   const heat = cfg.weather === 'Heatwave', shape = dayShape(day.dow, heat), plain = dayShape(day.dow, false);
   // prices: a bigger Mon–Fri peak premium moves and loses evening visits (P3.13); dearer minutes mean fewer visits (P3.12)
@@ -481,7 +501,7 @@ function updateLadderLess() {}
 function pnlCosts() { return { ...COSTS, area: S.area, rentRate: BUILT && BIZ && BIZ.monthIndex < BUILT.rentFreeMonths ? 0 : S.rentRate,   /* a built gym's first month is rent-free; management is still paid */ staff: S.staff, addOns: A && A.closed ? 0 : COSTS.addOns }; }   // no add-on sales on a closed day
 function computePnl() {
   const ptCash = A.ptRev || 0, rentals = A.rentRev || 0;
-  return dailyPnl({ entry: (A.rev || 0) - ptCash - rentals, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
+  return dailyPnl({ entry: (A.rev || 0) - ptCash - rentals, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
 }
 
 // ================================================================ simulation step

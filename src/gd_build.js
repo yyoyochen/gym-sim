@@ -78,7 +78,7 @@ function buildTurf(on) {   /* owner: the turf and sled lane is the player's choi
   }
   buildPreview();
 }
-function closeBuildUI() { BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
+function closeBuildUI() { if (typeof RDRAG !== 'undefined') RDRAG.id = null; BUILD.mode = null;   /* review C1: no drag outlives the sheet */ if (typeof RGHOST !== 'undefined') RGHOST.visible = false; BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
 function cancelBuild() {
   if (!BUILD.on) return; const z = BUILD.snap;
   setHall(z.w, z.d); [LOCKERS_M, LOCKERS_F, LOCKERS].forEach((L, i) => L.splice(0, L.length, ...z.lockers[i]));   /* members keep their own locker objects */
@@ -90,7 +90,7 @@ function openGym() {
   if (!BUILD.on || (BUILD.w && !checkPlot(BUILD.w, BUILD.d).ok)) return false;
   const wasIntro = BUILD.intro;
   BUILD.snap.EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); }); BUILD.snap = null;
-  S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts); S.turf = BUILD.turf; S.layout = BUILD.w ? JSON.parse(JSON.stringify(BUILD.layout)) : null;
+  S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts); S.turf = BUILD.turf; S.layout = BUILD.w ? JSON.parse(JSON.stringify(BUILD.layout)) : null; S.sampleGrid = false;   /* a new build or a fresh take-over is no longer the converted sample */
   if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; } else { S.build = 'existing'; S.monthsOpen = 1; }   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
   closeBuildUI(); setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshGo(); if (typeof refreshPending === 'function') refreshPending();
   if (typeof onGymOpened === 'function') onGymOpened(wasIntro);
@@ -135,6 +135,7 @@ function renderBuild() {
   const c = buildCostNow(), sample = !BUILD.w, tabs = [['Plot', tx('1 Plot', '1 場地')], ['Equipment', tx('2 Equipment', '2 器材')], ['Money', tx('3 Money', '3 資金')]];
   const btn = (attrs, label, cls = '') => `<button class="${cls}" ${attrs}>${label}</button>`;
   if (EQUIP) EQUIP.visible = !(BUILD.intro && BUILD.step === 'welcome');   /* the welcome shows an empty plot */
+  if (BUILD.mode === 'rearrange') { box.innerHTML = rearrangeHtml(btn); return; }   /* Plan 12 */
   if (BUILD.intro && BUILD.step !== 'custom' && (BUILD.step === 'welcome' || c)) { box.innerHTML = introHtml(c, btn); return; }
   let body = '';
   if (BUILD.tab === 'Plot') {
@@ -180,4 +181,49 @@ document.addEventListener('click', (e) => {
   else if (d.fin) { const [k, v] = d.fin.split(','); S[k] = clamp(S[k] + v * 5e5, 0, 20e6); renderBuild(); }
   else if (d.bact === 'cancel') cancelBuild();
   else if (d.bact === 'open') { if (!openGym()) showToast(tx('This plot breaks a rule: see the list under 1 Plot.', '這塊場地不符合規則：請看「1 場地」下方的清單。')); }
+});
+// ================================================================ Plan 12: Rearrange. Pause, drag pieces (the engine picks each facing), add or sell; Apply closes
+// the gym for the days the change needs from tomorrow and reopens it with the new layout; Cancel changes nothing.
+const SAMPLE_GRID = { w: 16, d: 11 };   /* the grid hall closest to the sample's 30 × 20 m */
+const RNAME = { rack: ['Power rack', '深蹲架'], olyplat: ['Olympic platform', '舉重平台'], treadmill: ['Treadmill', '跑步機'], rower: ['Rower', '划船機'], bike: ['Bike', '飛輪'], airbike: ['Air bike', '風扇車'],
+  pulldown: ['Lat pulldown', '滑輪下拉'], row: ['Seated row', '坐姿划船'], chestpress: ['Chest press', '胸推機'], shoulderpress: ['Shoulder press', '肩推機'], pecdeck: ['Pec deck', '蝴蝶機'], legext: ['Leg extension', '腿伸展'], legcurl: ['Leg curl', '腿彎舉'],
+  legpress: ['Leg press', '腿推機'], hack: ['Hack squat', '哈克深蹲'], hipthrust: ['Hip thrust', '臀推機'], beltsquat: ['Belt squat', '腰帶深蹲'], bench: ['Adjustable bench', '可調式訓練椅'], dbrack: ['Dumbbell rack', '啞鈴架'],
+  cable: ['Cable tower', '滑輪架'], pullup: ['Pull-up station', '引體向上架'], mat: ['Stretch mat', '伸展墊'], turf: ['Turf and sled lane', '草皮與雪橇道'] };
+const rname = (k) => tx(...(RNAME[k] || [k, k]));
+const RGHOST = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#5ee08a', transparent: true, opacity: 0.4, depthWrite: false, fog: false }));
+RGHOST.position.y = 0.07; RGHOST.renderOrder = 5; RGHOST.visible = false; BUILD_GRID.add(RGHOST);
+function openRearrange() {
+  if ((typeof closing !== 'undefined' && closing) || BUILD.on) return false;
+  if (BIZ && (BIZ.pending || (A && A.closed && A.closedWhy === 'rearrange'))) { showToast(tx('A rearrange is already booked: wait until the gym reopens.', '已經安排重新擺設：請等健身房重新開門。')); return false; }
+  const sample = !S.hallW || !S.layout;   /* the sample gym is shown as grid pieces; it converts only if the player applies (Plan 12, owner option A) */
+  openBuild(); BUILD.mode = 'rearrange'; BUILD.convert = sample;
+  if (sample) { BUILD.w = SAMPLE_GRID.w; BUILD.d = SAMPLE_GRID.d; BUILD.orig = autoBuild(SAMPLE_GRID.w, SAMPLE_GRID.d, SAMPLE_COUNTS); } else BUILD.orig = JSON.parse(JSON.stringify(S.layout));
+  BUILD.layout = JSON.parse(JSON.stringify(BUILD.orig)); BUILD.sel = null; buildPreview(); return true;
+}
+const rOpen = () => BUILD.on && BUILD.mode === 'rearrange';   /* review C1: edits only while Rearrange is open, never on the live gym */
+function rearrangeAdd(kind) { if (!rOpen()) return; if (!addPiece(BUILD.layout, kind, BUILD.w, BUILD.d)) showToast(tx('No room for it: the floor is full.', '放不下了：場地已滿。')); buildPreview(); }
+function rearrangeSell(id) { if (!rOpen()) return; BUILD.layout.pieces = BUILD.layout.pieces.filter(p => p.id !== id); BUILD.sel = null; buildPreview(); }
+function rearrangeDrop(id, sx, sz) { if (!rOpen()) return false; const p = dropPiece(BUILD.layout, id, sx, sz, BUILD.w, BUILD.d); if (!p) showToast(tx("It can't go there: no room for it and its clear floor.", '不能放那裡：放不下器材和它周圍的空間。')); buildPreview(); return !!p; }
+function pieceAt(sx, sz) { const hit = BUILD.layout.pieces.filter(p => { const f = footprint(p); return sx >= f.x0 && sx < f.x1 && sz >= f.z0 && sz < f.z1; }); return hit.find(p => p.kind !== 'turf') || hit[0] || null; }
+function rearrangeApply() {
+  const d = diffLayouts(BUILD.orig, BUILD.layout), q = quote(d), L = BUILD.layout, wasSample = BUILD.convert;
+  cancelBuild(); if (!d.moved.length && !d.bought.length && !d.sold.length) return;
+  applyRearrange({ layout: L, movers: q.movers, bought: d.bought, sold: d.sold, days: q.days, hall: wasSample ? { ...SAMPLE_GRID } : null });
+  showToast(q.days ? tx(`Closed for ${q.days} day${q.days === 1 ? '' : 's'} from tomorrow for rearranging · ${money(q.cost)}`, `明天起休館 ${q.days} 天重新擺設 · ${money(q.cost)}`) : tx(`The new layout opens tomorrow morning · ${money(q.cost)}`, `新擺設明天早上啟用 · ${money(q.cost)}`));
+  if (typeof updateMonitors === 'function') updateMonitors();
+}
+function rearrangeHtml(btn) {
+  const d = diffLayouts(BUILD.orig, BUILD.layout), q = quote(d), sel = BUILD.sel && BUILD.layout.pieces.find(p => p.id === BUILD.sel);
+  const kinds = Object.keys(KINDS).filter(k => k !== 'turf' || !BUILD.layout.pieces.some(p => p.kind === 'turf'));
+  return `<h2 class="btitle">${tx('Rearrange', '重新擺設')}</h2>${BUILD.convert ? `<p class="note warn">${tx('Your gym is shown converted to grid pieces for rearranging; its layout may shift a little. Nothing changes unless you apply.', '為了重新擺設，你的健身房以格狀器材顯示，擺設可能略有不同。按「確定」才會變更。')}</p>` : ''}<p class="note">${tx('Drag a piece to move it: the gym picks which way it faces. Tap a piece to sell it. Heavy pieces need movers and a closed day for every 4; new equipment needs a day to install.', '拖曳器材即可移動，方向由系統決定。點器材可賣掉。重型器材要請搬運，每 4 件休館 1 天；新器材安裝要 1 天。')}</p>
+    <table><tr><td>${tx(`Movers (${q.heavy} heavy piece${q.heavy === 1 ? '' : 's'})`, `搬運（${q.heavy} 件重型）`)}</td><td class="n">${money(q.movers)}</td></tr><tr><td>${tx(`Equipment bought (${d.bought.length})`, `購買器材（${d.bought.length}）`)}</td><td class="n">${money(q.buy)}</td></tr>
+    <tr><td>${tx(`Equipment sold at 40% (${d.sold.length})`, `出售器材 4 成價（${d.sold.length}）`)}</td><td class="n">${money(-q.sell)}</td></tr><tr class="sum"><td>${tx('Total', '合計')}</td><td class="n" data-k="rcost">${money(q.cost)}</td></tr>
+    <tr><td>${tx('Closed', '休館')}</td><td class="n" data-k="rdays">${q.days ? tx(`${q.days} day${q.days === 1 ? '' : 's'} from tomorrow`, `明天起 ${q.days} 天`) : tx('none: done overnight', '不用：一個晚上完成')}</td></tr></table>
+    ${sel ? `<div class="row"><span>${rname(sel.kind)}</span>${btn(`data-rsell="${sel.id}"`, tx(`Sell for ${money(REARRANGE.resale * KINDS[sel.kind].price)}`, `以 ${money(REARRANGE.resale * KINDS[sel.kind].price)} 賣掉`))}</div>` : ''}
+    <div class="row"><select id="raddKind">${kinds.map(k => `<option value="${k}">${rname(k)} · ${moneyK(KINDS[k].price)}</option>`).join('')}</select>${btn('data-radd="1"', tx('Add', '新增'))}</div>
+    <div class="row bfoot">${btn('data-bact="cancel"', tx('Cancel', '取消'))}${btn('data-rapply="1"', tx('Apply', '確定'), 'btn-go')}</div>`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('#build button'); if (!b || !BUILD.on || BUILD.mode !== 'rearrange') return; const d = b.dataset;
+  if (d.rsell) rearrangeSell(+d.rsell); else if (d.radd) rearrangeAdd(document.getElementById('raddKind').value); else if (d.rapply) rearrangeApply();
 });
