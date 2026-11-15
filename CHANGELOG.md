@@ -4,6 +4,9 @@ All money is in NT dollars and shown as `$`.
 
 ## 2026-11-15: running the gym
 
+- Your gym is saved in this browser: a reload carries on from the morning of the current day (paused, with a welcome-back note). Build a gym starts a new one. Changes made since that morning, like a rearrange or the day's visits so far, are not kept.
+- Closing early ends with one big money pop for the closed days' takings, then the summary opens.
+- The "Day closed" stamp sits straight.
 - Members don't all change: about a third come dressed and go straight to the floor (most leave the same way), and some take a washroom break mid-workout.
 - The person at the desk is the Receptionist: tap them for a line about the gym and its members; the counter still opens the P&L.
 - The opening's member starts with a squat.

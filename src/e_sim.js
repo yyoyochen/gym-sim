@@ -463,6 +463,7 @@ function squatNow(a) {   /* the opening's member: if they already started their 
 }
 function skipLocker(a) { a.state = 'ex'; a.exI = 0; a.tIn = A.t; startExercise(a); }   /* owner 2026-11-15: the member the opening follows goes straight to the floor */
 function setupDay(i) {
+  snapshotDay(i);   /* owner 2026-11-15: saved progress starts each morning */
   if (M && i > 0) applyMixChange();
   if (A && A.occ) { HIST.unshift({ occ: A.occ, q: A.q, label: A.label }); if (HIST.length > 3) HIST.pop(); }
   for (const a of AGENTS) a.visible = false;

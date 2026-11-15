@@ -282,16 +282,16 @@ function updatePays() {
     const q = A.payQ.splice(0);
     // fast-forward can bill dozens at once: show the latest few floor fees, and every PT sale
     const last = (f, n) => q.filter(f).slice(-n);
-    const show = [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
+    const sums = q.filter(p => p.sum), show = sums.length ? sums : [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last; a close early shows one total (owner 2026-11-15)
     for (const p of show) {
       // colour: green = money in (fee, rent), yellow = capped visit, gold = PT sale (gold is reserved for it)
       const crit = !p.pt && !p.rent && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
-      const el = document.createElement('div'); el.className = 'pay' + (p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
-      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
+      const el = document.createElement('div'); el.className = 'pay' + (p.sum ? ' sum' : p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
+      el.innerHTML = p.sum ? `+$${p.fee.toLocaleString('en-US')}<small>${tx(`${p.sum} DAY${p.sum === 1 ? '' : 'S'} CLOSED`, `${p.sum} 天結帳`)}</small>` : `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
       document.body.appendChild(el);
-      payNext = Math.max(now, payNext + (p.pt ? 700 : 450));
+      payNext = Math.max(now, payNext + (p.pt || p.sum ? 700 : 450));
       const side = Math.random() < 0.5 ? -1 : 1;
-      PAYS.push({ el, born: payNext, pt: !!p.pt, vx: side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });
+      PAYS.push({ el, born: payNext, pt: !!(p.pt || p.sum), vx: p.sum ? 0 : side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.sum ? 2.8 : p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });   /* the close-early total rises and shakes like a PT sale, bigger */
     }
   }
   const r = canvas.getBoundingClientRect();
@@ -330,7 +330,7 @@ document.getElementById('langBtn').addEventListener('click', () => setLang(zh() 
 { const q = new URLSearchParams(location.search); if (!q.has('selftest') && !q.has('shot')) Object.assign(S, todayStart(new Date())); }   /* owner: the gym opens today; tests and screenshots keep 1 Jun 2027 */
 setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshPending();
 goOn = true; refreshGo();
-if (introWanted()) { goOn = false; refreshGo(); openIntro(); }   /* first visit: start by building (Plan 10) */
+if (introWanted()) { goOn = false; refreshGo(); if (!resumeSaved()) openIntro(); }   /* a saved gym carries on; otherwise start by building (Plan 10) */
 if (window.innerWidth < 860) panel.classList.add('closed');
 if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('700 22px Silkscreen'), document.fonts.load('16px Digits', '0123456789')]).then(() => { drawPriceBoard(true); paintSign(); drawWhiteboard(A ? A.wb : 0); drawPRBoard(); }).catch(() => {});
 function fastForward(gymSeconds) { const n = Math.round(gymSeconds / STEP); for (let i = 0; i < n && !A.done; i++) simStep(); }
@@ -1152,9 +1152,9 @@ const SELFTESTS = {
     finally { Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
   },
   closeSummaries() {   // owner 2026-11-15: closing a week shows every day's takings and profit; closing the month shows the P&L by category for the closed days
-    try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week'); const tw = document.getElementById('bkBody') ? document.getElementById('books').textContent : '', openW = BOOKS.open && BOOKS.tab === 'Today';
+    try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week', 0); const tw = document.getElementById('bkBody') ? document.getElementById('books').textContent : '', openW = BOOKS.open && BOOKS.tab === 'Today';
       const dayRows = document.querySelectorAll('#books table.closed tr.cday').length; closeBooks();
-      const m = closeEarlySync('month'); finishClose(m, 'month'); const tm = document.getElementById('books').textContent, openM = BOOKS.open;
+      const m = closeEarlySync('month'); finishClose(m, 'month', 0); const tm = document.getElementById('books').textContent, openM = BOOKS.open;
       const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'EBITDA'].filter(k => !tm.includes(k));
       const ok = w.list.length === w.days && w.days >= 1 && dayRows === w.days && openW && openM && !cats.length && m.list.length === m.days;
       return { ok, detail: { wDays: w.days, list: w.list.length, dayRows, openW, openM, missing: cats } }; }
@@ -1226,6 +1226,30 @@ const SELFTESTS = {
   markAboveFloor() {   // owner 2026-11-15: the selection mark sits above platforms, turf and mats, so the floor never hides it
     try { setupRun(); fastForward(10 * 3600 - A.t); const a = A.members.find(m => m.visible); followA = a; updateFollowMark(0.1); return { ok: !!a && FOLLOW_MARK.position.y >= 0.08, detail: { y: FOLLOW_MARK.position.y } }; }
     finally { clearFollow(); }
+  },
+  stampStraight() {   // owner 2026-11-15: the Day closed stamp sits straight
+    try { setupRun(); fastForward(30 * 3600); openBooks('Today'); const st = document.querySelector('#books .stamp'), tf = st ? getComputedStyle(st).transform : null;
+      return { ok: !!st && (tf === 'none' || tf === 'matrix(1, 0, 0, 1, 0, 0)'), detail: { found: !!st, tf } }; }
+    finally { closeBooks(); setupRun(); }
+  },
+  closeSumPop() {   // owner 2026-11-15: a close early shows one big money pop for the closed days' takings, not a few tiny ones
+    try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week', 0); const q = A.payQ.slice(), one = q.length === 1 && q[0].sum === w.days && q[0].fee === Math.round(w.takings);
+      updatePays(); const el = document.querySelector('.pay.sum'), txt = el ? el.textContent : '', big = PAYS.some(p => p.el === el && p.size >= 2.5);
+      return { ok: one && !!el && txt.includes(Math.round(w.takings).toLocaleString('en-US')) && big, detail: { n: q.length, sum: q[0] && q[0].sum, txt, big } }; }
+    finally { closeBooks(); for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
+  },
+  saveResume() {   // owner 2026-11-15: progress is saved like a life game: a reload resumes the same business at the start of the day, and replaying it gives the same day
+    const keep = JSON.parse(JSON.stringify(S));
+    try { S.seed = 20261112; setupRun(); fastForward(30 * 3600); nextDay(); fastForward(30 * 3600); nextDay(); S.priceOff = 1.4; S.coaches = 3; GOAL.key = 'members500';
+      const rec = saveRecord(), was = { cash: BIZ.cash, dayI: M.dayI, pool: M.pool.length, ids: M.pool.slice(0, 5).map(m => m.id).join(), days: M.days.length };
+      fastForward(30 * 3600); const ebA = Math.round(A.pnl.ebitda);
+      setupRun(); S.priceOff = 1.2; S.coaches = 2; GOAL.key = null; const ok1 = loadGame(rec);
+      const now = { cash: BIZ.cash, dayI: M.dayI, pool: M.pool.length, ids: M.pool.slice(0, 5).map(m => m.id).join(), days: M.days.length };
+      const same = JSON.stringify(now) === JSON.stringify(was) && S.priceOff === 1.4 && S.coaches === 3 && GOAL.key === 'members500' && A.t < A.open;
+      fastForward(30 * 3600); const ebB = Math.round(A.pnl.ebitda), bad = loadGame('{"v":0}') === false && loadGame('not json') === false;
+      return { ok: ok1 && same && ebA === ebB && bad && rec.length < 4.5e6, detail: { ok1, was, now, ebA, ebB, bad, kb: Math.round(rec.length / 1024) } }; }
+    catch (e) { return { ok: false, detail: String(e && e.stack || e) }; }
+    finally { Object.assign(S, keep); GOAL.key = null; setupRun(); }
   },
   openingSpeed10() {   // owner 2026-11-15: the opening, following the first member in, runs at 10×
     const keep = S.speed;

@@ -186,10 +186,12 @@ function closeEarly(kind) {
   };
   setTimeout(step, 0);
 }
-function finishClose(out, kind) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
-  BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending();
+function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
+  BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending(); persistSave(true);
+  if (A && A.payQ) { A.payQ.length = 0; if (out.days) A.payQ.push({ a: null, fee: Math.round(out.takings), sum: out.days }); }   /* one big pop for the closed days' takings, not the last few member fees */
   showToast(tx(`Closed ${out.days} day${out.days === 1 ? '' : 's'} · takings ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`, `已結 ${out.days} 天 · 收入 ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`));
-  if (kind !== 'day' && out.days) openBooks('Today'); else if (BOOKS.open) updateBooks(true);
+  if (kind !== 'day' && out.days) { if (delay) setTimeout(() => { if (!BOOKS.open && !closing) openBooks('Today'); }, delay); else openBooks('Today'); }   /* after the pop has had its moment */
+  else if (BOOKS.open) updateBooks(true);
 }
 // after New month the panel shows what a Setup would start from: the month and, for a new build, the months since opening
 // a built gym's equipment comes from the builder: the Setup sliders for it are locked (Plan 8 review)
