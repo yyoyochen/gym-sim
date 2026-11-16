@@ -1277,6 +1277,35 @@ const SELFTESTS = {
       return { ok, detail: { dflt, cleaners, states: [...st], withCleaner: [...st1], awayAtCheckin } }; }
     finally { S.cleaners = keep; setupRun(); }
   },
+  physiques() {   // owner 2026-11-16: bodies vary by type (slim, average, athletic, muscular, pear; no heavy or stocky bodies, by the owner's call), with odds by what each member trains and by sex
+    try { setupRun();
+      const keys = Object.keys(typeof PHYSIQUES === 'undefined' ? {} : PHYSIQUES), pool = M.pool, by = {};
+      const one = (m) => Math.abs(Object.values(m).reduce((s, v) => s + v, 0) - 1) < 1e-9;
+      const mixesOk = keys.length === 5 && !keys.includes('stocky') && !keys.includes('heavy') && Object.values(PHYS_BY_SEX).every(one) && [HAIR_MIX.woman, HAIR_MIX.man, TOP_MIX.woman, TOP_MIX.man, BOTTOM_MIX.woman, BOTTOM_MIX.man, SHOE_MIX, HEADWEAR_MIX].every(one)
+        && Object.values(PHYS_BY_GROUP).every(m => one(m) && Object.keys(m).every(k => keys.includes(k)));
+      for (const m of pool) { const b = by[m.arch] = by[m.arch] || {}; b[m.look.phys] = (b[m.look.phys] || 0) + 1; }
+      const n = (o) => Object.values(o || {}).reduce((s, v) => s + v, 0);
+      const valid = (l) => keys.includes(l.phys) && l.hairStyle in HAIR_STYLES && l.top in TOPS && l.bottom in BOTTOMS && l.shoeType in SHOE_TYPES && (!l.cap || l.capStyle in HEADWEAR);
+      const everyone = pool.every(m => valid(m.look) && m.look.fem === !!m.female) && AGENTS.every(a => valid(a.look));
+      const seen = (f) => new Set(pool.map(m => m.look[f])).size, variety = { phys: seen('phys'), hair: seen('hairStyle'), top: seen('top'), bottom: seen('bottom'), shoe: seen('shoeType') };
+      const varied = variety.phys === 5 && variety.hair >= 7 && variety.top === 4 && variety.bottom === 4 && variety.shoe === 5;
+      const noPearMen = pool.every(m => m.female || m.look.phys !== 'pear');
+      const bbMen = pool.filter(m => m.arch === 'body' && !m.female), bodyMenMuscular = bbMen.filter(m => m.look.phys === 'muscular').length / Math.max(1, bbMen.length);
+      const powerNoSlim = !(by.power && by.power.slim), bodyBuilt = !by.body || ((by.body.muscular || 0) + (by.body.athletic || 0)) / n(by.body) >= 0.8;
+      const stable = pool.every(m => pickPhysique({ ...m.look }, m.arch) === m.look.phys);   /* the same look always gets the same body */
+      const old = fillLook({ shirt: '#d6403a', shorts: '#1c1f2a', skin: '#f0caa4', hair: '#1c1f2a', shoe: '#f2f1ea', scale: 1, fem: true, build: 'heavy', longHair: true, pants: '#1c1f2a', legs: '#1c1f2a' }, 'other');
+      const legacy = !!PHYSIQUES[old.phys] && old.hairStyle === 'long' && old.bottom === 'yoga' && !('build' in old) && !('pants' in old);
+      const retired = !!PHYSIQUES[fillLook({ ...old, phys: 'stocky' }, 'power').phys];   /* a look saved with a retired type gets a current one */
+      const avgSame = Object.entries(lookDraw({ ...old, phys: 'average', fem: false }).w).filter(([k]) => k !== 'label').every(([, v]) => v === 1);
+      const cat = lookCatalog(), total = cat.combinations.total === 1790880000 && cat.combinations.men === 873600000;
+      let drawn = true; try { const P = newPose(); P.H.set(0, 0.95, 0); P.fL.set(-0.1, 0.07, 0); P.fR.set(0.1, 0.07, 0); P.hL.set(-0.3, 0.9, 0); P.hR.set(0.3, 0.9, 0);
+        for (const hs in HAIR_STYLES) for (const tp in TOPS) for (const bt in BOTTOMS) for (const sh in SHOE_TYPES) for (const cs of [null, ...Object.keys(HEADWEAR)]) { BOX.begin(); drawBody({ ...old, hairStyle: hs, top: tp, bottom: bt, shoeType: sh, cap: cs && '#d6403a', capStyle: cs }, P, {}); if (!(BOX.n > 15)) drawn = false; } }
+      catch (e) { drawn = String(e); }
+      const ok = mixesOk && everyone && varied && noPearMen && bodyMenMuscular > 0.55 && powerNoSlim && bodyBuilt && stable && legacy && retired && avgSame && total && drawn === true;
+      return { ok, detail: { mixesOk, everyone, variety, noPearMen, bodyMenMuscular, powerNoSlim, bodyBuilt, stable, legacy, retired, avgSame, total: cat.combinations.total, drawn, by } }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { setupRun(); }
+  },
   cleanerEconomics() {   // owner 2026-11-16: a cleaner costs a wage on the roster; mess (a loaded bar to strip, dumbbells strewn about) counts against a visit, so a messy gym loses members
     const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff };
     try { setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;

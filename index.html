@@ -933,6 +933,136 @@ function box(w, h, d, c, x, y, z, ry = 0, o = {}) { (o.b || SB).add(place(new TH
 function cyl(rt, rb, h, seg, c, x, y, z, o = {}) { (o.b || SB).add(place(new THREE.CylinderGeometry(rt, rb, h, seg), x, y + h / 2, z, o.ry || 0, o.rx || 0, o.rz || 0), mOf(c)); }
 function cone(r, h, seg, c, x, y, z, o = {}) { (o.b || SB).add(place(new THREE.ConeGeometry(r, h, seg), x, y + h / 2, z, o.ry || 0), mOf(c)); }
 
+// ================================================================ agent looks: the catalog (data), who gets what, and makeLook
+// Source of truth for every look axis. lookCatalog() turns it into the JSON catalog; drawBody (b_inst.js) draws it.
+const SHIRTS = ['#d6403a', '#2f68ab', '#f2f1ea', '#dfe03a', '#63a845', '#d07a8e', '#e08f5a', '#74abe0', '#8a4f7d', '#1c1f2a', '#959bab', '#2c6a52', '#9b2226', '#f0a060'];
+const SKINS = ['#f0caa4', '#d9a77e', '#b5805a', '#8a5a3c', '#5a3825'];
+const HAIRS = ['#1c1f2a', '#45291b', '#643c24', '#c99a5e', '#959bab', '#2b1a12', '#9b2226'];
+const BOTTOMS_C = ['#1c1f2a', '#474c5c', '#1e4a85', '#2f3340', '#5c1418'];
+const SHOES_C = ['#f2f1ea', '#1c1f2a', '#d6403a', '#2f68ab'];
+const CAPS_C = ['#1c1f2a', '#f2f1ea', '#d6403a'];
+const HEIGHTS = { short: { woman: 0.9, man: 0.97 }, medium: { woman: 0.94, man: 1.015 }, tall: { woman: 0.98, man: 1.06 } };
+
+// body types: multipliers on the base rig, 1 = average. Limb lengths never change, so every pose still reaches its bar, seat and pedals.
+// sw shoulder spread, cw/cd chest width/depth, hw/hd hip width/depth, aw arm thickness, lw leg thickness, hs head size
+const PHYSIQUES = {
+  slim: { label: 'Slim', sw: 0.92, cw: 0.88, cd: 0.84, hw: 0.9, hd: 0.86, aw: 0.8, lw: 0.8, hs: 1.02 },
+  average: { label: 'Average', sw: 1, cw: 1, cd: 1, hw: 1, hd: 1, aw: 1, lw: 1, hs: 1 },
+  athletic: { label: 'Athletic', sw: 1.12, cw: 1.16, cd: 1.06, hw: 1, hd: 1, aw: 1.15, lw: 1.1, hs: 1 },
+  muscular: { label: 'Muscular', sw: 1.26, cw: 1.38, cd: 1.2, hw: 1.08, hd: 1.1, aw: 1.42, lw: 1.26, hs: 0.97 },
+  pear: { label: 'Pear', sw: 0.95, cw: 0.94, cd: 0.96, hw: 1.3, hd: 1.18, aw: 0.9, lw: 1.22, hs: 1 },
+};
+const PHYS_F = { sw: 0.92, cw: 0.93, aw: 0.88 };   /* women, on top of the body type: narrower shoulders and chest, slimmer arms */
+// body type odds: by what someone trains (members) or their job, nudged by sex: each type's weight is scaled by how much more
+// (or less) common it is for that sex than for both together, so men never roll pear and women rarely roll muscular
+// while a bodybuilder stays mostly muscular
+const PHYS_BY_GROUP = {
+  power: { muscular: 0.55, athletic: 0.35, average: 0.1 },
+  body: { muscular: 0.6, athletic: 0.35, average: 0.05 },
+  oly: { athletic: 0.6, muscular: 0.25, slim: 0.1, average: 0.05 },
+  beginner: { average: 0.45, slim: 0.3, pear: 0.15, athletic: 0.1 },
+  client: { average: 0.45, slim: 0.25, pear: 0.15, athletic: 0.15 },
+  coach: { athletic: 0.5, muscular: 0.35, average: 0.15 },
+  other: { average: 0.55, slim: 0.25, pear: 0.15, athletic: 0.05 },
+};
+const PHYS_BY_SEX = {
+  woman: { slim: 0.24, average: 0.34, athletic: 0.18, muscular: 0.02, pear: 0.22 },
+  man: { slim: 0.16, average: 0.36, athletic: 0.32, muscular: 0.16, pear: 0 },
+};
+const HAIR_STYLES = {
+  bald: 'no hair', buzz: 'top slab 0.03 high', short: 'top slab 0.05-0.10 high', quiff: 'short plus raised front block', long: 'short plus back block 0.3 high',
+  ponytail: 'short plus nape block and hanging tail', bun: 'short plus block on top-back', curly: 'one big 0.30 x 0.20 x 0.27 block',
+};
+const HAIR_MIX = {
+  woman: { long: 0.35, ponytail: 0.2, bun: 0.15, short: 0.15, curly: 0.1, buzz: 0.05 },
+  man: { short: 0.35, buzz: 0.15, quiff: 0.15, bald: 0.08, curly: 0.12, long: 0.08, ponytail: 0.04, bun: 0.03 },
+};
+const HEADWEAR = { cap: 'crown plus brim', visor: 'band plus brim', beanie: 'tall box over head', headband: 'thin band' };
+const HEADWEAR_MIX = { cap: 0.5, visor: 0.15, beanie: 0.15, headband: 0.2 };
+const TOPS = { tee: 'sleeve to mid upper arm, bare forearm', tank: 'bare arms', long: 'sleeves to the wrist', hoodie: 'long sleeves, torso 8% wider and 14% deeper, hood block behind neck' };
+const TOP_MIX = { woman: { tee: 0.4, tank: 0.3, long: 0.2, hoodie: 0.1 }, man: { tee: 0.5, tank: 0.2, long: 0.2, hoodie: 0.1 } };
+const BOTTOMS = { shorts: 'coloured thigh, bare shin', bike: 'coloured upper half thigh, tight, bare below', yoga: 'coloured full leg, tight (0.92)', trousers: 'coloured full leg, loose (thigh 1.14, shin 1.18)' };
+const BOTTOM_MIX = { woman: { shorts: 0.25, bike: 0.1, yoga: 0.4, trousers: 0.25 }, man: { shorts: 0.45, bike: 0.05, yoga: 0.1, trousers: 0.4 } };
+const SHOE_TYPES = { sneaker: 'single 0.10 x 0.07 x 0.26 block', runner: 'chunky light sole plus upper', hightop: '0.13 high block', flat: 'lifting flat, 0.04 high thin block', slides: 'thin sole, bare foot, front strap' };
+const SHOE_MIX = { sneaker: 0.35, runner: 0.3, hightop: 0.1, flat: 0.15, slides: 0.1 };
+const ROLE_LOOKS = {
+  staff: { shirt: '#dfe03a', shorts: '#1c1f2a', top: 'tee', bottom: 'trousers' },
+  cleaner: { shirt: '#2f68ab', shorts: '#13305a', top: 'long', bottom: 'trousers', cap: '#13305a', capStyle: 'cap' },
+  coach: { shirt: '#1c1f2a', sleeve: '#dfe03a', shorts: '#1c1f2a', top: 'tee', bottom: 'shorts' },
+};
+
+// Every pick past the colours hashes values the look already has (salted per axis) instead of drawing from the day's RNG,
+// so the look catalog can grow without shifting a single seeded day.
+function lookU(look, salt) { let h = 2166136261; for (const ch of `${salt}|${look.shirt}${look.skin}${look.hair}${look.shoe}${look.shorts}${look.scale}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; }
+function pickMix(mix, u) { const K = Object.keys(mix).filter(k => mix[k] > 0), T = K.reduce((s, k) => s + mix[k], 0); let m = u * T; for (const k of K) { m -= mix[k]; if (m <= 0) return k; } return K[K.length - 1]; }
+function physMix(group, fem) {
+  const g = PHYS_BY_GROUP[group] || PHYS_BY_GROUP.other, x = PHYS_BY_SEX[fem ? 'woman' : 'man'], out = {};
+  for (const k in g) { const both = (PHYS_BY_SEX.woman[k] + PHYS_BY_SEX.man[k]) / 2; out[k] = both > 0 ? g[k] * x[k] / both : 0; }
+  return out;
+}
+function pickPhysique(look, group) { return pickMix(physMix(group, look.fem), lookU(look, 'phys')); }
+// fill any axis a look is missing (new looks, and looks from saves made before the axis existed)
+function fillLook(look, group) {
+  const sex = look.fem ? 'woman' : 'man';
+  if (!PHYSIQUES[look.phys]) look.phys = PHYSIQUES[look.build] ? look.build : pickPhysique(look, group);   /* unknown or retired types (heavy, stocky) are re-rolled */
+  if (!look.hairStyle) look.hairStyle = look.longHair ? 'long' : pickMix(HAIR_MIX[sex], lookU(look, 'hair'));
+  if (!look.top) look.top = pickMix(TOP_MIX[sex], lookU(look, 'top'));
+  if (!look.bottom) look.bottom = look.pants ? 'yoga' : pickMix(BOTTOM_MIX[sex], lookU(look, 'bottom'));
+  if (!look.shoeType) look.shoeType = pickMix(SHOE_MIX, lookU(look, 'shoe'));
+  if (look.cap && !look.capStyle) look.capStyle = pickMix(HEADWEAR_MIX, lookU(look, 'cap'));
+  delete look.build; delete look.longHair; delete look.legs; delete look.pants;
+  return look;
+}
+function makeLook(rng, female, kind) {
+  const look = { shirt: rng.pick(SHIRTS), shorts: rng.pick(BOTTOMS_C), skin: rng.pick(SKINS), hair: rng.pick(HAIRS), shoe: rng.pick(SHOES_C), scale: female ? rng.range(0.9, 0.98) : rng.range(0.97, 1.06) };
+  // these draws are kept, in this order, so every seeded day stays the same; their old meaning (long hair, leggings) now comes from the catalog
+  if (!(female && rng() < 0.7)) look.hairH = rng.range(0.05, 0.1);
+  rng();
+  if (rng() < 0.12) look.cap = rng.pick(CAPS_C);
+  look.fem = !!female;
+  const role = kind === 'pcoach' ? 'coach' : kind;
+  if (ROLE_LOOKS[role]) Object.assign(look, ROLE_LOOKS[role]);
+  return fillLook(look, role === 'coach' ? 'coach' : 'other');
+}
+// resolved draw parameters per look (cached): body multipliers with the women's adjustment
+const _lookCache = new WeakMap();
+function lookDraw(look) {
+  let d = _lookCache.get(look); if (d && d.phys === look.phys && d.fem === look.fem) return d;
+  if (!PHYSIQUES[look.phys] || !look.hairStyle) fillLook(look, 'other');
+  const w = { ...(PHYSIQUES[look.phys] || PHYSIQUES.average) }; if (look.fem) for (const k in PHYS_F) w[k] *= PHYS_F[k];
+  d = { phys: look.phys, fem: look.fem, w }; _lookCache.set(look, d); return d;
+}
+// the catalog as data: every axis, its odds, and how many distinct people it can make
+function lookCatalog() {
+  const strip = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Object.fromEntries(Object.entries(v).filter(([kk]) => kk !== 'label'))]));
+  const nonzero = (m) => Object.keys(m).filter(k => m[k] > 0);
+  const hairN = (sex) => nonzero(HAIR_MIX[sex]).reduce((s, k) => s + (k === 'bald' ? 1 : HAIRS.length), 0);
+  const physN = (sex) => Object.keys(PHYSIQUES).filter(k => Object.keys(PHYS_BY_GROUP).some(g => physMix(g, sex === 'woman')[k] > 0)).length;
+  const head = 1 + Object.keys(HEADWEAR).length * CAPS_C.length, top = Object.keys(TOPS).length * SHIRTS.length, bottom = Object.keys(BOTTOMS).length * BOTTOMS_C.length, shoes = Object.keys(SHOE_TYPES).length * SHOES_C.length;
+  const per = (sex) => physN(sex) * 3 * SKINS.length * hairN(sex) * head * top * bottom * shoes;
+  return {
+    _about: 'Agent look catalog for gymsim, generated from src/b0_look.js (data, odds, makeLook); drawn by drawBody in src/b_inst.js. Every choice past the colours is a salted hash of the look, never a draw from the day\'s RNG.',
+    lookFields: { shirt: 'top colour', shorts: 'bottom colour, also hip block', skin: 'skin colour', hair: 'hair colour', shoe: 'shoe colour', scale: 'height multiplier (rig scale)', fem: 'woman (true) or man', phys: 'body type key', top: 'top type key', bottom: 'bottom type key', hairStyle: 'hair style key', hairH: 'short-hair height (0.05-0.10)', cap: 'optional headwear colour', capStyle: 'headwear type key, only when cap is set', shoeType: 'shoe type key', sleeve: 'optional sleeve colour override (coaches)', fore: 'optional forearm colour override' },
+    axes: {
+      bodyType: { lookField: 'phys', options: strip(PHYSIQUES), labels: Object.fromEntries(Object.entries(PHYSIQUES).map(([k, v]) => [k, v.label])), womenAdjust: PHYS_F,
+        odds: 'byGroup[group][type] x bySex[sex][type] / mean(bySex.woman[type], bySex.man[type]), normalised', byGroup: PHYS_BY_GROUP, bySex: PHYS_BY_SEX },
+      height: { lookField: 'scale', options: HEIGHTS, simRolls: { woman: [0.9, 0.98], man: [0.97, 1.06] } },
+      skin: { lookField: 'skin', colours: SKINS },
+      hairStyle: { lookField: 'hairStyle', options: HAIR_STYLES, mixBySex: HAIR_MIX, colours: HAIRS },
+      headwear: { lookFields: ['cap', 'capStyle'], note: '12% of people roll one', options: HEADWEAR, mix: HEADWEAR_MIX, colours: CAPS_C },
+      top: { lookField: 'top', options: TOPS, mixBySex: TOP_MIX, colours: SHIRTS },
+      bottom: { lookField: 'bottom', options: BOTTOMS, mixBySex: BOTTOM_MIX, colours: BOTTOMS_C },
+      shoes: { lookField: 'shoeType', options: SHOE_TYPES, mix: SHOE_MIX, colours: SHOES_C },
+    },
+    roleOverrides: ROLE_LOOKS,
+    combinations: {
+      perAxis: { bodyType: { man: physN('man'), woman: physN('woman') }, height: 3, skin: SKINS.length, hair: { man: hairN('man'), woman: hairN('woman') }, headwear: head, top, bottom, shoes },
+      men: per('man'), women: per('woman'), total: per('man') + per('woman'),
+      formula: 'per sex: bodyType (types that sex can roll) x height (3 named steps) x skin x hair (styles that sex can roll x colour, bald has none) x headwear (none or style x colour) x top (type x colour) x bottom (type x colour) x shoes (type x colour)',
+    },
+  };
+}
+
 // ================================================================ immediate-mode instanced batches (people + moving props)
 const _colCache = new Map();
 function colOf(hex) { let c = _colCache.get(hex); if (!c) { c = new THREE.Color(hex); _colCache.set(hex, c); } return c; }
@@ -997,18 +1127,20 @@ function ik2(A, T, a, b, pole, out) {
 }
 // A pose is a set of world-space targets:
 //  H hip centre, T torso up (unit), F chest forward (unit, perpendicular to T), fL/fR ankles, hL/hR hands, kp knee pole, look (V3|null)
+const TORSO_N = 3;   /* torso slices: enough for a taper from waist to chest to read smoothly */
 function newPose() { return { H: new V3(), T: new V3(0, 1, 0), F: new V3(1, 0, 0), fL: new V3(), fR: new V3(), hL: new V3(), hR: new V3(), kp: new V3(1, 0, 0), ep: null, look: null, headTilt: 0, hidden: false }; }
 const _R = new V3(), _S = new V3(), _N = new V3(), _HC = new V3(), _hipL = new V3(), _hipR = new V3(), _knL = new V3(), _knR = new V3(), _shL = new V3(), _shR = new V3(), _elL = new V3(), _elR = new V3(), _ep = new V3(), _hf = new V3(), _hr = new V3(), _hu = new V3(), _tmp = new V3(), _tmp2 = new V3();
 function drawBody(look, P, st) {
   if (P.hidden) return;
-  const s = look.scale || 1;
+  const s = look.scale || 1, w = lookDraw(look).w, c = look;
   const T = P.T, F = P.F;
   _R.crossVectors(F, T).normalize();
   _S.copy(P.H).addScaledVector(T, 0.5 * s);
   _N.copy(_S).addScaledVector(T, 0.07 * s);
   _HC.copy(_N).addScaledVector(T, 0.12 * s);
-  _shL.copy(_S).addScaledVector(_R, -0.19 * s).addScaledVector(T, -0.035 * s);
-  _shR.copy(_S).addScaledVector(_R, 0.19 * s).addScaledVector(T, -0.035 * s);
+  P.shW = 0.19 * w.sw;   /* the resting-arms pose hangs the hands from this, so broad builds don't press their arms into the chest */
+  _shL.copy(_S).addScaledVector(_R, -P.shW * s).addScaledVector(T, -0.035 * s);
+  _shR.copy(_S).addScaledVector(_R, P.shW * s).addScaledVector(T, -0.035 * s);
   _hipL.copy(P.H).addScaledVector(_R, -0.1 * s).addScaledVector(T, -0.05 * s);
   _hipR.copy(P.H).addScaledVector(_R, 0.1 * s).addScaledVector(T, -0.05 * s);
   ik2(_hipL, P.fL, 0.45 * s, 0.42 * s, P.kp, _knL);
@@ -1026,22 +1158,63 @@ function drawBody(look, P, st) {
   const ch = Math.cos(st.hy), sh = Math.sin(st.hy);
   _hf.copy(F).multiplyScalar(ch).addScaledVector(_R, sh); _hr.crossVectors(_hf, T).normalize(); _hu.copy(T);
   if (P.headTilt) { _hu.multiplyScalar(Math.cos(P.headTilt)).addScaledVector(_hf, Math.sin(P.headTilt)); _hf.crossVectors(_hu, _hr).normalize(); }
-  const c = look;
-  _tmp.copy(P.H).addScaledVector(T, -0.02 * s); basisBox(_tmp, _R, T, F, 0.34 * s, 0.2 * s, 0.22 * s, c.shorts);
-  _tmp.copy(P.H).addScaledVector(T, 0.05 * s); segBox(_tmp, _S, 0.38 * s, 0.23 * s, F, c.shirt);
-  basisBox(_HC, _hr, _hu, _hf, 0.22 * s, 0.25 * s, 0.23 * s, c.skin);
-  _tmp.copy(_HC).addScaledVector(_hu, 0.12 * s).addScaledVector(_hf, -0.025 * s); basisBox(_tmp, _hr, _hu, _hf, 0.24 * s, (c.hairH || 0.07) * s, 0.25 * s, c.hair);
-  if (c.longHair) { _tmp.copy(_HC).addScaledVector(_hf, -0.12 * s).addScaledVector(_hu, -0.03 * s); basisBox(_tmp, _hr, _hu, _hf, 0.24 * s, 0.3 * s, 0.1 * s, c.hair); }
-  if (c.cap) { _tmp.copy(_HC).addScaledVector(_hu, 0.13 * s); basisBox(_tmp, _hr, _hu, _hf, 0.245 * s, 0.07 * s, 0.25 * s, c.cap); _tmp.addScaledVector(_hf, 0.16 * s).addScaledVector(_hu, -0.03 * s); basisBox(_tmp, _hr, _hu, _hf, 0.2 * s, 0.025 * s, 0.12 * s, c.cap); }
-  segBox(_hipL, _knL, 0.15 * s, 0.16 * s, F, c.legs || c.shorts); segBox(_hipR, _knR, 0.15 * s, 0.16 * s, F, c.legs || c.shorts);
-  segBox(_knL, P.fL, 0.11 * s, 0.12 * s, F, c.pants || c.skin); segBox(_knR, P.fR, 0.11 * s, 0.12 * s, F, c.pants || c.skin);
+  const hood = c.top === 'hoodie' ? 1 : 0, tw = 1 + 0.08 * hood, td = 1 + 0.14 * hood;
+  _tmp.copy(P.H).addScaledVector(T, -0.02 * s); basisBox(_tmp, _R, T, F, 0.34 * s * w.hw, 0.2 * s, 0.22 * s * Math.min(w.hd, 1.25), c.shorts);
+  // torso: a few slices easing from the waist (the narrower of hips and chest, so wide hips show below it) up to the chest,
+  // the top slice narrowing into the shoulders
+  const wW = 0.38 * s * Math.min(w.hw, w.cw) * 0.97 * tw, cW = 0.38 * s * w.cw * tw, wD = 0.23 * s * Math.min(w.hd, w.cd) * td, cD = 0.23 * s * w.cd * td;
+  for (let i = 0; i < TORSO_N; i++) {
+    const t = (i + 0.5) / TORSO_N, e = t * t * (3 - 2 * t);
+    _tmp.copy(P.H).addScaledVector(T, (0.05 + 0.45 * i / TORSO_N) * s); _tmp2.copy(P.H).addScaledVector(T, (0.05 + 0.45 * (i + 1) / TORSO_N + 0.006) * s);
+    segBox(_tmp, _tmp2, (wW + (cW - wW) * e) * (i === TORSO_N - 1 ? 0.94 : 1), wD + (cD - wD) * e, F, c.shirt);
+  }
+  if (hood) { _tmp.copy(_N).addScaledVector(F, -0.13 * s * w.cd).addScaledVector(T, -0.01 * s); basisBox(_tmp, _R, T, F, 0.26 * s, 0.14 * s, 0.1 * s, c.shirt); }
+  // head, hair and headwear: offsets scale with head size
+  const hs = s * (w.hs || 1), hb = (u, f, bw, bh, bd, col) => { _tmp.copy(_HC).addScaledVector(_hu, u * hs).addScaledVector(_hf, f * hs); basisBox(_tmp, _hr, _hu, _hf, bw * hs, bh * hs, bd * hs, col); };
+  basisBox(_HC, _hr, _hu, _hf, 0.22 * hs, 0.25 * hs, 0.23 * hs, c.skin);
+  const hst = c.hairStyle || 'short';
+  if (hst === 'curly') hb(0.08, -0.03, 0.3, 0.2, 0.27, c.hair);
+  else if (hst !== 'bald') {
+    hb(0.12, -0.025, 0.24, hst === 'buzz' ? 0.03 : (c.hairH || 0.07), 0.25, c.hair);
+    if (hst === 'quiff') hb(0.165, 0.075, 0.2, 0.07, 0.1, c.hair);
+    else if (hst === 'long') hb(-0.03, -0.12, 0.24, 0.3, 0.1, c.hair);
+    else if (hst === 'ponytail') { hb(0.03, -0.13, 0.1, 0.09, 0.07, c.hair); hb(-0.1, -0.15, 0.06, 0.17, 0.06, c.hair); }
+    else if (hst === 'bun') hb(0.17, -0.07, 0.11, 0.09, 0.11, c.hair);
+  }
+  if (c.cap) {
+    const cs = c.capStyle || 'cap';
+    if (cs === 'cap') { hb(0.13, 0, 0.245, 0.07, 0.25, c.cap); hb(0.1, 0.16, 0.2, 0.025, 0.12, c.cap); }
+    else if (cs === 'visor') { hb(0.08, 0, 0.245, 0.04, 0.25, c.cap); hb(0.08, 0.16, 0.2, 0.025, 0.12, c.cap); }
+    else if (cs === 'beanie') hb(0.11, 0, 0.25, 0.12, 0.255, c.cap);
+    else hb(0.07, 0, 0.235, 0.03, 0.245, c.cap);
+  }
+  // legs by bottom type: shorts (bare shin), bike shorts (upper half of the thigh), yoga pants (tight), trousers (loose)
+  const bt = c.bottom || 'shorts', tl = bt === 'yoga' ? 0.92 : bt === 'trousers' ? 1.14 : bt === 'bike' ? 0.95 : 1, sl = bt === 'yoga' ? 0.92 : bt === 'trousers' ? 1.18 : 1;
+  const shinC = bt === 'yoga' || bt === 'trousers' ? c.shorts : c.skin, thW = 0.15 * s * w.lw * tl, thD = 0.16 * s * w.lw * tl;
+  for (const [hp, kn] of [[_hipL, _knL], [_hipR, _knR]]) {
+    if (bt === 'bike') { _tmp.lerpVectors(hp, kn, 0.5); segBox(hp, _tmp, thW, thD, F, c.shorts); segBox(_tmp, kn, thW, thD, F, c.skin); }
+    else segBox(hp, kn, thW, thD, F, c.shorts);
+  }
+  segBox(_knL, P.fL, 0.11 * s * w.lw * sl, 0.12 * s * w.lw * sl, F, shinC); segBox(_knR, P.fR, 0.11 * s * w.lw * sl, 0.12 * s * w.lw * sl, F, shinC);
   // feet: point along the foot direction (horizontal component of kp)
   _tmp2.copy(P.kp); _tmp2.y = 0; if (_tmp2.lengthSq() < 1e-4) _tmp2.set(F.x, 0, F.z); if (_tmp2.lengthSq() < 1e-4) _tmp2.set(1, 0, 0); _tmp2.normalize();
   _hr.crossVectors(_tmp2, UP).normalize();
-  _tmp.copy(P.fL).addScaledVector(_tmp2, 0.05 * s).addScaledVector(UP, -0.035 * s); basisBox(_tmp, _hr, UP, _tmp2, 0.1 * s, 0.07 * s, 0.26 * s, c.shoe);
-  _tmp.copy(P.fR).addScaledVector(_tmp2, 0.05 * s).addScaledVector(UP, -0.035 * s); basisBox(_tmp, _hr, UP, _tmp2, 0.1 * s, 0.07 * s, 0.26 * s, c.shoe);
-  segBox(_shL, _elL, 0.1 * s, 0.1 * s, F, c.sleeve || c.shirt); segBox(_shR, _elR, 0.1 * s, 0.1 * s, F, c.sleeve || c.shirt);
-  segBox(_elL, P.hL, 0.085 * s, 0.085 * s, F, c.fore || c.skin); segBox(_elR, P.hR, 0.085 * s, 0.085 * s, F, c.fore || c.skin);
+  const st_ = c.shoeType || 'sneaker';
+  for (const ft of [P.fL, P.fR]) {
+    const fb = (up, fw, bw, bh, bd, col) => { _tmp.copy(ft).addScaledVector(_tmp2, (0.05 + fw) * s).addScaledVector(UP, up * s); basisBox(_tmp, _hr, UP, _tmp2, bw * s, bh * s, bd * s, col); };
+    if (st_ === 'runner') { fb(-0.055, 0, 0.11, 0.035, 0.27, '#f2f1ea'); fb(-0.02, -0.01, 0.095, 0.05, 0.22, c.shoe); }
+    else if (st_ === 'hightop') fb(-0.005, -0.005, 0.1, 0.13, 0.25, c.shoe);
+    else if (st_ === 'flat') fb(-0.05, 0, 0.1, 0.04, 0.26, c.shoe);
+    else if (st_ === 'slides') { fb(-0.062, 0, 0.1, 0.02, 0.26, c.shoe); fb(-0.035, 0, 0.085, 0.04, 0.22, c.skin); fb(-0.03, 0.05, 0.105, 0.035, 0.07, c.shoe); }
+    else fb(-0.035, 0, 0.1, 0.07, 0.26, c.shoe);
+  }
+  // arms by top type: tee (sleeve to mid upper arm), tank (bare), long sleeve and hoodie (to the wrist)
+  const tp = c.top || 'tee', slC = c.sleeve || c.shirt, uaW = 0.1 * s * w.aw, faW = 0.085 * s * w.aw;
+  for (const [sh_, el, hd] of [[_shL, _elL, P.hL], [_shR, _elR, P.hR]]) {
+    if (tp === 'tee') { _tmp.lerpVectors(sh_, el, 0.55); segBox(sh_, _tmp, uaW * 1.12, uaW * 1.12, F, slC); segBox(_tmp, el, uaW, uaW, F, c.skin); }
+    else segBox(sh_, el, uaW, uaW, F, tp === 'tank' ? c.skin : slC);
+    segBox(el, hd, faW, faW, F, c.fore || (tp === 'long' || tp === 'hoodie' ? c.shirt : c.skin));
+  }
   basisBox(P.hL, _R, T, F, 0.08 * s, 0.08 * s, 0.08 * s, c.skin); basisBox(P.hR, _R, T, F, 0.08 * s, 0.08 * s, 0.08 * s, c.skin);
   st.head = st.head || new V3(); st.head.copy(_HC);
 }
@@ -1087,7 +1260,7 @@ function poseSit(P, seat, yaw, s, o = {}) {   // seat: V3 hip point, footY
 }
 // arms helpers (after torso is set): uses shoulder estimate
 const _so = new V3(), _ep2 = new V3();
-function shoulderOf(P, s, side) { _so.copy(P.H).addScaledVector(P.T, 0.47 * s); _R.crossVectors(P.F, P.T).normalize(); return _so.addScaledVector(_R, 0.19 * s * side); }
+function shoulderOf(P, s, side) { _so.copy(P.H).addScaledVector(P.T, 0.47 * s); _R.crossVectors(P.F, P.T).normalize(); return _so.addScaledVector(_R, (P.shW || 0.19) * s * side); }
 function armsRest(P, s, swing = 0) {
   _R.crossVectors(P.F, P.T).normalize();
   P.hR.copy(shoulderOf(P, s, 1)).addScaledVector(P.T, -0.55 * s).addScaledVector(P.F, 0.05 * s + swing * s).addScaledVector(_R, 0.05 * s);
@@ -2604,7 +2777,9 @@ function loadGame(str) {   /* true when the record was restored and the day rebu
   Object.assign(S, sn.S || rec.S); PUBLISH = sn.PUBLISH || null; GOAL.key = rec.goal || null;   /* the morning as it was */
   if (typeof BOOKS !== 'undefined') { BOOKS.stage = null; BOOKS.closed = null; }
   applyBuild(); COSTS.capex = sn.costs.capex; COSTS.depYear = sn.costs.depYear;   /* purchases and sales since opening */
-  BIZ = sn.BIZ; M = sn.M; setupDay(sn.i);
+  BIZ = sn.BIZ; M = sn.M;
+  for (const m of M.pool.concat(M.lapsed || [])) if (m.look && !PHYSIQUES[m.look.phys]) { m.look.fem = !!m.female; delete m.look.phys; if (!PHYSIQUES[m.look.build]) m.look.phys = pickPhysique(m.look, m.arch); fillLook(m.look, m.arch); }   /* saves from before physiques */
+  setupDay(sn.i);
   Object.assign(S, rec.S); PUBLISH = rec.PUBLISH || null; return true;   /* then what was changed during the day, as it was changed */
 }
 function resumeSaved() {   /* at boot: carry on the saved business, paused, instead of the size screen */
@@ -2667,9 +2842,6 @@ const LIFTS = {
   stretch: { name: 'Stretching', types: ['mat'], alts: [], kind: 'mat' }
 };
 const FIRST = ['Mara', 'Teo', 'Ines', 'Ravi', 'Juno', 'Kofi', 'Lena', 'Omar', 'Pia', 'Sami', 'Noor', 'Eli', 'Ada', 'Bram', 'Cleo', 'Dev', 'Esme', 'Finn', 'Gia', 'Hugo', 'Iris', 'Jae', 'Kira', 'Luca', 'Mina', 'Nico', 'Oona', 'Pax', 'Rhea', 'Sol', 'Tavi', 'Uma', 'Vik', 'Wren', 'Yara', 'Zed', 'Ayo', 'Bea', 'Cai', 'Dara', 'Emi', 'Fela', 'Gus', 'Hana', 'Ivo', 'Jin', 'Kai', 'Lio', 'Maya', 'Nell', 'Otto', 'Priya', 'Quin', 'Rosa', 'Tomas', 'Vera', 'Wim', 'Xan', 'Yosef', 'Zola'];
-const SHIRTS = ['#d6403a', '#2f68ab', '#f2f1ea', '#dfe03a', '#63a845', '#d07a8e', '#e08f5a', '#74abe0', '#8a4f7d', '#1c1f2a', '#959bab', '#2c6a52', '#9b2226', '#f0a060'];
-const SKINS = ['#f0caa4', '#d9a77e', '#b5805a', '#8a5a3c', '#5a3825'];
-const HAIRS = ['#1c1f2a', '#45291b', '#643c24', '#c99a5e', '#959bab', '#2b1a12', '#9b2226'];
 
 // ================================================================ agents
 const AGENTS = [];
@@ -2754,16 +2926,6 @@ const PT_PACKS = [
   { n: 24, price: 35760, parts: [13520, 11920, 10320] }
 ];
 function round25(x) { return Math.max(20, Math.round(x / 2.5) * 2.5); }
-function makeLook(rng, female, kind) {
-  const look = { shirt: rng.pick(SHIRTS), shorts: rng.pick(['#1c1f2a', '#474c5c', '#1e4a85', '#2f3340', '#5c1418']), skin: rng.pick(SKINS), hair: rng.pick(HAIRS), shoe: rng.pick(['#f2f1ea', '#1c1f2a', '#d6403a', '#2f68ab']), scale: female ? rng.range(0.9, 0.98) : rng.range(0.97, 1.06) };
-  if (female && rng() < 0.7) look.longHair = true; else look.hairH = rng.range(0.05, 0.1);
-  if (rng() < 0.4) look.legs = look.shorts, look.pants = look.shorts;   // leggings / joggers
-  if (rng() < 0.12) look.cap = rng.pick(['#1c1f2a', '#f2f1ea', '#d6403a']);
-  if (kind === 'staff') Object.assign(look, { shirt: '#dfe03a', shorts: '#1c1f2a', pants: '#1c1f2a', legs: '#1c1f2a' });
-  if (kind === 'cleaner') Object.assign(look, { shirt: '#2f68ab', shorts: '#13305a', pants: '#13305a', legs: '#13305a', cap: '#13305a' });
-  if (kind === 'coach' || kind === 'pcoach') Object.assign(look, { shirt: '#1c1f2a', sleeve: '#dfe03a', shorts: '#1c1f2a' });
-  return look;
-}
 function setsFor(base, list) { return list.map(([pct, reps]) => ({ kg: pct === 0 ? 20 : round25(base * pct), reps, pct })); }
 function makeEx(lift, a, rng, o = {}) {
   const L = LIFTS[lift]; const e = { lift, types: L.types, alts: L.alts, kind: L.kind, sets: [], restMul: o.restMul || 1, dur: o.dur || 0, st: 'todo', setI: 0 };
@@ -2838,6 +3000,7 @@ function newMember(rng, joinedDay, isNew) {
   const archU = rng(); let arch = archFor(archU, mix);   /* the draw is kept so a new mix can re-sort members the next morning (owner 2026-11-15) */
   const female = rng() < (arch === 'power' ? 0.38 : 0.5), fm = female ? 0.63 : 1;
   const look = makeLook(rng, female, 'member'), name = `${rng.pick(FIRST)} ${String.fromCharCode(65 + rng.int(0, 25))}.`;
+  look.phys = pickPhysique(look, arch);   /* members: body type odds follow what they train */
   const sq = (arch === 'power' ? rng.range(140, 210) : arch === 'oly' ? rng.range(130, 175) : arch === 'body' ? rng.range(100, 150) : rng.range(55, 95)) * fm;
   const rm = { squat: round25(sq), frontsquat: round25(sq * 0.82), bench: round25(sq * 0.72), deadlift: round25(sq * 1.18), ohp: round25(sq * 0.45), snatch: round25(sq * 0.58), cleanjerk: round25(sq * 0.74), rackcurl: round25(sq * 0.3) };
   const db = Math.round((arch === 'beginner' || arch === 'client' ? rng.range(8, 14) : rng.range(18, 34)) * fm);
@@ -6647,6 +6810,35 @@ const SELFTESTS = {
       const ok = dflt === 0 && cleaners === 0 && st.has('pace') && (st.has('work') || st.has('go')) && st.has('desk') && !st1.has('work') && st1.has('pace') && awayAtCheckin === 0;
       return { ok, detail: { dflt, cleaners, states: [...st], withCleaner: [...st1], awayAtCheckin } }; }
     finally { S.cleaners = keep; setupRun(); }
+  },
+  physiques() {   // owner 2026-11-16: bodies vary by type (slim, average, athletic, muscular, pear; no heavy or stocky bodies, by the owner's call), with odds by what each member trains and by sex
+    try { setupRun();
+      const keys = Object.keys(typeof PHYSIQUES === 'undefined' ? {} : PHYSIQUES), pool = M.pool, by = {};
+      const one = (m) => Math.abs(Object.values(m).reduce((s, v) => s + v, 0) - 1) < 1e-9;
+      const mixesOk = keys.length === 5 && !keys.includes('stocky') && !keys.includes('heavy') && Object.values(PHYS_BY_SEX).every(one) && [HAIR_MIX.woman, HAIR_MIX.man, TOP_MIX.woman, TOP_MIX.man, BOTTOM_MIX.woman, BOTTOM_MIX.man, SHOE_MIX, HEADWEAR_MIX].every(one)
+        && Object.values(PHYS_BY_GROUP).every(m => one(m) && Object.keys(m).every(k => keys.includes(k)));
+      for (const m of pool) { const b = by[m.arch] = by[m.arch] || {}; b[m.look.phys] = (b[m.look.phys] || 0) + 1; }
+      const n = (o) => Object.values(o || {}).reduce((s, v) => s + v, 0);
+      const valid = (l) => keys.includes(l.phys) && l.hairStyle in HAIR_STYLES && l.top in TOPS && l.bottom in BOTTOMS && l.shoeType in SHOE_TYPES && (!l.cap || l.capStyle in HEADWEAR);
+      const everyone = pool.every(m => valid(m.look) && m.look.fem === !!m.female) && AGENTS.every(a => valid(a.look));
+      const seen = (f) => new Set(pool.map(m => m.look[f])).size, variety = { phys: seen('phys'), hair: seen('hairStyle'), top: seen('top'), bottom: seen('bottom'), shoe: seen('shoeType') };
+      const varied = variety.phys === 5 && variety.hair >= 7 && variety.top === 4 && variety.bottom === 4 && variety.shoe === 5;
+      const noPearMen = pool.every(m => m.female || m.look.phys !== 'pear');
+      const bbMen = pool.filter(m => m.arch === 'body' && !m.female), bodyMenMuscular = bbMen.filter(m => m.look.phys === 'muscular').length / Math.max(1, bbMen.length);
+      const powerNoSlim = !(by.power && by.power.slim), bodyBuilt = !by.body || ((by.body.muscular || 0) + (by.body.athletic || 0)) / n(by.body) >= 0.8;
+      const stable = pool.every(m => pickPhysique({ ...m.look }, m.arch) === m.look.phys);   /* the same look always gets the same body */
+      const old = fillLook({ shirt: '#d6403a', shorts: '#1c1f2a', skin: '#f0caa4', hair: '#1c1f2a', shoe: '#f2f1ea', scale: 1, fem: true, build: 'heavy', longHair: true, pants: '#1c1f2a', legs: '#1c1f2a' }, 'other');
+      const legacy = !!PHYSIQUES[old.phys] && old.hairStyle === 'long' && old.bottom === 'yoga' && !('build' in old) && !('pants' in old);
+      const retired = !!PHYSIQUES[fillLook({ ...old, phys: 'stocky' }, 'power').phys];   /* a look saved with a retired type gets a current one */
+      const avgSame = Object.entries(lookDraw({ ...old, phys: 'average', fem: false }).w).filter(([k]) => k !== 'label').every(([, v]) => v === 1);
+      const cat = lookCatalog(), total = cat.combinations.total === 1790880000 && cat.combinations.men === 873600000;
+      let drawn = true; try { const P = newPose(); P.H.set(0, 0.95, 0); P.fL.set(-0.1, 0.07, 0); P.fR.set(0.1, 0.07, 0); P.hL.set(-0.3, 0.9, 0); P.hR.set(0.3, 0.9, 0);
+        for (const hs in HAIR_STYLES) for (const tp in TOPS) for (const bt in BOTTOMS) for (const sh in SHOE_TYPES) for (const cs of [null, ...Object.keys(HEADWEAR)]) { BOX.begin(); drawBody({ ...old, hairStyle: hs, top: tp, bottom: bt, shoeType: sh, cap: cs && '#d6403a', capStyle: cs }, P, {}); if (!(BOX.n > 15)) drawn = false; } }
+      catch (e) { drawn = String(e); }
+      const ok = mixesOk && everyone && varied && noPearMen && bodyMenMuscular > 0.55 && powerNoSlim && bodyBuilt && stable && legacy && retired && avgSame && total && drawn === true;
+      return { ok, detail: { mixesOk, everyone, variety, noPearMen, bodyMenMuscular, powerNoSlim, bodyBuilt, stable, legacy, retired, avgSame, total: cat.combinations.total, drawn, by } }; }
+    catch (e) { return { ok: false, detail: String(e) }; }
+    finally { setupRun(); }
   },
   cleanerEconomics() {   // owner 2026-11-16: a cleaner costs a wage on the roster; mess (a loaded bar to strip, dumbbells strewn about) counts against a visit, so a messy gym loses members
     const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff };

@@ -20,7 +20,9 @@ function loadGame(str) {   /* true when the record was restored and the day rebu
   Object.assign(S, sn.S || rec.S); PUBLISH = sn.PUBLISH || null; GOAL.key = rec.goal || null;   /* the morning as it was */
   if (typeof BOOKS !== 'undefined') { BOOKS.stage = null; BOOKS.closed = null; }
   applyBuild(); COSTS.capex = sn.costs.capex; COSTS.depYear = sn.costs.depYear;   /* purchases and sales since opening */
-  BIZ = sn.BIZ; M = sn.M; setupDay(sn.i);
+  BIZ = sn.BIZ; M = sn.M;
+  for (const m of M.pool.concat(M.lapsed || [])) if (m.look && !PHYSIQUES[m.look.phys]) { m.look.fem = !!m.female; delete m.look.phys; if (!PHYSIQUES[m.look.build]) m.look.phys = pickPhysique(m.look, m.arch); fillLook(m.look, m.arch); }   /* saves from before physiques */
+  setupDay(sn.i);
   Object.assign(S, rec.S); PUBLISH = rec.PUBLISH || null; return true;   /* then what was changed during the day, as it was changed */
 }
 function resumeSaved() {   /* at boot: carry on the saved business, paused, instead of the size screen */
