@@ -47,9 +47,6 @@ const LIFTS = {
   stretch: { name: 'Stretching', types: ['mat'], alts: [], kind: 'mat' }
 };
 const FIRST = ['Mara', 'Teo', 'Ines', 'Ravi', 'Juno', 'Kofi', 'Lena', 'Omar', 'Pia', 'Sami', 'Noor', 'Eli', 'Ada', 'Bram', 'Cleo', 'Dev', 'Esme', 'Finn', 'Gia', 'Hugo', 'Iris', 'Jae', 'Kira', 'Luca', 'Mina', 'Nico', 'Oona', 'Pax', 'Rhea', 'Sol', 'Tavi', 'Uma', 'Vik', 'Wren', 'Yara', 'Zed', 'Ayo', 'Bea', 'Cai', 'Dara', 'Emi', 'Fela', 'Gus', 'Hana', 'Ivo', 'Jin', 'Kai', 'Lio', 'Maya', 'Nell', 'Otto', 'Priya', 'Quin', 'Rosa', 'Tomas', 'Vera', 'Wim', 'Xan', 'Yosef', 'Zola'];
-const SHIRTS = ['#d6403a', '#2f68ab', '#f2f1ea', '#dfe03a', '#63a845', '#d07a8e', '#e08f5a', '#74abe0', '#8a4f7d', '#1c1f2a', '#959bab', '#2c6a52', '#9b2226', '#f0a060'];
-const SKINS = ['#f0caa4', '#d9a77e', '#b5805a', '#8a5a3c', '#5a3825'];
-const HAIRS = ['#1c1f2a', '#45291b', '#643c24', '#c99a5e', '#959bab', '#2b1a12', '#9b2226'];
 
 // ================================================================ agents
 const AGENTS = [];
@@ -134,16 +131,6 @@ const PT_PACKS = [
   { n: 24, price: 35760, parts: [13520, 11920, 10320] }
 ];
 function round25(x) { return Math.max(20, Math.round(x / 2.5) * 2.5); }
-function makeLook(rng, female, kind) {
-  const look = { shirt: rng.pick(SHIRTS), shorts: rng.pick(['#1c1f2a', '#474c5c', '#1e4a85', '#2f3340', '#5c1418']), skin: rng.pick(SKINS), hair: rng.pick(HAIRS), shoe: rng.pick(['#f2f1ea', '#1c1f2a', '#d6403a', '#2f68ab']), scale: female ? rng.range(0.9, 0.98) : rng.range(0.97, 1.06) };
-  if (female && rng() < 0.7) look.longHair = true; else look.hairH = rng.range(0.05, 0.1);
-  if (rng() < 0.4) look.legs = look.shorts, look.pants = look.shorts;   // leggings / joggers
-  if (rng() < 0.12) look.cap = rng.pick(['#1c1f2a', '#f2f1ea', '#d6403a']);
-  if (kind === 'staff') Object.assign(look, { shirt: '#dfe03a', shorts: '#1c1f2a', pants: '#1c1f2a', legs: '#1c1f2a' });
-  if (kind === 'cleaner') Object.assign(look, { shirt: '#2f68ab', shorts: '#13305a', pants: '#13305a', legs: '#13305a', cap: '#13305a' });
-  if (kind === 'coach' || kind === 'pcoach') Object.assign(look, { shirt: '#1c1f2a', sleeve: '#dfe03a', shorts: '#1c1f2a' });
-  return look;
-}
 function setsFor(base, list) { return list.map(([pct, reps]) => ({ kg: pct === 0 ? 20 : round25(base * pct), reps, pct })); }
 function makeEx(lift, a, rng, o = {}) {
   const L = LIFTS[lift]; const e = { lift, types: L.types, alts: L.alts, kind: L.kind, sets: [], restMul: o.restMul || 1, dur: o.dur || 0, st: 'todo', setI: 0 };
@@ -570,7 +557,7 @@ function updateMember(a, dt) {
       if (a.waitStart) { A.waits.push((t - a.waitStart) / 60); noteWait(a, (t - Math.max(a.waitStart, A.open)) / 60); a.waitStart = 0; }
       if (!moving(a)) { a.state = 'desk'; a.t0 = t; a.yaw = 0; A.desk.greetUntil = t + 4; a.tDoor = t; A.checkins = (A.checkins || 0) + 1; }
       return;
-    case 'desk': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > 5) { a.state = 'toLocker'; const room = a.female ? LOCKERS_F : LOCKERS_M, L = room[Math.floor(a.rng() * room.length)]; /* their own washroom */ a.locker = L; goLocker(a, L); } return;
+    case 'desk': a.act = { k: 'idle', arms: 'rest' }; if (t - a.t0 > 5 && a.skipLocker) { a.state = 'ex'; a.exI = 0; a.tIn = t; startExercise(a); } else if (t - a.t0 > 5) { a.state = 'toLocker'; const room = a.female ? LOCKERS_F : LOCKERS_M, L = room[Math.floor(a.rng() * room.length)]; /* their own washroom */ a.locker = L; goLocker(a, L); } return;
     case 'toLocker': a.act = { k: 'walk' }; if (!moving(a)) { a.state = 'locker'; a.t0 = t; a.yaw = 0; a.lockDur = 90 + a.rng() * 120; } return;
     case 'locker': a.act = { k: 'idle', arms: 'locker' }; if (t - a.t0 > a.lockDur) { a.state = 'ex'; a.exI = 0; a.tIn = t; startExercise(a); } return;
     case 'ex': return updateExercise(a, dt);

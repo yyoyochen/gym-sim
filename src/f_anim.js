@@ -328,6 +328,7 @@ function chalkPuff(O, f) { if (Math.random() < 0.3) puffs.push({ x: O.x + f.x * 
 // ---------------------------------------------------------------- station props, vehicles
 const _c1 = new V3(), _ra = new V3();
 function drawStations(now) {
+  if (!EQUIP.visible) return;   /* the builder's empty welcome plot: no bars, stacks or dumbbells floating without their machines */
   for (const s of STATIONS) {
     if (s.type === 'rack' || s.type === 'olyplat') {
       const bump = s.type === 'olyplat';

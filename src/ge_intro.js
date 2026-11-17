@@ -17,11 +17,11 @@ function updateIntro(real) {
   if (INTRO.phase === 'wait') {
     if (followA || (A && (A.closed || A.done))) { showGoalCard(); return; }   /* the player already follows someone, or the day is closed: no automatic follow */
     const a = AGENTS.find(q => q.visible && q.kind === 'member');
-    if (a) { onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; }
+    if (a) { a.skipLocker = true; onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; INTRO.zoom0 = view.zoomT; view.zoomT = ZMAX; }   /* the first member goes straight to a machine, close up */
   } else if (INTRO.phase === 'follow') {
     INTRO.t += real;
     if (followA !== INTRO.a || INTRO.t >= INTRO_FOLLOW_S) {   /* the player picked someone else, or the follow has run its time */
-      if (followA === INTRO.a) clearFollow();
+      if (followA === INTRO.a) { clearFollow(); if (INTRO.zoom0) view.zoomT = INTRO.zoom0; }
       showToast(followWord());
       showGoalCard();
     }

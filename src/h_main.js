@@ -195,6 +195,10 @@ function advance(real) {
 }
 // the furthest view never shows past the board: zoom in just enough, and keep the target where every screen corner lands on the board
 const _vc = new V3();
+function followYOff() {   /* phones: the follow card covers the top-left, so the followed person stands low in the clear band between the card and the sheet */
+  const top = cardEl.offsetTop + cardEl.offsetHeight, bot = panel.getBoundingClientRect().top, y = top + Math.max(0, bot - top) * 0.75;
+  return clamp(0.5 - y / innerHeight, -0.35, 0.3);
+}
 function keepViewOnBoard() {
   if (_cr.lengthSq() < 1e-6 || !(scene.fog.near > 0)) return;   // camera axes not set up yet on the very first frame
   const E = scene.fog.color.r - 1, S = scene.fog.color.g - 1, Wb = scene.fog.color.b - 1, N = scene.fog.near - 1;
@@ -226,7 +230,7 @@ function tick(raw, now) {
   env.wet = clamp(env.wet + (env.rainAmt > 0.2 ? real * 0.08 * env.rainAmt : -real * 0.02), 0, 1);
   for (const pd of puddles.children) { const s = pd.userData.r * (0.35 + 0.65 * env.wet); pd.scale.set(s * 1.4, 1, s); }
   if (view.follow && view.follow.visible) view.target.lerp(_va.set(view.follow.pos.x, 0, view.follow.pos.z), Math.min(1, real * 4));
-  view.yOffT = window.innerWidth < 860 ? (BUILD.on ? 0.3 : !panel.classList.contains('closed') ? 0.24 : 0) : 0;   /* the build sheet is taller than the panel */
+  view.yOffT = window.innerWidth < 860 ? (BUILD.on ? 0.3 : followA && cardEl.style.display !== 'none' ? followYOff() : !panel.classList.contains('closed') ? 0.24 : 0) : 0;   /* the build sheet is taller than the panel */
   updateWalls(real); if (window.__clampView !== false) keepViewOnBoard(); const wpp = updateCamera(real); updateFollowMark(real); updateHover();
   FRAME++;
   BOX.begin(); CYL.begin(); vBegin();

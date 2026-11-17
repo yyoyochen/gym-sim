@@ -115,9 +115,9 @@ function renderBuild() {
     body = `<div class="bpre">${pre}</div>${size}${money}${rules}`;
   } else if (BUILD.tab === 'Equipment') {
     const rows = BUILD_KEYS.map(([k, en, zh]) => { const n = BUILD.counts[k], full = !sample && BUILD.full[k];
-      return `<tr><td>${tx(en, zh)}<span class="unit">${moneyK(EQUIP_PRICE[k])} ${tx('each', '每台')}</span>${full ? `<span class="bench">${tx('the floor is full', '空間已滿')}</span>` : ''}</td><td class="n">${sample ? n : `${btn(`data-count="${k},-1"`, '−')} <b>${n}</b> ${btn(`data-count="${k},1"`, '+', full ? 'dim' : '')}`}</td><td class="n">${bnt(n * EQUIP_PRICE[k])}</td></tr>`; }).join('');
+      return `<tr><td>${tx(en, zh)}<span class="unit">${moneyK(EQUIP_PRICE[k])} ${tx('each', '每台')}</span>${full ? `<span class="bench">${tx('the floor is full', '空間已滿')}</span>` : ''}</td><td class="ctl">${sample ? `<b>${n}</b>` : `${btn(`data-count="${k},-1"`, '−')}<b>${n}</b>${btn(`data-count="${k},1"`, '+', full ? 'dim' : '')}`}</td><td class="n">${bnt(n * EQUIP_PRICE[k])}</td></tr>`; }).join('');
     const kit = FIXED_KIT.filter(([key]) => sample || !BUILD.kit || BUILD.kit[key]).reduce((s, [, v]) => s + v, 0), eq = BUILD_KEYS.reduce((s, [k]) => s + BUILD.counts[k] * EQUIP_PRICE[k], 0) + kit;
-    body = `<table class="beq">${rows}<tr><td>${tx('Dumbbells, cable tower, turf and sled, pull-up, mats', '啞鈴、滑輪架、草皮與雪橇、引體向上架、軟墊')}</td><td></td><td class="n">${bnt(kit)}</td></tr><tr class="sum"><td>${tx('Equipment', '器材')}</td><td></td><td class="n">${bnt(eq)}</td></tr></table>
+    body = `<table class="beq">${rows}<tr><td>${tx('Dumbbells, cable tower, turf and sled, pull-up, mats', '啞鈴、滑輪架、草皮與雪橇、引體向上架、軟墊')}</td><td class="n" colspan="2">${bnt(kit)}</td></tr><tr class="sum"><td colspan="2">${tx('Equipment', '器材')}</td><td class="n">${bnt(eq)}</td></tr></table>
       <p class="note">${sample ? tx('The sample gym\'s equipment is fixed. Pick S, M, L or a custom size to choose counts.', '範例健身房的器材是固定的。選 S、M、L 或自訂大小即可調整數量。') : tx('Equipment is placed for you along the walls; when a zone is full, + stops.', '器材會自動沿牆擺放；區域滿了就不能再加。')}</p>`;
   } else {
     const capex = c ? c.capex : SAMPLE_CAPEX.capex, dep = c ? c.deposit : 0, cash = S.finOwn + S.finLoan - capex - dep, m$ = (v) => moneyK(v);

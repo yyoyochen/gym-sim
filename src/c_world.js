@@ -61,11 +61,18 @@ function hallAnchors() {   // fixture positions for the current HALL
 // floor: black rubber tiles, 20 px a metre
 const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial());
 floorMesh.position.y = 0.02; floorMesh.receiveShadow = true; world.add(floorMesh);
+// the 1 m floor grid is its own overlay: drawn into the texture it turns to moire when zoomed out, so it fades in only past a zoom level
+const FLOOR_GRID = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#1c1f2a', transparent: true, opacity: 0, fog: false, depthWrite: false })); FLOOR_GRID.visible = false; FLOOR_GRID.renderOrder = 1; world.add(FLOOR_GRID);
+const GRID_ZOOM = [2.6, 3.6];   /* fully hidden below the first, fully shown above the second */
+function buildFloorGrid() {
+  const pts = []; for (let x = HALL.x0; x <= HALL.x1 + 1e-6; x += 1) pts.push(x, 0.03, HALL.zb, x, 0.03, HALL.zf); for (let z = HALL.zb; z <= HALL.zf + 1e-6; z += 1) pts.push(HALL.x0, 0.03, z, HALL.x1, 0.03, z);
+  FLOOR_GRID.geometry.dispose(); FLOOR_GRID.geometry = new THREE.BufferGeometry(); FLOOR_GRID.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+}
 function buildFloor() {
+  buildFloorGrid();
   const W = HALL.x1 - HALL.x0, D = HALL.zf - HALL.zb, cv = document.createElement('canvas'); cv.width = Math.round(W * 20); cv.height = Math.round(D * 20);
   const c = cv.getContext('2d'); c.fillStyle = '#2f3340'; c.fillRect(0, 0, cv.width, cv.height);
   for (let i = 0; i < 4000 * cv.width * cv.height / 240000; i++) { c.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.12)'; c.fillRect(Math.random() * cv.width, Math.random() * cv.height, 2, 2); }
-  c.fillStyle = '#1c1f2a'; for (let x = 0; x <= cv.width; x += 20) c.fillRect(x, 0, 1, cv.height); for (let y = 0; y <= cv.height; y += 20) c.fillRect(0, y, cv.width, 1);
   // entrance mat + painted walkway lines in front of the cardio and machine rows
   c.fillStyle = '#474c5c'; c.fillRect((DOOR.x - 1.2 - HALL.x0) * 20, (HZ - 1.6 - HALL.zb) * 20, 48, 30);
   c.fillStyle = '#b8a21e'; for (const z of [6.9, 2.4]) if (z > HALL.zb) c.fillRect(0, (z - HALL.zb) * 20, Math.max(0, DOOR.x - 6 - HALL.x0) * 20, 3);
@@ -89,7 +96,9 @@ function wallSide(name, nx, nz, segs) {   // segs: [x0,z0,x1,z1, door?]
   }
   lb.flush(lower); ub.flush(upper);
   upper.position.y = CUT_H; upper.children.forEach(m => { m.position.y = -CUT_H; m.matrixAutoUpdate = true; });
-  wallSides.push({ name, nx, nz, upper, lower, h: 1 });
+  const near = nx * Math.sin(view.az) + nz * Math.cos(view.az) > 0.2, h = near ? 0.0001 : 1;   /* a rebuilt hall starts at the height the camera already wants, so the walls don't rise and fall */
+  upper.scale.y = h; upper.visible = h > 0.01;
+  wallSides.push({ name, nx, nz, upper, lower, h });
 }
 function buildWalls() {
   for (const w of wallSides) { for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } }
@@ -101,6 +110,7 @@ function buildWalls() {
   wallSide('right', 1, 0, [[x1, zb + 1.2, x1, HZ - 1.2, 'glass']]);
 }
 function updateWalls(dt) {
+  { const o = clamp((view.zoom - GRID_ZOOM[0]) / (GRID_ZOOM[1] - GRID_ZOOM[0]), 0, 1); FLOOR_GRID.material.opacity = 0.85 * o; FLOOR_GRID.visible = o > 0.01; }
   const ox = Math.sin(view.az), oz = Math.cos(view.az);
   for (const w of wallSides) {
     const near = w.nx * ox + w.nz * oz > 0.2;

@@ -15,3 +15,6 @@ idea.md
 
 # private design docs (never push)
 design-docs/
+
+# third-party reference repos (cloned for study, not part of gymsim)
+reference-repos/
