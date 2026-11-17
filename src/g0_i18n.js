@@ -3,7 +3,7 @@
 let LANG = (() => { try { return localStorage.getItem('gymsim.lang') || 'en'; } catch (e) { return 'en'; } })();
 const ZH = {
   // panel groups and buttons
-  'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'Books (P&L)': '帳本（損益）', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
+  'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'P&L': '損益表', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
   'Run': '執行', 'Monitors': '監測', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
   'Setup': '設定', 'Go': '開始', 'Pause': '暫停', 'Step': '單步', 'Go (new day)': '開始（新的一天）',
   'Sound off': '音效：關', 'Sound on': '音效：開', 'Copy results': '複製結果', 'Seed': '種子', 'Random seed': '隨機種子',
@@ -37,7 +37,7 @@ const ZH = {
   'Weather': '天氣', 'Clear': '晴天', 'Rain': '雨天', 'Heatwave': '熱浪',
   'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.':
     '環境與雨天會立即顯示。會員的交通方式（機車、公車、步行、接送）、公車班距和熱浪時的到場曲線，按「設定」後生效。',
-  'Archetype mix (sums to 100 %, applies on Setup)': '會員類型組成（合計 100%，按「設定」後生效）',
+  'Archetype mix (sums to 100 %, applies from tomorrow)': '會員類型組成（合計 100%，明天起生效）',
   'Powerlifter': '健力選手', 'Olympic lifter': '舉重選手', 'Bodybuilder': '健美選手', 'Beginner': '新手', 'Coach with client': '教練帶學員',
   'Patience before swapping': '換器材前的耐心', 'Work-in willingness': '輪流使用意願', 'Rest between sets': '組間休息', 'Re-rack habit': '槓片歸位習慣',
   'Power racks': '健力架', 'Olympic platforms': '舉重台', 'Adjustable benches': '可調式訓練椅', 'Cleaners': '清潔人員',

@@ -63,53 +63,22 @@ function ik2(A, T, a, b, pole, out) {
 }
 // A pose is a set of world-space targets:
 //  H hip centre, T torso up (unit), F chest forward (unit, perpendicular to T), fL/fR ankles, hL/hR hands, kp knee pole, look (V3|null)
+const TORSO_N = 3;   /* torso slices: enough for a taper from waist to chest to read smoothly */
 function newPose() { return { H: new V3(), T: new V3(0, 1, 0), F: new V3(1, 0, 0), fL: new V3(), fR: new V3(), hL: new V3(), hR: new V3(), kp: new V3(1, 0, 0), ep: null, look: null, headTilt: 0, hidden: false }; }
 const _R = new V3(), _S = new V3(), _N = new V3(), _HC = new V3(), _hipL = new V3(), _hipR = new V3(), _knL = new V3(), _knR = new V3(), _shL = new V3(), _shR = new V3(), _elL = new V3(), _elR = new V3(), _ep = new V3(), _hf = new V3(), _hr = new V3(), _hu = new V3(), _tmp = new V3(), _tmp2 = new V3();
-const _lm = new V3();
-// a box on the head, relative to its centre: up and forward in metres at scale 1, then size w x h x d
-function headBox(col, s, up, fw, w, h, d) { _tmp.copy(_HC).addScaledVector(_hu, up * s).addScaledVector(_hf, fw * s); basisBox(_tmp, _hr, _hu, _hf, w * s, h * s, d * s, col); }
-// hair styles: bald, buzz, short, quiff, long, ponytail, bun, curly (look.hairStyle; older looks use longHair / hairH)
-function drawHair(c, s) {
-  const st = c.hairStyle || (c.longHair ? 'long' : 'short'), h = c.hair; if (st === 'bald') return;
-  if (st === 'curly') { headBox(h, s, 0.08, -0.03, 0.3, 0.2, 0.27); return; }
-  headBox(h, s, 0.12, -0.025, 0.24, st === 'buzz' ? 0.03 : (c.hairH || 0.07), 0.25);
-  if (st === 'quiff') headBox(h, s, 0.17, 0.05, 0.2, 0.08, 0.15);
-  else if (st === 'long') headBox(h, s, -0.03, -0.12, 0.24, 0.3, 0.1);
-  else if (st === 'ponytail') { headBox(h, s, 0, -0.125, 0.1, 0.1, 0.06); headBox(h, s, -0.1, -0.15, 0.07, 0.22, 0.07); }
-  else if (st === 'bun') headBox(h, s, 0.19, -0.06, 0.12, 0.1, 0.12);
-}
-// headwear in look.cap's colour: cap (crown and brim), visor (band and brim), beanie, headband
-function drawHeadwear(c, s) {
-  const st = c.capStyle || 'cap', k = c.cap;
-  if (st === 'beanie') headBox(k, s, 0.11, -0.005, 0.25, 0.13, 0.26);
-  else if (st === 'headband') headBox(k, s, 0.06, 0, 0.235, 0.035, 0.24);
-  else {
-    if (st === 'visor') headBox(k, s, 0.1, 0, 0.245, 0.035, 0.25); else headBox(k, s, 0.13, 0, 0.245, 0.07, 0.25);
-    headBox(k, s, 0.1, 0.16, 0.2, 0.025, 0.12);
-  }
-}
-// shoes at an ankle target (feet point along _tmp2, right vector _hr): sneaker, runner (chunky sole), hightop, flat (thin lifting shoe), slides
-function shoeBox(ft, s, fw, up, w, h, d, col) { _tmp.copy(ft).addScaledVector(_tmp2, fw * s).addScaledVector(UP, up * s); basisBox(_tmp, _hr, UP, _tmp2, w * s, h * s, d * s, col); }
-function drawShoe(ft, c, s) {
-  const t = c.shoeType || 'sneaker', k = c.shoe;   // the floor is 0.07 below the ankle target
-  if (t === 'runner') { shoeBox(ft, s, 0.05, -0.0525, 0.105, 0.035, 0.28, k === '#f2f1ea' ? '#bdbdb4' : '#f2f1ea'); shoeBox(ft, s, 0.04, -0.01, 0.095, 0.05, 0.23, k); }
-  else if (t === 'hightop') shoeBox(ft, s, 0.05, -0.005, 0.1, 0.13, 0.26, k);
-  else if (t === 'flat') shoeBox(ft, s, 0.05, -0.05, 0.095, 0.04, 0.25, k);
-  else if (t === 'slides') { shoeBox(ft, s, 0.05, -0.0575, 0.1, 0.025, 0.26, k); shoeBox(ft, s, 0.045, -0.025, 0.085, 0.04, 0.2, c.skin); shoeBox(ft, s, 0.08, -0.03, 0.09, 0.03, 0.08, k); }
-  else shoeBox(ft, s, 0.05, -0.035, 0.1, 0.07, 0.26, k);
-}
 function drawBody(look, P, st) {
   if (P.hidden) return;
-  const s = look.scale || 1, q = PHYS[look.phys] || PHYS.average;   // q: body type multipliers (b0_look.js)
+  const s = look.scale || 1, w = lookDraw(look).w, c = look;
   const T = P.T, F = P.F;
   _R.crossVectors(F, T).normalize();
   _S.copy(P.H).addScaledVector(T, 0.5 * s);
   _N.copy(_S).addScaledVector(T, 0.07 * s);
   _HC.copy(_N).addScaledVector(T, 0.12 * s);
-  _shL.copy(_S).addScaledVector(_R, -0.19 * s * q.sw).addScaledVector(T, -0.035 * s);
-  _shR.copy(_S).addScaledVector(_R, 0.19 * s * q.sw).addScaledVector(T, -0.035 * s);
-  _hipL.copy(P.H).addScaledVector(_R, -0.1 * s * q.hw).addScaledVector(T, -0.05 * s);
-  _hipR.copy(P.H).addScaledVector(_R, 0.1 * s * q.hw).addScaledVector(T, -0.05 * s);
+  P.shW = 0.19 * w.sw;   /* the resting-arms pose hangs the hands from this, so broad builds don't press their arms into the chest */
+  _shL.copy(_S).addScaledVector(_R, -P.shW * s).addScaledVector(T, -0.035 * s);
+  _shR.copy(_S).addScaledVector(_R, P.shW * s).addScaledVector(T, -0.035 * s);
+  _hipL.copy(P.H).addScaledVector(_R, -0.1 * s).addScaledVector(T, -0.05 * s);
+  _hipR.copy(P.H).addScaledVector(_R, 0.1 * s).addScaledVector(T, -0.05 * s);
   ik2(_hipL, P.fL, 0.45 * s, 0.42 * s, P.kp, _knL);
   ik2(_hipR, P.fR, 0.45 * s, 0.42 * s, P.kp, _knR);
   if (P.ep) _ep.copy(P.ep); else _ep.copy(F).multiplyScalar(-0.35).addScaledVector(T, -1);
@@ -125,33 +94,62 @@ function drawBody(look, P, st) {
   const ch = Math.cos(st.hy), sh = Math.sin(st.hy);
   _hf.copy(F).multiplyScalar(ch).addScaledVector(_R, sh); _hr.crossVectors(_hf, T).normalize(); _hu.copy(T);
   if (P.headTilt) { _hu.multiplyScalar(Math.cos(P.headTilt)).addScaledVector(_hf, Math.sin(P.headTilt)); _hf.crossVectors(_hu, _hr).normalize(); }
-  const c = look, top = c.top || 'tee', bot = c.bottom || (c.legs ? 'yoga' : 'shorts'), sl = c.sleeve || c.shirt;
-  const hood = top === 'hoodie', tw = hood ? 1.08 : 1, td = hood ? 1.14 : 1;   // a hoodie is bulkier, with a hood behind the neck
-  _tmp.copy(P.H).addScaledVector(T, -0.02 * s); basisBox(_tmp, _R, T, F, 0.34 * s * q.hw, 0.2 * s, 0.22 * s * q.hd, c.shorts);
-  _tmp.copy(P.H).addScaledVector(T, 0.05 * s); segBox(_tmp, _S, 0.38 * s * q.cw * tw, 0.23 * s * q.cd * td, F, c.shirt);
-  if (q.belly) { _tmp.copy(P.H).addScaledVector(T, 0.15 * s).addScaledVector(F, (0.1 + q.belly / 2) * s); basisBox(_tmp, _R, T, F, 0.32 * s * q.cw * tw, 0.24 * s, q.belly * s, c.shirt); }
-  if (hood) { _tmp.copy(_N).addScaledVector(F, -0.1 * s); basisBox(_tmp, _R, T, F, 0.28 * s * q.cw, 0.1 * s, 0.14 * s, c.shirt); }
-  basisBox(_HC, _hr, _hu, _hf, 0.22 * s * q.hs, 0.25 * s * q.hs, 0.23 * s * q.hs, c.skin);
-  drawHair(c, s); if (c.cap) drawHeadwear(c, s);
-  // legs: shorts (bare shins), bike shorts (half thigh), yoga pants (tight, full) or trousers (loose, full)
-  const thW = bot === 'bike' ? 0.92 : bot === 'yoga' ? 0.92 : bot === 'trousers' ? 1.14 : 1, shW = bot === 'yoga' ? 0.92 : bot === 'trousers' ? 1.18 : 1, full = bot === 'yoga' || bot === 'trousers';
-  for (let i = 0; i < 2; i++) {
-    const hp = i ? _hipR : _hipL, kn = i ? _knR : _knL, ft = i ? P.fR : P.fL, tk = 0.15 * s * q.lw * thW, tkd = 0.16 * s * q.lw * thW;
-    if (bot === 'bike') { _lm.lerpVectors(hp, kn, 0.5); segBox(hp, _lm, tk, tkd, F, c.shorts); segBox(_lm, kn, tk * 0.9, tkd * 0.9, F, c.skin); }
-    else segBox(hp, kn, tk, tkd, F, c.shorts);
-    segBox(kn, ft, 0.11 * s * q.lw * shW, 0.12 * s * q.lw * shW, F, full ? c.shorts : c.skin);
+  const hood = c.top === 'hoodie' ? 1 : 0, tw = 1 + 0.08 * hood, td = 1 + 0.14 * hood;
+  _tmp.copy(P.H).addScaledVector(T, -0.02 * s); basisBox(_tmp, _R, T, F, 0.34 * s * w.hw, 0.2 * s, 0.22 * s * Math.min(w.hd, 1.25), c.shorts);
+  // torso: a few slices easing from the waist (the narrower of hips and chest, so wide hips show below it) up to the chest,
+  // the top slice narrowing into the shoulders
+  const wW = 0.38 * s * Math.min(w.hw, w.cw) * 0.97 * tw, cW = 0.38 * s * w.cw * tw, wD = 0.23 * s * Math.min(w.hd, w.cd) * td, cD = 0.23 * s * w.cd * td;
+  for (let i = 0; i < TORSO_N; i++) {
+    const t = (i + 0.5) / TORSO_N, e = t * t * (3 - 2 * t);
+    _tmp.copy(P.H).addScaledVector(T, (0.05 + 0.45 * i / TORSO_N) * s); _tmp2.copy(P.H).addScaledVector(T, (0.05 + 0.45 * (i + 1) / TORSO_N + 0.006) * s);
+    segBox(_tmp, _tmp2, (wW + (cW - wW) * e) * (i === TORSO_N - 1 ? 0.94 : 1), wD + (cD - wD) * e, F, c.shirt);
   }
+  if (hood) { _tmp.copy(_N).addScaledVector(F, -0.13 * s * w.cd).addScaledVector(T, -0.01 * s); basisBox(_tmp, _R, T, F, 0.26 * s, 0.14 * s, 0.1 * s, c.shirt); }
+  // head, hair and headwear: offsets scale with head size
+  const hs = s * (w.hs || 1), hb = (u, f, bw, bh, bd, col) => { _tmp.copy(_HC).addScaledVector(_hu, u * hs).addScaledVector(_hf, f * hs); basisBox(_tmp, _hr, _hu, _hf, bw * hs, bh * hs, bd * hs, col); };
+  basisBox(_HC, _hr, _hu, _hf, 0.22 * hs, 0.25 * hs, 0.23 * hs, c.skin);
+  const hst = c.hairStyle || 'short';
+  if (hst === 'curly') hb(0.08, -0.03, 0.3, 0.2, 0.27, c.hair);
+  else if (hst !== 'bald') {
+    hb(0.12, -0.025, 0.24, hst === 'buzz' ? 0.03 : (c.hairH || 0.07), 0.25, c.hair);
+    if (hst === 'quiff') hb(0.165, 0.075, 0.2, 0.07, 0.1, c.hair);
+    else if (hst === 'long') hb(-0.03, -0.12, 0.24, 0.3, 0.1, c.hair);
+    else if (hst === 'ponytail') { hb(0.03, -0.13, 0.1, 0.09, 0.07, c.hair); hb(-0.1, -0.15, 0.06, 0.17, 0.06, c.hair); }
+    else if (hst === 'bun') hb(0.17, -0.07, 0.11, 0.09, 0.11, c.hair);
+  }
+  if (c.cap) {
+    const cs = c.capStyle || 'cap';
+    if (cs === 'cap') { hb(0.13, 0, 0.245, 0.07, 0.25, c.cap); hb(0.1, 0.16, 0.2, 0.025, 0.12, c.cap); }
+    else if (cs === 'visor') { hb(0.08, 0, 0.245, 0.04, 0.25, c.cap); hb(0.08, 0.16, 0.2, 0.025, 0.12, c.cap); }
+    else if (cs === 'beanie') hb(0.11, 0, 0.25, 0.12, 0.255, c.cap);
+    else hb(0.07, 0, 0.235, 0.03, 0.245, c.cap);
+  }
+  // legs by bottom type: shorts (bare shin), bike shorts (upper half of the thigh), yoga pants (tight), trousers (loose)
+  const bt = c.bottom || 'shorts', tl = bt === 'yoga' ? 0.92 : bt === 'trousers' ? 1.14 : bt === 'bike' ? 0.95 : 1, sl = bt === 'yoga' ? 0.92 : bt === 'trousers' ? 1.18 : 1;
+  const shinC = bt === 'yoga' || bt === 'trousers' ? c.shorts : c.skin, thW = 0.15 * s * w.lw * tl, thD = 0.16 * s * w.lw * tl;
+  for (const [hp, kn] of [[_hipL, _knL], [_hipR, _knR]]) {
+    if (bt === 'bike') { _tmp.lerpVectors(hp, kn, 0.5); segBox(hp, _tmp, thW, thD, F, c.shorts); segBox(_tmp, kn, thW, thD, F, c.skin); }
+    else segBox(hp, kn, thW, thD, F, c.shorts);
+  }
+  segBox(_knL, P.fL, 0.11 * s * w.lw * sl, 0.12 * s * w.lw * sl, F, shinC); segBox(_knR, P.fR, 0.11 * s * w.lw * sl, 0.12 * s * w.lw * sl, F, shinC);
   // feet: point along the foot direction (horizontal component of kp)
   _tmp2.copy(P.kp); _tmp2.y = 0; if (_tmp2.lengthSq() < 1e-4) _tmp2.set(F.x, 0, F.z); if (_tmp2.lengthSq() < 1e-4) _tmp2.set(1, 0, 0); _tmp2.normalize();
   _hr.crossVectors(_tmp2, UP).normalize();
-  drawShoe(P.fL, c, s); drawShoe(P.fR, c, s);
-  // arms: tank (bare), tee (to mid upper arm), long sleeve / hoodie (to the wrist)
-  const aw = 0.1 * s * q.aw, fw = 0.085 * s * q.aw;
-  for (let i = 0; i < 2; i++) {
-    const sh = i ? _shR : _shL, el = i ? _elR : _elL, hd = i ? P.hR : P.hL;
-    if (top === 'tank') { segBox(sh, el, aw, aw, F, c.skin); segBox(el, hd, fw, fw, F, c.fore || c.skin); }
-    else if (top === 'long' || hood) { segBox(sh, el, aw * 1.05, aw * 1.05, F, sl); segBox(el, hd, fw * 1.08, fw * 1.08, F, c.fore || sl); }
-    else { _lm.lerpVectors(sh, el, 0.55); segBox(sh, _lm, aw * 1.08, aw * 1.08, F, sl); segBox(_lm, el, aw * 0.95, aw * 0.95, F, c.skin); segBox(el, hd, fw, fw, F, c.fore || c.skin); }
+  const st_ = c.shoeType || 'sneaker';
+  for (const ft of [P.fL, P.fR]) {
+    const fb = (up, fw, bw, bh, bd, col) => { _tmp.copy(ft).addScaledVector(_tmp2, (0.05 + fw) * s).addScaledVector(UP, up * s); basisBox(_tmp, _hr, UP, _tmp2, bw * s, bh * s, bd * s, col); };
+    if (st_ === 'runner') { fb(-0.055, 0, 0.11, 0.035, 0.27, '#f2f1ea'); fb(-0.02, -0.01, 0.095, 0.05, 0.22, c.shoe); }
+    else if (st_ === 'hightop') fb(-0.005, -0.005, 0.1, 0.13, 0.25, c.shoe);
+    else if (st_ === 'flat') fb(-0.05, 0, 0.1, 0.04, 0.26, c.shoe);
+    else if (st_ === 'slides') { fb(-0.062, 0, 0.1, 0.02, 0.26, c.shoe); fb(-0.035, 0, 0.085, 0.04, 0.22, c.skin); fb(-0.03, 0.05, 0.105, 0.035, 0.07, c.shoe); }
+    else fb(-0.035, 0, 0.1, 0.07, 0.26, c.shoe);
+  }
+  // arms by top type: tee (sleeve to mid upper arm), tank (bare), long sleeve and hoodie (to the wrist)
+  const tp = c.top || 'tee', slC = c.sleeve || c.shirt, uaW = 0.1 * s * w.aw, faW = 0.085 * s * w.aw;
+  for (const [sh_, el, hd] of [[_shL, _elL, P.hL], [_shR, _elR, P.hR]]) {
+    if (tp === 'tee') { _tmp.lerpVectors(sh_, el, 0.55); segBox(sh_, _tmp, uaW * 1.12, uaW * 1.12, F, slC); segBox(_tmp, el, uaW, uaW, F, c.skin); }
+    else segBox(sh_, el, uaW, uaW, F, tp === 'tank' ? c.skin : slC);
+    segBox(el, hd, faW, faW, F, c.fore || (tp === 'long' || tp === 'hoodie' ? c.shirt : c.skin));
   }
   basisBox(P.hL, _R, T, F, 0.08 * s, 0.08 * s, 0.08 * s, c.skin); basisBox(P.hR, _R, T, F, 0.08 * s, 0.08 * s, 0.08 * s, c.skin);
   st.head = st.head || new V3(); st.head.copy(_HC);
@@ -198,7 +196,7 @@ function poseSit(P, seat, yaw, s, o = {}) {   // seat: V3 hip point, footY
 }
 // arms helpers (after torso is set): uses shoulder estimate
 const _so = new V3(), _ep2 = new V3();
-function shoulderOf(P, s, side) { _so.copy(P.H).addScaledVector(P.T, 0.47 * s); _R.crossVectors(P.F, P.T).normalize(); return _so.addScaledVector(_R, 0.19 * s * side); }
+function shoulderOf(P, s, side) { _so.copy(P.H).addScaledVector(P.T, 0.47 * s); _R.crossVectors(P.F, P.T).normalize(); return _so.addScaledVector(_R, (P.shW || 0.19) * s * side); }
 function armsRest(P, s, swing = 0) {
   _R.crossVectors(P.F, P.T).normalize();
   P.hR.copy(shoulderOf(P, s, 1)).addScaledVector(P.T, -0.55 * s).addScaledVector(P.F, 0.05 * s + swing * s).addScaledVector(_R, 0.05 * s);

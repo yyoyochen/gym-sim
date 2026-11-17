@@ -30,7 +30,7 @@ function checkPlot(w, d) {
 function buildCost(plan, c = COSTS) {
   const ping = plan.w * plan.d, rentMonth = ping * (c.rentRate + c.mgmtPerPing), fitOut = ping * FIT_OUT_PER_PING + FIT_OUT_FIXED, deposit = DEPOSIT_MONTHS * rentMonth;
   const items = Object.keys(EQUIP_PRICE).map(key => ({ key, n: plan.counts[key] || 0, price: EQUIP_PRICE[key] })).concat(FIXED_KIT.filter(([key]) => !plan.kit || plan.kit[key]).map(([key, price]) => ({ key, n: 1, price })));   /* plan.kit: the fixed zones actually placed */
-  const equipment = items.reduce((s, it) => s + it.n * it.price, 0);
+  const equipment = plan.layout && typeof layoutCost === 'function' ? layoutCost(plan.layout) : items.reduce((s, it) => s + it.n * it.price, 0);   /* Plan 11: a laid-out gym pays for its pieces */
   return { ping, rentMonth, fitOut, deposit, rentFreeMonths: RENT_FREE_MONTHS, equipment, items, capex: fitOut + equipment, depYear: fitOut / FIT_OUT_YEARS + equipment / EQUIP_YEARS };
 }
 // ================================================================ first session (Plan 10): running cost and runway for the builder's money step, and the starter goals

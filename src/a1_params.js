@@ -52,6 +52,9 @@ function defaultMix(coachPct) {
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SEASON = [1.04, 0.86, 1.08, 1.03, 1.05, 1.00, 0.97, 0.97, 1.01, 1.01, 1.00, 0.98];   // visits by month, Lunar New Year in Feb
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// owner 2026-11-15: the business opens on today's date; the first month is the rest of this month
+function daysInMonth(year, name) { return new Date(Date.UTC(year, MONTH_NAMES.indexOf(name) + 1, 0)).getUTCDate(); }
+function todayStart(d) { return { year: d.getFullYear(), month: MONTH_NAMES[d.getMonth()], startDay: d.getDate() }; }
 function calendar(year, month) {
   const n = new Date(Date.UTC(year, month, 0)).getUTCDate(), out = [];
   for (let d = 1; d <= n; d++) out.push({ day: d, dow: DOW[new Date(Date.UTC(year, month - 1, d)).getUTCDay()], mult: SEASON[month - 1] });

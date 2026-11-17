@@ -1,90 +1,100 @@
 # GYM-SIM
 
-A pixel-art isometric sandbox for people who want to understand what it takes to run a strength gym, especially the money side. You build a gym in Taipei, open the doors, and watch simulated members arrive, queue, lift and pay. Then you change something and see why the profit and loss moved.
+![Members training at the squat rack, the Olympic platform, a bench, the treadmills, the cable tower and the machines](screenshots/hero.gif)
+
+A pixel-art isometric sandbox about running a strength gym, especially the money side. You build a gym in Taipei, open the doors and watch simulated members arrive, train and pay. Then you change something and see why the profit and loss moved.
 
 **Play it in your browser: https://yyoyochen.github.io/gym-sim/**
 
-Works on desktop and phones. Use the **En / 中文** button to switch between English and Traditional Chinese.
+It works on desktop and phones. The **En / 中文** button switches between English and Traditional Chinese. All money is in NT dollars.
 
-![Open your first gym: pick a size and watch the plot](screenshots/01-open-your-first-gym.png)
+## How to play
 
-## What kind of thing this is
+1. **Pick a size.** The game opens on the size screen: Small, Medium or Large. You see the setup cost for each.
+2. **Pay for it.** Decide how much is your own money and how much is a bank loan. You can open overdrawn; the figure shows in orange.
+3. **Open the doors.** The gym starts with the members who signed up before opening. The camera follows the first member in, who goes straight to a squat.
+4. **Pick a goal, or skip.** A card offers a goal, such as reaching 500 members by the end of month 3. Its progress shows under the clock.
+5. **Run time.** Start the day, speed it up, or close the day, week or month early. Days run on into months, so you pay real monthly rent, payroll and loan instalments.
+6. **Tap the front desk** to open the P&L, change something, and watch what it does.
 
-It is a sandbox, not a game. There is no score, no leaderboard and no winning gym. It is built to answer questions like:
+Progress is saved in your browser. A reload carries on from the morning of the current day. **Build a gym** starts a new one.
 
-- If I add racks, do I earn more, or only wait less?
-- What does my evening peak force me to build, and what do I pay for the rest of the day?
-- Rent and staff are monthly. Revenue arrives one visit at a time. How big is the gap?
+<p><img src="screenshots/01-size.png" width="49%" alt="The size screen: Small, Medium or Large"> <img src="screenshots/02-money.png" width="49%" alt="The money step: own money and a bank loan"></p>
 
-Underneath it is an agent-based model: each member is a small simulated person with their own strength, programme, patience and schedule. Queues and crowding are not scripted. They come out of the numbers you set.
+## What you manage
 
-The prices, costs and demand figures are calibrated to Taipei as a realistic starting point. They are not a forecast for any real gym.
+### The P&L
 
-## How the sandbox works
+Tap the counter at the front desk. The tabs are:
 
-1. **Open your first gym.** Pick a size (Small, Medium or Large), check the setup cost, then decide how much of it is your own money and how much is a bank loan. You can start in debt. Or take over a running sample gym and skip the build.
-2. **Watch the doors open.** The camera follows the first member in. Tap anyone, or any piece of equipment, to see what they are doing and why.
-3. **Pick something to try.** A goal appears ("Reach 500 members by the end of month 3", "Don't run out of cash in year 1", "Keep at least 92% of members every month"). They are meant to be reachable with effort. A brand-new gym is not expected to turn a profit in its first month, so none of the goals asks for it. You can skip the goals and explore.
-4. **Run time.** Start the day, speed it up, step through it, or close early to the end of the day, week or month. Gym days run on into months, so you see real monthly rent, payroll and loan payments, not only one day's takings.
-5. **Tap the front desk to open the books.** This is where the money lives:
-   - **Today and Books (P&L):** revenue, variable costs, fixed costs and profit, for today, the month so far, the month projected, and the year.
-   - **Bank:** cash, loan balance and payments.
-   - **Members:** who is likely to quit, and what you can do about it.
-   - **Pricing:** change the price list. New prices apply from the next day.
-   - **Staff:** set the monthly roster cost and see how a thinner roster makes new members leave more often.
-   - **Facility:** floor area and rent per 坪, with the fire-code items that kick in at larger sizes.
-6. **Change a lever and read the result.** Equipment counts, member mix, arrival curve, weather, neighbourhood type (urban, suburban, rural), prices, staff cost and rent all feed the P&L. Every run uses a seed, so you can repeat a day exactly and change one thing.
+- **Today** and **P&L**: revenue, costs and profit for today, the month so far, the projected month and the year.
+- **Bank**: cash, the loan balance and its payments, and equipment bought and sold.
+- **Members**: who is likely to quit, and what you can try (a message, a PT taster, a voucher or a win-back SMS), each with its cost and chance of working.
+- **Pricing**: off-peak and peak prices per minute, the cap per visit, PT packs and the rental price for outside coaches. New prices apply from the next morning.
+- **Staff**: full-time desk staff, part-time desk hours, in-house coaches and cleaners. Each coach carries up to 15 PT clients. Without a cleaner the receptionist cleans when it is quiet; a hired cleaner costs a wage but keeps bars stripped and dumbbells racked, and mess left lying around makes members' visits worse.
+- **Facility**: floor area, rent, and the fire-code items that apply at larger sizes.
 
-![The gym builder: plot size, rent, fit-out cost and layout rules](screenshots/02-builder.jpg)
+Closing early shows a summary. A week lists each day's takings and profit; a month lists the closed days by category.
 
-## Key features
+![Closing a week early: every day's takings and EBITDA](screenshots/06-close-week.png)
 
-- **Gym builder.** Choose a plot size, place equipment, see the rent, fit-out and deposit, and check the layout rules before you open.
-- **Full profit and loss.** Visit fees (off-peak and peak), personal-training packs, floor rentals to outside coaches, coach payouts, rent, utilities, staff, marketing, card fees, tax, and loan interest.
-- **Months, cash and a bank loan.** You can run out of cash. Your own money, the loan size, the rate and the term are all yours to set.
-- **Members and retention.** Members can lapse. A "who's at risk" list shows the people about to quit and lets you try a message, a personal-training taster or a voucher, each with a stated chance of working.
-- **Live price board.** The prices show on the desk board in the gym itself. Tap it to open the price list.
-- **Live monitors and plots.** Occupancy against capacity, rack queue length, zone use and wait times, with earlier runs faded behind today.
-- **Follow anyone.** Tap a member to follow their workout, see their lifts and watch for personal records.
-- **Neighbourhood and weather.** Urban, suburban or rural, with seasons and heatwaves changing who turns up and when.
-- **Reproducible runs.** The same seed and settings give the same result, so one-lever comparisons are honest.
-- **Two languages and sound.** English and Traditional Chinese, with a sound toggle.
+![The P&L at the front desk, today's profit line by line](screenshots/03-pnl.png)
 
-![A gym trading: PR banners, money pops at the door, live monitors and plots](screenshots/03-gym-trading.jpg)
+![The Staff tab: desk staff, part-time hours, coaches and cleaners](screenshots/04-staff.png)
 
-## The books
+### Rearrange
 
-![Front desk books: today's profit and loss, line by line](screenshots/04-books-pnl.png)
+Press **Rearrange** to pause and see the gym as pieces on a grid. Drag a piece to move it, add equipment at its catalogue price, or sell a piece for 40% of its price. The sheet shows the cost and the days the gym will be closed before you apply. Cancel changes nothing.
 
-![Pricing tab: change the per-minute prices, the visit cap and the coach rental price](screenshots/05-pricing.jpg)
+![Rearrange: the cost on top, a selected piece and equipment to add](screenshots/05-rearrange.png)
 
-![Members tab: who is at risk of leaving, and three ways to respond](screenshots/06-members-at-risk.jpg)
+### The people
 
-## Goals
+- Tap a member to follow them and see what they are doing.
+- Tap the receptionist for a line about the gym and its members. When it is quiet, they step out to clean.
+- About a third of members come dressed and go straight to the floor. Some take a washroom break mid-workout.
 
-![Pick a goal to try first, or skip and explore](screenshots/07-pick-a-goal.png)
+![The receptionist with a line about the day](screenshots/07-receptionist.png)
 
-![The goal tracker under the clock, with a hint to tap the desk and open the books](screenshots/08-goal-tracker.png)
+## How the simulation works
 
-## On a phone
+- **Agents.** Each member is a small simulated person with their own strength, programme, patience and schedule. Queues and crowding are not scripted; they come from the numbers you set.
+- **Billing.** Visits are charged per minute, with off-peak and peak prices and a cap per visit. PT packs, coach rentals, rent, staff, utilities, card fees, tax and loan interest all go into the P&L.
+- **Growth.** A new gym starts small and grows month by month towards the area's demand.
+- **Churn.** Members can lapse and return. Prices, crowding, long queues at the door, staffing and retention actions all change how many stay.
+- **Weather.** Rain lowers visits; typhoon days close the gym.
+- **Saved progress.** Each morning is saved in the browser. A reload replays the day from that morning, so changes made later in the day, such as a rearrange, are not kept.
 
-The panels collapse into tabs (Run, Day, Members, Gym, Plots, Books) under the map.
+The prices, costs and demand figures are a realistic starting point for Taipei. They are not a forecast for any real gym.
 
-## Build
+## Running it locally
 
-The game is a single `index.html`. The sources are in `src/` and are joined in file-name order by `build.py`.
+The game is a single `index.html`. The sources are in `src/` and `build.py` joins them in file-name order into `shell.html`. It also embeds a subset of the Chinese pixel font.
 
 ```
-python3 build.py        # needs fonttools: pip install fonttools brotli
+pip install fonttools brotli   # needed by build.py
+python3 build.py               # writes index.html
 ```
 
-Open `index.html` in a browser to play locally.
+Open `index.html` in a browser to play.
+
+Tests:
+
+```
+node --test 'tests/*.test.mjs'
+```
+
+The model tests run in Node. The self-tests open `index.html` in headless Chrome, so run `build.py` first. Set `CHROME` if Chrome is not at its usual macOS path.
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md). The newest changes are at the top.
 
 ## Credits
 
 - Rendering: [three.js](https://threejs.org/) (MIT), loaded from a CDN.
-- Chinese pixel font: [Cubic 11](https://github.com/ACh-K/Cubic-11) (free to use, copy and distribute; see `fonts/Cubic11-OFL.txt`). A subset is embedded in `index.html`.
-- Latin pixel fonts: Silkscreen and Pixelify Sans (SIL Open Font License), loaded from Google Fonts.
+- Chinese pixel font: [Cubic 11](https://github.com/ACh-K/Cubic-11) (free to use, copy and distribute; see `fonts/Cubic11-OFL.txt`).
+- Latin pixel fonts: Silkscreen and Pixelify Sans, and Press Start 2P for digits (SIL Open Font License), from Google Fonts.
 
 ## License
 

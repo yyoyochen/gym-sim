@@ -1,49 +1,48 @@
 # Changelog
 
-All money is in NT dollars and shown as `$`.
+Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). All money is in NT dollars.
 
-## Unreleased: the gym as a business (`pnl-sandbox`)
+## [0.3.0] - 2026-11-16
 
-The day simulation becomes a business you run month after month: money, members, a builder, and a first session that starts by opening your own gym.
+### Added
+- Cleaners on the Staff tab, paid a wage. Mess (a loaded bar to strip, strewn dumbbells) now makes visits worse.
+- A new README with an animated hero shot and screenshots.
 
-### First session
-- The game opens on a three-step builder: pick a size (Small 80 坪, Medium 160 坪, Large 320 坪), see the setup cost, then decide your own money and bank loan. Opening overdrawn is allowed and shown in orange.
-- "Take over a running gym" skips the build and runs the established sample gym.
-- A built gym opens as a new business: about 145 members who signed up before opening, growing month by month (the researched new-gym ramp: 15% of the area's demand at opening, most of it within about 6 months).
-- When the doors open, the camera follows the first member in, then hands control to you.
-- Pick a starting goal, or skip: reach 500 members by the end of month 3, don't run out of cash in year 1, or keep at least 92% of members every month. Progress shows under the clock and in the books.
-- The intro shows once; "Show intro again" and "Change goal" live under More.
+### Changed
+- With no cleaner, the receptionist cleans when it's quiet and paces by reception.
+- Closing a week early pops each day's takings; closing a month pops the month's once. Pops glow only for an all-time best.
 
-### The books at the front desk
-- Tap the desk (or 📒 Books on phones) to open the books: Today, Books (P&L), Bank, Members, Pricing, Staff and Facility.
-- A full itemised profit and loss for today, month to date, the projected month and the year, with a plain line on top: "The gym made / lost $X today".
-- Below EBITDA: depreciation, loan interest, tax and net profit.
-- Bank: your own money, a bank loan with monthly instalments, and cash day by day.
-- Close the day, the week or the month early; the business carries into the next month.
-- Prices are published at the desk and apply the next morning.
+### Fixed
+- The desk hint no longer sits under the receptionist's speech bubble.
 
-### Members and demand
-- A member base that persists across the month: joins, lapses, returns, member cards and PT packs.
-- Prices move visits, joins and evening demand; a long door queue turns people away, and crowded visits raise churn.
-- Staffing affects retention; the rental policy for outside coaches affects PT.
-- Retention actions for members drifting away: a check-in message, a PT taster, a voucher, or a win-back SMS, each with its chance, cost and effect.
-- Typhoon days close the gym; rain dampens visits.
+## [0.2.0] - 2026-11-15
 
-### Gym builder
-- Build from a plot size: walls, floor, door, desk, washrooms, lights and structural columns follow the plot.
-- Researched equipment and fit-out prices, a three-month deposit and a rent-free first month; each item shows its unit price.
-- Equipment fits its zones along the walls, and you pay only for what is placed.
+### Added
+- Run the gym as a business: open a Small, Medium or Large gym with your own money and a bank loan, then trade month after month.
+- The P&L at the front desk: today, the month and the year, plus bank, members, pricing, staff and facility.
+- Members who join, lapse and return. Prices, crowding, staffing and retention actions all change how many stay.
+- Gyms laid out by rules, and Rearrange to move, buy or sell equipment; the gym closes while the work is done.
+- A staff roster: desk staff and coaches. More coaches sell more PT.
+- Starting goals, a receptionist who talks, and progress saved in the browser.
 
-### Look and feel
-- The price board sits on the reception desk; men's and women's washrooms with M and W plaques.
-- Hovering outlines equipment in yellow with an expand icon; the person you follow gets an animated floor marker.
-- Money pops when members pay on the way out; a bigger one for a PT sale.
-- Figures use a clearer pixel font; rotate, zoom, language and sound sit at the top right.
-- Seed and Copy results moved under More; the Go button says "Start the day" before opening.
+### Changed
+- The game opens on the size screen, and the gym opens on today's date.
+- Members don't all use the changing room; some take a washroom break.
+- Bigger text, clearer digits, see-through walls and posts near the camera, and one grid in Build and Rearrange.
+- "Books" are now called the P&L.
 
-### Fixes
-- A member who reaches the stop after the last bus goes home another way.
-- Many smaller fixes found by self-tests, scripted playtests and reviews.
+### Removed
+- The sample gym ("Take over a running gym") for now, the seed, Copy results and several developer sliders.
 
-### Tests
-- Node tests for the pure model (P&L, demand, month, builder), and 172 headless self-tests run in Chrome.
+### Fixed
+- Flicker and stray specks in Build view, walls popping up when adding equipment, and misaligned plots on phones.
+
+## [0.1.0] - 2026-11-13
+
+### Added
+- First release: a pixel-art isometric strength gym, simulated person by person over a day, with visit fees, PT packs, outside-coach rentals and money pops.
+- English and Traditional Chinese.
+
+[0.3.0]: https://github.com/yyoyochen/gym-sim/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/yyoyochen/gym-sim/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/yyoyochen/gym-sim/releases/tag/v0.1.0

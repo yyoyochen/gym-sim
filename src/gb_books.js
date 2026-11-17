@@ -8,13 +8,14 @@ const nt$ = (v) => money(v);   /* Plan 8b: $ with every digit */
 const ntn = (v) => `<span data-v="${Math.round(v || 0)}">${money(v || 0)}</span>`;   /* every digit; the figure also rides along for checks */
 function speedToPos(v) { return Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)); }
 function syncSpeed() { const w = W.w_speed; if (w) { w.inp.value = speedToPos(S.speed); w.out.textContent = w.fmt(S.speed); } }
-function booksSeen() { try { return localStorage.getItem('gymsim.booksSeen') === '1'; } catch (e) { return false; } }
+let BOOKS_SEEN = false;   /* owner 2026-11-15: the desk hint stays until the player opens the P&L in this visit; nothing is remembered between visits */
+function booksSeen() { return BOOKS_SEEN; }
 function openBooks(tab) {
   if (!A || (typeof BUILD !== 'undefined' && BUILD.on)) return;
   BOOKS.retainMsg = null;   /* the last retention answer is shown until the books close */   /* not over the builder: the books can move the day on */
   if (!BOOKS.open) { BOOKS.prevSpeed = S.speed; S.speed = 1; syncSpeed(); }
   BOOKS.open = true; if (tab) BOOKS.tab = tab;
-  try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}
+  BOOKS_SEEN = true;
   const h = document.getElementById('booksHint'); if (h) h.style.display = 'none';
   clearFollow(); renderBooks();
 }
@@ -28,9 +29,9 @@ function booksNextDay() { if (typeof closing !== 'undefined' && closing) return;
 // the binder frame: header, tab strip, body; the body of the open tab is filled by its renderer
 function renderBooks() {
   const b = booksEl(); if (!b) return; b.hidden = !BOOKS.open; if (!BOOKS.open) return;
-  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · Books', '櫃檯 · 帳本')}</h2><div class="bks" id="bkWhen"></div></div>
-    <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the books', '關閉帳本')}">✕</button></header>
-    <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'Books (P&L)' : t)}</button>`).join('')}</nav>
+  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · P&L', '櫃檯 · 損益表')}</h2><div class="bks" id="bkWhen"></div></div>
+    <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the P&L', '關閉損益表')}">✕</button></header>
+    <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'P&L' : t)}</button>`).join('')}</nav>
     <div class="bkbody" id="bkBody"></div>`;
   b.querySelector('#bkClose').addEventListener('click', closeBooks);
   b.querySelector('#bkNext').addEventListener('click', booksNextDay);
@@ -54,11 +55,41 @@ const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
 function liveLineText() { const p = A && A.pnl; return tx(`Today ${nt$(p && p.takings)} · ${(A && A.checkins) || 0} check-ins`, `今日 ${nt$(p && p.takings)} · 進場 ${(A && A.checkins) || 0} 人`); }
 function updateLiveLine() { const out = !!(BIZ && BIZ.cashOutAt); setText('liveLine', liveLineText() + (out ? tx(' · cash ran out', ' · 現金用完') : '')); const ll = document.getElementById('liveLine'); if (ll) ll.classList.toggle('out', out); }
+// owner 2026-11-15: the receptionist; a tap gets a line about the gym and what they noticed about its people
+const RECEP = { last: '', until: 0 };
+function receptionistLines() {
+  if (!A) return [tx('Morning! Doors open soon.', '早安！快開門了。')];
+  const L = [], q = STATIONS.reduce((b, s) => (s.queue.length > (b ? b.queue.length : 0) ? s : b), null), stray = STATIONS.reduce((n, s) => n + s.strayDB, 0), regs = A.members.filter(a => a.visible && a.rec);
+  L.push(A.inside > 30 ? tx(`${A.inside} people in right now. It's packed.`, `現在館內 ${A.inside} 人，好擠。`) : A.inside < 5 ? tx(`Only ${A.inside} in right now. A quiet spell.`, `現在館內只有 ${A.inside} 人，很安靜。`) : tx(`${A.inside} in right now, a steady crowd.`, `現在館內 ${A.inside} 人，人潮穩定。`));
+  L.push(tx(`${A.checkins || 0} checked in so far today.`, `今天到目前為止有 ${A.checkins || 0} 人進場。`));
+  if (q && q.queue.length) L.push(tx(`The ${stationName(q).toLowerCase()} has ${q.queue.length} waiting. People keep asking when it frees up.`, `${stationName(q)}有 ${q.queue.length} 人在等，大家一直問什麼時候輪到。`));
+  if (stray) L.push(tx(`${stray} dumbbell${stray === 1 ? '' : 's'} left lying around. I'll tell the cleaner.`, `有 ${stray} 個啞鈴沒歸位，我會跟清潔人員說。`));
+  if (A.prs && A.prs.length) L.push(tx(`${A.prs.length} PR${A.prs.length === 1 ? '' : 's'} today. You could hear one from here.`, `今天有 ${A.prs.length} 個人破個人紀錄，在這裡都聽得到。`));
+  if (M) L.push(tx(`This month ${M.joinedTotal || 0} signed up and ${M.lapsedTotal || 0} stopped coming.`, `這個月有 ${M.joinedTotal || 0} 人入會，${M.lapsedTotal || 0} 人沒再來。`));
+  if (S.weather === 'Rain') L.push(tx('Rain keeps the casual crowd at home.', '下雨天，隨興來的人就少了。'));
+  if (S.weather === 'Heatwave') L.push(tx('Everyone asks if the air con is on full.', '每個人都在問冷氣是不是開到最強。'));
+  L.push(tx('Weekday evenings, six to ten, are the rush.', '平日晚上六點到十點是尖峰。'));
+  L.push(tx(`${S.coaches} coach${S.coaches === 1 ? '' : 'es'} on the roster; ${M ? M.pool.filter(m => m.pt && !m.outside).length : 0} members train with one.`, `目前有 ${S.coaches} 位駐館教練，${M ? M.pool.filter(m => m.pt && !m.outside).length : 0} 位會員有上教練課。`));
+  if (regs.length) { const a = regs[Math.floor(Math.random() * regs.length)], n = a.rec.visits.length;
+    L.push(n >= 8 ? tx(`I see ${trName(a.name)} almost every day.`, `${trName(a.name)}幾乎天天來。`) : a.rec.isNew ? tx(`${trName(a.name)} is new; still finding their way around.`, `${trName(a.name)}是新會員，還在熟悉環境。`) : tx(`${trName(a.name)} drops in a few times a month.`, `${trName(a.name)}一個月來幾次。`)); }
+  L.push(tx('Someone asked again whether we sell protein shakes.', '又有人問我們有沒有賣高蛋白。'), tx('A water bottle was left on the bench. It is in the lost and found.', '有人把水壺忘在椅子上，放在失物招領了。'));
+  return L;
+}
+function receptionistSay() {
+  let box = document.getElementById('recepSay'); if (!box) { box = el('div', { id: 'recepSay' }, '<b></b><p></p>'); document.body.appendChild(box); }
+  const L = receptionistLines(), pool = L.filter(x => x !== RECEP.last), line = (pool.length ? pool : L)[Math.floor(Math.random() * (pool.length || L.length))];
+  RECEP.last = line; box.querySelector('b').textContent = tx('Receptionist', '櫃檯人員'); box.querySelector('p').textContent = line; box.hidden = false; RECEP.until = performance.now() + 8000;
+}
+function updateRecepSay(toScreen) {
+  const box = document.getElementById('recepSay'); if (!box || box.hidden) return;
+  if (performance.now() > RECEP.until || BOOKS.open || (typeof BUILD !== 'undefined' && BUILD.on) || !A || !A.desk) { box.hidden = true; return; }
+  const p = toScreen({ x: A.desk.pos.x, y: 2.2, z: A.desk.pos.z }); box.style.left = Math.round(p[0]) + 'px'; box.style.top = Math.round(p[1]) + 'px';
+}
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
-  const gc = document.getElementById('goalCard'), show = !!A && !BOOKS.open && !booksSeen() && !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
+  const gc = document.getElementById('goalCard'), rs = document.getElementById('recepSay'), show = !!A && !BOOKS.open && !booksSeen() && !(rs && !rs.hidden) &&   /* not under the receptionist's bubble */ !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
   const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
-  const t = tx('Tap the desk to open the books', '點櫃檯打開帳本'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
+  const t = tx('Tap the desk to open the P&L', '點櫃檯打開損益表'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
 }
 // ---------------------------------------------------------------- shared row helpers
 const pctOf = (v, net) => net > 0.5 ? (100 * v / net).toFixed(1) + '%' : '–';
@@ -78,7 +109,7 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('PT packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
       <tr><td>${tx('Floor rentals', '場地租借')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
       <tr class="sum"><td>${tx('In the till', '收銀合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note">${tx('The till shows cash. Whether today made money is in Books.', '收銀機只顯示現金。今天有沒有賺錢，要看帳本。')}</p>`;
+      <p class="note">${tx('The till shows cash. Whether today made money is in the P&L tab.', '收銀機只顯示現金。今天有沒有賺錢，要看「損益表」分頁。')}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>
@@ -86,11 +117,11 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('Turned away at the door', '門口被擋下')}</td><td class="n">${A.balked || 0}</td></tr>
       <tr><td>${tx('Bad visits (long waits)', '不愉快的到訪（久候）')}</td><td class="n">${A.bad || 0}</td></tr></table>`
       + `<p class="note">${tx(`${A.checkins || 0} checked in · ${A.paidVisits || 0} have paid so far. Everyone pays by the minute on the way out, so the two meet at closing.`, `${A.checkins || 0} 人進場 · 目前 ${A.paidVisits || 0} 人已付款。每個人離場時按分鐘付費，打烊時兩個數字會相同。`)}</p>`;
-    const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
+    const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'rearrange' ? (() => { const left = M.cal.slice(M.dayI + 1).filter(d => d.rearrange).length + (BIZ.closedLeft || 0); return tx(`Closed today for rearranging${left ? `: ${left} more day${left === 1 ? '' : 's'} after today` : '; it reopens tomorrow with the new layout'}. No sales, the fixed costs still run.`, `今日重新擺設休館${left ? `：之後還有 ${left} 天` : '，明天以新擺設開門'}。沒有營收，固定成本照付。`); })() : A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
     const stamp = A.done ? `<div class="stamp">${tx('Day closed', '本日結帳')} · EBITDA ${nt$(p.ebitda)}</div>` : '';
-    const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
+    const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? closedSummary(BOOKS.closed) + `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
-    return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the books keep every one of them.', '這些天會在背景跑完，帳本照樣記下每一天。')}</p>`);
+    return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the P&L records every one of them.', '這些天會在背景跑完，損益表照樣記下每一天。')}</p>`);
   },
   wire(body) { body.querySelectorAll('button[data-close]').forEach(b => b.addEventListener('click', () => closeEarly(b.dataset.close))); }
 };
@@ -102,14 +133,36 @@ function periodSeg(per) { const on = archOf(per) ? 'year' : per; return `<div cl
 // the year so far (A5): every closed month as booked, the current month projected, and year-to-date totals; tap a closed month for its P&L
 const cashM = (v) => moneyK(v);   /* the year view's cash column stays short so five columns fit a phone */
 function yearHtml() {
-  const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 };
-  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, c, m.interest).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
+  const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 }, share = (days, y, name) => days / daysInMonth(y, name);   /* review I2: a short first month takes its share of depreciation */
+  BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: (m.depYear != null ? m.depYear : c.depYear) * share(m.days, m.year, m.name) }, m.interest + (m.loss || 0)).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
     rows.push(`<tr data-k="yr" data-arch="${i}" style="cursor:pointer"><td style="color:var(--accent)">${monthLabel(m.name, m.year)} ›</td><td class="n">${ntn(m.pnl.net)}</td><td class="n">${ntn(m.pnl.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(m.cashEnd)}</td></tr>`); });
-  const pm = projectMonth().total, np = belowEbitda(pm.ebitda, c, BIZ.balance * BIZ.rate / 1200).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
+  const pm = projectMonth().total, f = share(M.cal.length, BIZ.year, M.cfg.month), np = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * f }, BIZ.balance * BIZ.rate / 1200 * f + (BIZ.mLoss || 0)).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
   rows.push(`<tr data-k="yr" data-cur="1"><td>${monthLabel(M.cfg.month, BIZ.year)} <span class="tag">${tx('projected', '預估')}</span></td><td class="n">${ntn(pm.net)}</td><td class="n">${ntn(pm.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(liveCash())}</td></tr>`);
   const head = `<tr class="grp0"><td>${tx('Month', '月份')}</td><td class="n">${tx('Net sales', '銷售淨額')}</td><td class="n">EBITDA</td><td class="n">${tx('Net profit', '淨利')}</td><td class="n">${tx('Cash', '現金')}</td></tr>`;
   const total = `<tr class="sum"><td>${tx('So far', '累計')}</td><td class="n">${ntn(tot.net)}</td><td class="n" data-k="yrEbitda">${ntn(tot.ebitda)}</td><td class="n">${ntn(tot.np)}</td><td class="n"></td></tr>`;
   return bkSection(tx('The business so far', '開業至今'), `<div style="overflow-x:auto"><table class="yr">${head}${rows.join('')}${total}</table></div><p class="note">${tx('Closed months as booked (loan interest and tax paid at month end); tap one for its full P&L. Cash is the bank balance at each month end, and now.', '已結帳月份依實際入帳（貸款利息與所得稅在月底支付）；點一個月份看完整損益表。現金為每月底與目前的銀行餘額。')}</p>`, '$');
+}
+// owner 2026-11-15: what a close early ran: a week lists every day; a month lists the P&L by category over the closed days
+function closedSummary(cl) {
+  if (!cl.list || !cl.list.length || cl.kind === 'day') return '';
+  const n = (v) => `<td class="n">${nt$(v)}</td>`;
+  if (cl.kind === 'week') {
+    const rows = cl.list.map(d => `<tr class="cday"><td>${tr(d.dow)} ${d.date} ${tr(d.month)}</td>${n(d.pnl.takings)}${n(d.pnl.ebitda)}</tr>`).join('');
+    return bkSection(tx('The week, day by day', '本週逐日'), `<table class="closed"><tr class="grp0"><td></td><td class="n">${tx('Takings', '收入')}</td><td class="n">EBITDA</td></tr>${rows}<tr class="sum"><td>${tx('Total', '合計')}</td>${n(cl.takings)}${n(cl.ebitda)}</tr></table>`);
+  }
+  const p = {}; for (const d of cl.list) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') p[k] = (p[k] || 0) + d.pnl[k];
+  const it = itemiseFixed(p, pnlCosts()), row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td>${n(v)}</tr>`;
+  const body = `<tr class="grp0"><td colspan="2">${tx('Revenue', '營收')}</td></tr>`
+    + row(tx('Visit fees, off-peak', '入場費（離峰）'), p.entryOff || 0) + row(tx('Visit fees, peak', '入場費（尖峰）'), p.entryPeak || 0) + row(tx('Member cards', '會員卡'), p.cards || 0)
+    + row(tx('PT earned', '教練課收入'), p.ptEarned || 0) + row(tx('Floor rentals', '場地租借'), p.rentals || 0) + row(tx('Add-ons (estimated)', '其他收入（估計）'), p.addOns || 0)
+    + row(tx('Gross revenue', '總營收'), p.gross || 0, 'sum') + row(tx('VAT', '營業稅'), -(p.vat || 0))
+    + `<tr class="grp0"><td colspan="2">${tx('Costs', '成本')}</td></tr>`
+    + row(tx('Coach payout', '教練分潤'), -(p.coach || 0)) + row(tx('Marketing', '行銷'), -(p.mkt || 0)) + row(tx('Card and e-payment fees', '刷卡與電子支付手續費'), -(p.card || 0))
+    + (p.retain ? row(tx('Retention actions', '留客行動'), -p.retain) : '') + (p.rearrange ? row(tx('Rearranging (movers)', '重新擺設（搬運）'), -p.rearrange) : '')
+    + row(tx('Rent and management', '租金與管理費'), -(it.premises.rent + it.premises.mgmt)) + row(tx('Electricity and water', '水電'), -(it.premises.elec + it.premises.water))
+    + row(tx('Staff', '人事'), -it.totals.staff) + row(tx('Floor upkeep and compliance', '場地維護與法規'), -(it.totals.floor + it.totals.compliance))
+    + row('EBITDA', p.ebitda || 0, 'sum');
+  return bkSection(tx(`The ${cl.days} closed days by category`, `結帳的 ${cl.days} 天，分類合計`), `<table class="closed">${body}</table>`);
 }
 function booksPeriod(period) {
   const arch = archOf(period); if (arch) return { ...arch.pnl };
@@ -123,8 +176,8 @@ function booksPeriod(period) {
   return t;
 }
 function booksDep(period) {
-  const c = pnlCosts(), month = c.depYear / 12, days = M ? M.cal.length : 30;
-  const dep = archOf(period) ? month : period === 'today' ? month / days : period === 'mtd' ? month / days * ((M ? M.dayI : 0) + 1) : month;
+  const c = pnlCosts(), arch0 = archOf(period), month = (arch0 && arch0.depYear != null ? arch0.depYear : c.depYear) / 12, full = M ? daysInMonth(BIZ ? BIZ.year : 2027, M.cfg.month) : 30, days = M ? M.cal.length : 30, arch = archOf(period);   /* by the day of the calendar month: a short first month gets its share */
+  const dep = arch ? month * arch.days / daysInMonth(arch.year, arch.name) : period === 'today' ? month / full : period === 'mtd' ? month / full * ((M ? M.dayI : 0) + 1) : month * days / full;
   return { dep, equipment: dep * DEP_SPLIT.equipment, fitout: dep * DEP_SPLIT.fitout };
 }
 BOOK_RENDER.Books = {
@@ -132,8 +185,9 @@ BOOK_RENDER.Books = {
     if (BOOKS.period === 'year' && BIZ) return periodSeg('year') + yearHtml();
     const per = BOOKS.period, arch = archOf(per), p = booksPeriod(per), c = pnlCosts(), net = p.net, it = itemiseFixed(p, c), d = booksDep(per);
     // loan interest is booked when the month closes: the month view shows this month's, today and month-to-date show none yet (A2)
-    const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 : 0;
-    const ebit = p.ebitda - d.dep, tax = Math.max(0, ebit - interest) * c.tax, ptCash = (p.deferredChange || 0) + (p.ptEarned || 0);
+    const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 * M.cal.length / daysInMonth(BIZ.year, M.cfg.month) : 0;   /* a short first month pays its share */
+    const loss = arch ? (arch.loss || 0) : (per === 'mtd' || per === 'month') && BIZ ? (BIZ.mLoss || 0) : 0;   /* Plan 12: a sale below its book value */
+    const ebit = p.ebitda - d.dep, tax = Math.max(0, ebit - interest - loss) * c.tax, ptCash = (p.deferredChange || 0) + (p.ptEarned || 0);
     const bp = (lo, hi) => `${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(0)}%`;
     const occ = it.premises.rent + it.premises.mgmt;
     const seg = periodSeg(per) + (arch ? `<p class="note" style="color:var(--accent)">${monthLabel(arch.name, arch.year)} · ${tx('closed', '已結帳')}</p>` : '');
@@ -153,6 +207,7 @@ BOOK_RENDER.Books = {
       + bkGroup(tx('Variable costs', '變動成本'))
       + bkRow('coach', tx('Coach payout', '教練分潤'), -p.coach, net, '', tx(`The gym keeps ${c.gymShare}% of PT; Taipei gyms keep 40–60%`, `健身房保留教練課 ${c.gymShare}%；台北常見 40–60%`))
       + bkRow('mkt', tx('Marketing', '行銷'), -p.mkt, net)
+      + (p.rearrange ? bkRow('rearrange', tx('Rearranging (movers)', '重新擺設（搬運）'), -p.rearrange, net) : '')   /* Plan 12 */
       + (p.retain ? bkRow('retain', tx('Retention actions', '留客行動'), -p.retain, net, '', tx('PT tasters (coach pay) and win-back SMS', '體驗課（教練費）與回流簡訊')) : '')
       + bkRow('card', tx('Card and e-payment fees', '刷卡與電子支付手續費'), -p.card, net)
       + bkRow('contribution', tx('Contribution', '邊際貢獻'), p.contribution, net, 'sum');
@@ -175,8 +230,9 @@ BOOK_RENDER.Books = {
       + bkRow('depFit', tx('Depreciation, fit-out', '折舊（裝修）'), -d.fitout, net)
       + bkRow('ebit', 'EBIT', ebit, net)
       + (per === 'month' || arch ? bkRow('interest', tx('Loan interest', '貸款利息'), -interest, net) : '')
+      + (loss ? bkRow('loss', tx('Loss on equipment sold', '出售器材損失'), -loss, net) : '')
       + bkRow('tax', tx('Income tax (20% of a profit)', '營利事業所得稅（獲利的 20%）'), -tax, net)
-      + bkRow('netProfit', tx('Net profit', '稅後淨利'), ebit - interest - tax, net, 'sum');
+      + bkRow('netProfit', tx('Net profit', '稅後淨利'), ebit - interest - loss - tax, net, 'sum');
     let extra = '';
     if (per === 'month') {
       const yrs = belowEbitda(p.ebitda, c).paybackYears, band = 0.1 * (p.restNet || 0), perPing = p.gross / c.area;
@@ -264,7 +320,7 @@ BOOK_RENDER.Pricing = {
     const worse = pv.heavyMonth > nowHeavy && pv.heavyMonth > BENCH.bigBoxMonthly;
     const warn = `<p class="note${worse ? ' warn' : ''}"${worse ? ' data-k="heavyWarn"' : ''}>${tx(`A heavy user (12 visits of 90 min) would pay ${nt$(pv.heavyMonth)} a month (now ${nt$(nowHeavy)}); a big-box membership is about ${nt$(BENCH.bigBoxMonthly)}.`, `常客（每月 12 次、每次 90 分）每月要付 ${nt$(pv.heavyMonth)}（目前 ${nt$(nowHeavy)}）；大型連鎖月費約 ${nt$(BENCH.bigBoxMonthly)}。`)}${worse ? tx(' Your heaviest users may switch.', '最常來的會員可能會轉去連鎖健身房。') : ''}</p>`;
     const preview = `<table><tr><td>${tx('Visits', '到訪人次')}</td><td class="n">${pc(pv.visits)}</td></tr><tr><td>${tx('Fee per visit (70 min)', '每次入場費（70 分）')}</td><td class="n">${pc(pv.feePerVisit)}</td></tr>
-      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Parameter-book arithmetic for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
+      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Worked out from the model\'s assumptions for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
     const pub = PUBLISH ? `<p class="note" style="color:var(--accent)" data-k="published">${tx('Published: the new price list applies from tomorrow morning.', '已公告：新價目從明天早上開始。')}</p>` : '';
     const nextMonth = (st.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside) || S.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside)) ? `<p class="note warn" data-k="nextMonthNote">${tx('Who may rent the floor changes from next month (Setup or New month).', '外部教練能否租場地，從下個月起生效（設定或新的一個月）。')}</p>` : '';
     const packs = `<table>${PT_PACKS.map(pk => `<tr><td>${tx(`${pk.n} sessions`, `${pk.n} 堂`)}${pk.parts.length > 1 ? `<span class="bench" style="color:var(--muted)">${tx(`or ${pk.parts.length} instalments`, `可分 ${pk.parts.length} 期`)}</span>` : ''}</td><td class="n">${nt$(pk.price)}</td></tr>`).join('')}</table>`;
@@ -284,8 +340,11 @@ BOOK_RENDER.Pricing = {
 function bkSliderGroup(body, title, note) { const g = el('section', { class: 'grp' }); g.appendChild(el('h2', {}, `<span>${title}</span>${note ? `<span class="pend">${note}</span>` : ''}`)); body.appendChild(g); return g; }
 BOOK_RENDER.Staff = {
   build(body) {
-    const g = bkSliderGroup(body, tx('Roster cost', '人事成本'), tx('applies at once', '立即生效'));
-    slider(g, 'staff', 'Staff cost per month', 100000, 260000, 1000, v => money(v));
+    const g = bkSliderGroup(body, tx('Roster', '人力'), tx('applies at once', '立即生效'));   /* owner 2026-11-15: hire or let people go */
+    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 0, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v], ['cleaners', tx('Cleaners (otherwise the receptionist cleans)', '清潔人員（沒有時由櫃檯人員打掃）'), 0, 3, 1, (v) => v]];
+    const t = el('table', {}, R.map(([k, lab]) => `<tr><td>${lab}</td><td><div class="step"><button data-roster="${k}" data-d="-1" aria-label="−">−</button><b data-rv="${k}"></b><button data-roster="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`).join('')); g.appendChild(t);
+    t.querySelectorAll('button[data-roster]').forEach(b => b.addEventListener('click', () => { const [k, , lo, hi, st] = R.find(r => r[0] === b.dataset.roster); S[k] = clamp(S[k] + st * +b.dataset.d, lo, hi); S.staff = rosterCost(S); if (A) A.pnl = computePnl(); updateBooks(true); }));
+    g.dataset.fmt = '1'; BOOKS.rosterFmt = R;
     g.appendChild(el('div', { id: 'bkStaffLines' }));
     const h = bkSliderGroup(body, tx('Opening hours', '營業時間'));
     h.appendChild(el('table', {}, `<tr><td>${tx('Mon–Fri', '週一至五')}</td><td class="n">07:00–24:00</td></tr><tr><td>${tx('Sat–Sun', '週六日')}</td><td class="n">08:00–24:00</td></tr>`));
@@ -293,9 +352,10 @@ BOOK_RENDER.Staff = {
   },
   update() {
     const box = document.getElementById('bkStaffLines'); if (!box) return;
-    const it = itemiseFixed({ staff: S.staff, occupancy: 0, otherOpex: 0, elec: 0 }).staff, lab = { manager: tx('Store manager', '店長'), deskFT: tx('Desk staff, full-time (2)', '櫃檯正職（2 人）'), deskPT: tx('Desk staff, part-time (about 40 h a week)', '櫃檯兼職（每週約 40 小時）'), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
-    const h = `<table>${Object.keys(it).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
-      <p class="note">${tx('Coaches are paid from PT, not from this roster.', '教練由教練課分潤支付，不在此人事成本內。')}</p>
+    for (const [k, , , , , fmt] of BOOKS.rosterFmt || []) { const b = document.querySelector(`#bkBody [data-rv="${k}"]`); if (b) b.textContent = fmt(S[k]); }
+    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), cleaners: tx(`Cleaners (${S.cleaners})`, `清潔人員（${S.cleaners} 人）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
+    const h = `<table>${Object.keys(it).filter(k => k !== 'cleaners' || S.cleaners).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
+      <p class="note">${tx(`Coaches are paid ${100 - pnlCosts().gymShare}% of the PT they deliver, not from this roster. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients; more coaches sell more PT over the coming months.`, `教練由教練課分潤（${100 - pnlCosts().gymShare}%）支付，不在此人事成本內。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員；教練越多，之後幾個月賣出的教練課越多。`)}</p>
       <p class="note${staffAdj(S.staff) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff), mx = more(DEMAND_RESP.staffLean);   /* review I4: the month-0 churn change the model actually applies */
         return tx(`At this roster, members in their first month leave ${x}% more often than with the full roster (${money(DEMAND_RESP.staffBase)}); the most is ${mx}% more, at ${money(DEMAND_RESP.staffLean)}.`, `以目前人力，第一個月的新會員流失比完整人力（${money(DEMAND_RESP.staffBase)}）多 ${x}%；最多多 ${mx}%（${money(DEMAND_RESP.staffLean)}）。`); })()}</p>`;
     if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }
@@ -334,7 +394,7 @@ BOOK_RENDER.Bank = {
       ${BUILT ? `<tr><td>${tx('Fit-out (floor, air con, lights, washrooms, permit)', '裝修（地板、空調、燈具、浴廁、許可）')}</td><td class="n" data-k="fitOut">${ntn(-BUILT.fitOut)}</td></tr>
       <tr><td>${tx('Equipment', '器材')}</td><td class="n" data-k="equip">${ntn(-BUILT.equipment)}</td></tr>
       <tr><td>${tx('Rent deposit (refundable)', '租金押金（可退）')}</td><td class="n" data-k="deposit">${ntn(-BIZ.deposit)}</td></tr>` : `<tr><td>${tx('Build and equipment (capex)', '裝修與器材（資本支出）')}</td><td class="n">${ntn(-COSTS.capex)}</td></tr>`}
-      <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n">${ntn(BIZ.own + BIZ.loan - COSTS.capex - (BIZ.deposit || 0))}</td></tr></table>
+      <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n" data-k="openCash">${ntn(BIZ.openCash)}</td></tr></table>${BIZ.eqBought || BIZ.eqSold ? `<table><tr><td>${tx('Equipment bought since opening', '開幕後購買器材')}</td><td class="n" data-k="eqBought">${ntn(-(BIZ.eqBought || 0))}</td></tr><tr><td>${tx('Equipment sold since opening', '開幕後出售器材')}</td><td class="n" data-k="eqSold">${ntn(BIZ.eqSold || 0)}</td></tr></table>` : ''}
       <div style="display:flex;height:10px;margin:6px 0 2px;border:1px solid var(--edge)"><div style="flex:${BIZ.own};background:var(--accent)"></div><div style="flex:${BIZ.loan};background:var(--hi)"></div></div>
       <p class="note">${tx('Yellow is yours to lose; blue must be repaid whatever happens.', '黃色是你自己的錢，虧了就沒了；藍色不論如何都要還。')}</p>`;
     const loan = `<table><tr><td>${tx('Still owed to the bank', '尚欠銀行')}</td><td class="n" data-k="loanBal">${ntn(BIZ.balance)}</td></tr>
@@ -353,7 +413,7 @@ function priceBoardKey() { return [S.priceOff, S.pricePeak, S.priceCap, M ? M.cf
 function drawPriceBoard(force) {
   const key = priceBoardKey(); if (!force && key === PRICEBOARD.drawn) return; PRICEBOARD.drawn = key;
   const g = PRICEBOARD.canvas.getContext('2d'), W = 256, H = 160, f2 = (v) => v.toFixed(2), rent = M ? M.cfg.rentP : S.rentP;
-  const put = (t, x, y, px, col, bold, maxW) => { g.fillStyle = col; let k = px; do { g.font = (bold ? '700 ' : '') + k + 'px Silkscreen, monospace'; } while (g.measureText(t).width > maxW && --k > 6); g.fillText(t, x, y); };   /* shrink to fit its column */
+  const put = (t, x, y, px, col, bold, maxW) => { g.fillStyle = col; let k = px; do { g.font = (bold ? '700 ' : '') + k + 'px Digits, Silkscreen, monospace'; } while (g.measureText(t).width > maxW && --k > 6); g.fillText(t, x, y); };   /* shrink to fit its column */
   g.fillStyle = '#10131c'; g.fillRect(0, 0, W, H); g.fillStyle = '#dfe03a'; g.fillRect(0, 0, W, 26);
   g.textBaseline = 'middle'; put('PRICE LIST', 8, 14, 16, '#10131c', true, 150); g.textAlign = 'right'; put('價目表', W - 8, 14, 16, '#10131c', true, 80); g.textAlign = 'left';
   const row = (x, y, label, price) => { put(label, x, y, 10, '#959bab', false, 116); put(price, x, y + 17, 18, '#dfe03a', true, 116); };

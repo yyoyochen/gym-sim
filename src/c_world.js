@@ -31,7 +31,9 @@ const HZ = 10, WALL_H = 3.8, CUT_H = 1.2;
 const HALL = { x0: -15, x1: 15, zb: -HZ, zf: HZ, w: null, d: null };   // the sample hall, 30 x 20 m (w, d: cells of a built hall)
 const hallShift = () => ({ R: HALL.x1 - 15, Lf: HALL.x0 + 15, Bk: HALL.zb + HZ });
 const DOOR = { x: 12, z: HZ, w: 1.6 };
-const CHG = { x0: 11, x1: 15, z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };   // two washrooms with changing space, men's north, women's south
+const CHG = { x0: 11, x1: 15, z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };
+const CHG_Z = { z0: -2.2, z1: 5.2, mid: 1.6, doorM: 0.2, doorF: 3.0, door: 1.6 };   /* the sample's washroom depths; a built hall shifts them all by CHG_DZ */
+let CHG_DZ = 0;   // two washrooms with changing space, men's north, women's south
 const PRICEBOARD_AT = { x: 13.33, y: 1.124, z: 8.12 };   // centre of the price card lying flat on the counter by the customers (Plan 8b, owner); rotate or zoom to read it, tap it for the price list
 const DESK_C = { x: 13.6, z: 7.4 }, DESK_MON = { x: 13.5, y: 1.54, z: 7.0 }, DESK_STAFF_POS = { x: 14.35, z: 7.4 };
 const DOOR_OUT = { x: 12, z: HZ + 0.9 }, DOOR_IN = { x: 12, z: HZ - 0.9 }, DESK_PT = { x: 12.55, z: 7.35 }, CHG_DOOR = { x: 10.5, z: 0.2 };
@@ -46,33 +48,21 @@ function hallAnchors() {   // fixture positions for the current HALL
   DOOR.x = R + 12; Object.assign(CHG, { x0: R + 11, x1: HALL.x1 }); PRICEBOARD_AT.x = R + 13.33;
   DESK_C.x = R + 13.6; DESK_MON.x = R + 13.5; DESK_STAFF_POS.x = R + 14.35;
   DOOR_OUT.x = DOOR_IN.x = DOOR.x; DESK_PT.x = R + 12.55; CHG_DOOR.x = CHG.x0 - 0.5;
+  CHG_DZ = HALL.w == null ? 0 : Math.ceil((HALL.zb + 0.15 - CHG_Z.z0) * 2) / 2;   /* Plan 11: a built hall puts the washrooms in the back corner of the right wall, shifted in whole 0.5 m steps (rounded toward the front) so they sit on the walking grid as in the sample, clear of the back wall */
+  for (const k in CHG_Z) CHG[k] = CHG_Z[k] + CHG_DZ; CHG_DOOR.z = CHG_Z.doorM + CHG_DZ;
   COLUMNS.length = 0;
-  if (HALL.w != null) {
-    const W = HALL.x1 - HALL.x0, D = HZ - HALL.zb, nx = Math.ceil(W / COL_BAY), nz = Math.ceil(D / COL_BAY);
-    for (let i = 1; i < nx; i++) for (let k = 1; k < nz; k++) {
-      let x = HALL.x0 + i * W / nx, z = HALL.zb + k * D / nz;
-      if (x > R + 11 - 1.0 && z > CHG.z0 - 1.0) { x = R + 11; if (z > CHG.z1 - 0.3) z = CHG.z1; for (const dz of [CHG.doorM, CHG.doorF]) if (Math.abs(z - dz) < 0.95) z = dz + (z >= dz ? 0.95 : -0.95); }
-      if (!COLUMNS.some(c => Math.hypot(c.x - x, c.z - z) < 1)) COLUMNS.push({ x, z });
-    }
-  }
+  /* owner 2026-11-15: no interior pillars (distracting); COLUMNS stays empty and the layout guards that read it are inert */
   if (HALL.w == null) { WB_AT.x = Lf - 13.0; PRB_AT.x = Lf - 10.4; WB_AT.z = PRB_AT.z = Bk - 5.6; }   /* the sample hall: on posts by the dumbbells */
   else { WB_AT.x = HALL.x0 + 1.6; PRB_AT.x = HALL.x0 + 4.2; WB_AT.z = PRB_AT.z = HALL.zb + 0.08; }   /* a built hall: on the back wall above the stretch corner, clear of every zone */
 }
 // floor: black rubber tiles, 20 px a metre
 const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial());
 floorMesh.position.y = 0.02; floorMesh.receiveShadow = true; world.add(floorMesh);
-// the 1 m floor grid is its own overlay: drawn into the texture it turns to moire when zoomed out, so it fades in only past a zoom level
-const FLOOR_GRID = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#1c1f2a', transparent: true, opacity: 0, fog: false, depthWrite: false })); FLOOR_GRID.visible = false; FLOOR_GRID.renderOrder = 1; world.add(FLOOR_GRID);
-const GRID_ZOOM = [2.6, 3.6];   /* fully hidden below the first, fully shown above the second */
-function buildFloorGrid() {
-  const pts = []; for (let x = HALL.x0; x <= HALL.x1 + 1e-6; x += 1) pts.push(x, 0.03, HALL.zb, x, 0.03, HALL.zf); for (let z = HALL.zb; z <= HALL.zf + 1e-6; z += 1) pts.push(HALL.x0, 0.03, z, HALL.x1, 0.03, z);
-  FLOOR_GRID.geometry.dispose(); FLOOR_GRID.geometry = new THREE.BufferGeometry(); FLOOR_GRID.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-}
 function buildFloor() {
-  buildFloorGrid();
   const W = HALL.x1 - HALL.x0, D = HALL.zf - HALL.zb, cv = document.createElement('canvas'); cv.width = Math.round(W * 20); cv.height = Math.round(D * 20);
   const c = cv.getContext('2d'); c.fillStyle = '#2f3340'; c.fillRect(0, 0, cv.width, cv.height);
   for (let i = 0; i < 4000 * cv.width * cv.height / 240000; i++) { c.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.12)'; c.fillRect(Math.random() * cv.width, Math.random() * cv.height, 2, 2); }
+  c.fillStyle = '#1c1f2a'; for (let x = 0; x <= cv.width; x += 20) c.fillRect(x, 0, 1, cv.height); for (let y = 0; y <= cv.height; y += 20) c.fillRect(0, y, cv.width, 1);
   // entrance mat + painted walkway lines in front of the cardio and machine rows
   c.fillStyle = '#474c5c'; c.fillRect((DOOR.x - 1.2 - HALL.x0) * 20, (HZ - 1.6 - HALL.zb) * 20, 48, 30);
   c.fillStyle = '#b8a21e'; for (const z of [6.9, 2.4]) if (z > HALL.zb) c.fillRect(0, (z - HALL.zb) * 20, Math.max(0, DOOR.x - 6 - HALL.x0) * 20, 3);
@@ -85,23 +75,24 @@ const winMat = new THREE.MeshLambertMaterial({ color: '#74abe0', emissive: '#000
 const wallSides = [];
 function wallSide(name, nx, nz, segs) {   // segs: [x0,z0,x1,z1, door?]
   const lower = new THREE.Group(), upper = new THREE.Group(); world.add(lower); world.add(upper);
-  const lb = new Builder(), ub = new Builder();
+  const lb = new Builder(), ub = new Builder(), lowMats = ['#959bab', '#6b7182'].map(c => new THREE.MeshLambertMaterial({ color: c, transparent: true }));   /* the side's own low-wall materials, so it can turn see-through on its own (owner 2026-11-15) */
   for (const [x0, z0, x1, z1, opt] of segs) {
     const len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, ry = Math.atan2(-(z1 - z0), x1 - x0);
     const glass = opt === 'glass';
-    lb.add(place(new THREE.BoxGeometry(len, CUT_H, 0.25), cx, CUT_H / 2, cz, ry), L('#959bab'));
-    lb.add(place(new THREE.BoxGeometry(len + 0.02, 0.08, 0.3), cx, CUT_H, cz, ry), L('#6b7182'));
+    lb.add(place(new THREE.BoxGeometry(len, CUT_H, 0.25), cx, CUT_H / 2, cz, ry), lowMats[0]);
+    lb.add(place(new THREE.BoxGeometry(len + 0.02, 0.08, 0.3), cx, CUT_H, cz, ry), lowMats[1]);
     if (glass) { ub.add(place(new THREE.BoxGeometry(len, 1.7, 0.08), cx, CUT_H + 0.85, cz, ry), winMat); ub.add(place(new THREE.BoxGeometry(len, WALL_H - CUT_H - 1.7, 0.25), cx, CUT_H + 1.7 + (WALL_H - CUT_H - 1.7) / 2, cz, ry), L('#c4c9d4')); for (let k = 0; k <= Math.floor(len / 2.5); k++) { const t = len ? k * 2.5 / len : 0; ub.add(place(new THREE.BoxGeometry(0.12, 1.7, 0.14), x0 + (x1 - x0) * t, CUT_H + 0.85, z0 + (z1 - z0) * t, ry), L('#474c5c')); } }
     else ub.add(place(new THREE.BoxGeometry(len, WALL_H - CUT_H, 0.25), cx, CUT_H + (WALL_H - CUT_H) / 2, cz, ry), L(opt === 'mirror' ? '#c4c9d4' : '#e8dcc0'));
   }
   lb.flush(lower); ub.flush(upper);
   upper.position.y = CUT_H; upper.children.forEach(m => { m.position.y = -CUT_H; m.matrixAutoUpdate = true; });
-  const near = nx * Math.sin(view.az) + nz * Math.cos(view.az) > 0.2, h = near ? 0.0001 : 1;   /* a rebuilt hall starts at the height the camera already wants, so the walls don't rise and fall */
-  upper.scale.y = h; upper.visible = h > 0.01;
-  wallSides.push({ name, nx, nz, upper, lower, h });
+  const was = WALL_KEEP[name] || { h: 1, lowOp: 1 };   /* owner 2026-11-15: a rebuild (adding a piece) keeps the walls as the camera had them: no windows popping up and down */
+  const w = { name, nx, nz, upper, lower, lowMats, h: was.h, lowOp: was.lowOp }; wallSides.push(w); applyWall(w);
 }
+const WALL_KEEP = {};
+function applyWall(w) { w.upper.scale.y = Math.max(0.0001, w.h); w.upper.visible = w.h > 0.01; for (const m of w.lowMats) { m.opacity = w.lowOp; m.depthWrite = w.lowOp > 0.99; } }
 function buildWalls() {
-  for (const w of wallSides) { for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } }
+  for (const w of wallSides) { WALL_KEEP[w.name] = { h: w.h, lowOp: w.lowOp }; for (const g of [w.lower, w.upper]) { world.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } w.lowMats.forEach(m => m.dispose()); }
   wallSides.length = 0;
   const { x0, x1, zb } = HALL;
   wallSide('front', 0, 1, [[x0 + 1.2, HZ, DOOR.x - 2, HZ, 'glass'], [DOOR.x + 2, HZ, x1 - 1.2, HZ, 'glass']]);
@@ -110,13 +101,14 @@ function buildWalls() {
   wallSide('right', 1, 0, [[x1, zb + 1.2, x1, HZ - 1.2, 'glass']]);
 }
 function updateWalls(dt) {
-  { const o = clamp((view.zoom - GRID_ZOOM[0]) / (GRID_ZOOM[1] - GRID_ZOOM[0]), 0, 1); FLOOR_GRID.material.opacity = 0.85 * o; FLOOR_GRID.visible = o > 0.01; }
   const ox = Math.sin(view.az), oz = Math.cos(view.az);
+  const k = Math.min(1, dt * 6);
   for (const w of wallSides) {
     const near = w.nx * ox + w.nz * oz > 0.2;
-    const tgt = near ? 0.0001 : 1; w.h += (tgt - w.h) * Math.min(1, dt * 6);
-    w.upper.scale.y = Math.max(0.0001, w.h); w.upper.visible = w.h > 0.01;
+    w.h += ((near ? 0.0001 : 1) - w.h) * k; w.lowOp += ((near ? LOW_FADE : 1) - w.lowOp) * k; if (w.lowOp > 0.995) w.lowOp = 1;
+    applyWall(w);
   }
+  for (const p of HALL_POSTS) { p.op += (postTarget(p) - p.op) * k; if (p.op > 0.995) p.op = 1; p.mat.opacity = p.op; p.mat.depthWrite = p.op > 0.99; }
   for (const n in ENV) for (const k in ENV[n].sides) {
     const S_ = ENV[n].sides[k], near = S_.nx * ox + S_.nz * oz > 0.2;
     S_.h += ((near ? 0.0001 : 1) - S_.h) * Math.min(1, dt * 5);
@@ -161,17 +153,26 @@ const hourHand = new THREE.Group(), minHand = new THREE.Group();
 // two washrooms with changing space (Plan 7b, owner: every gym has a men's and a women's): men's to the north, women's to the south,
 // a divider wall between them, each with its own door on the west wall, a toilet cubicle, a shower, a bench and lockers
 const HALLG = { g: null, u: null };   // the hall's fixtures (its own groups, so a new build can replace them)
+// owner 2026-11-15: full-height posts (the hall's corners and the entrance frame) and the low walls turn see-through when they stand between the camera and the gym,
+// whichever way the view is turned; the far ones stay solid
+const HALL_POSTS = [], POST_FADE = 0.15, LOW_FADE = 0.35;
+function postTarget(p) { const cx = (HALL.x0 + HALL.x1) / 2, cz = (HALL.zb + HZ) / 2; return (p.x - cx) * Math.sin(view.az) + (p.z - cz) * Math.cos(view.az) > 1 ? POST_FADE : 1; }
+function post(w, h, d, c, x, y, z) {
+  const mat = new THREE.MeshLambertMaterial({ color: c, transparent: true }), m = new THREE.Mesh(place(new THREE.BoxGeometry(w, h, d), x, y + h / 2, z), mat);
+  m.castShadow = m.receiveShadow = true; HALLG.g.add(m); const p = { mesh: m, mat, x, z, op: 1 }; p.op = postTarget(p); mat.opacity = p.op; mat.depthWrite = p.op > 0.99; HALL_POSTS.push(p);   /* starts as the camera has it: no pop on a rebuild */
+}
 function buildHallFixtures() {
   for (const k of ['g', 'u']) if (HALLG[k]) { HALLG[k].parent.remove(HALLG[k]); HALLG[k].traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.userData.sign) { o.material[0].map.dispose(); o.material[0].dispose(); o.material[2].dispose(); } }); }
+  for (const p of HALL_POSTS) p.mat.dispose(); HALL_POSTS.length = 0;
   HALLG.g = new THREE.Group(); world.add(HALLG.g); HALLG.u = new THREE.Group(); under.add(HALLG.u);
   const keepSB = SB, HB = new Builder(), HU = new Builder(); SB = HB;   /* box() builds into SB: point it at the hall's own builder while building */
   const { R, Lf, Bk } = hallShift(), { x0, x1, zb } = HALL;
   LOCKERS_M.length = LOCKERS_F.length = LOCKERS.length = 0;
   // full-height corners and entrance portal
-  for (const [x, z] of [[x0, zb], [x1, zb], [x0, HZ], [x1, HZ]]) box(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);
-  box(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
-  for (const dx of [-1.25, 1.25]) box(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
-  box(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
+  for (const [x, z] of [[x0, zb], [x1, zb], [x0, HZ], [x1, HZ]]) post(1.4, WALL_H + 0.2, 1.4, '#e8dcc0', x, 0, z);   /* owner 2026-11-15: posts fade when they block the view */
+  post(4.04, 0.25, 0.4, '#1c1f2a', DOOR.x, WALL_H - 0.25, HZ);   // 4 cm wider than the jambs so their sides are not coplanar
+  for (const dx of [-1.25, 1.25]) post(0.7, WALL_H - 0.01, 0.5, '#2f3340', DOOR.x + dx * 1.2 + (dx < 0 ? -0.15 : 0.15), 0, HZ);
+  post(1.5, 0.15, 0.6, '#1c1f2a', DOOR.x, 2.3, HZ);
   box(1.0, 2.3, 0.04, '#74abe0', DOOR.x - 0.4, 0, HZ + 0.02, 0.0); // open door leaf (glass)
   box(1.8, 0.03, 9, '#c4c9d4', DOOR.x, 0, 15.4, 0, { b: HU });     // entrance walk
   const c = '#c4c9d4', dw = 0.6;   // half the door gap
@@ -182,14 +183,14 @@ function buildHallFixtures() {
   box(CHG.x1 - CHG.x0, CUT_H, 0.2, c, (CHG.x0 + CHG.x1) / 2, 0, CHG.mid);   // divider
   box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.mid - CHG.z0 - 0.2, '#959bab', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.z0 + CHG.mid) / 2);
   box(CHG.x1 - CHG.x0 - 0.2, 0.01, CHG.z1 - CHG.mid - 0.2, '#a5a39a', (CHG.x0 + CHG.x1) / 2, 0.02, (CHG.mid + CHG.z1) / 2);
-  const lockers = (list, zs, col) => zs.forEach((z, i) => { box(0.5, 1.8, 0.56, i % 2 ? col[0] : col[1], x1 - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', x1 - 0.82, 1.1, z + 0.15); const L = { x: x1 - 1.25, z }; list.push(L); LOCKERS.push(L); });
+  const dz = CHG_DZ, lockers = (list, zs, col) => zs.map(z => z + dz).forEach((z, i) => { box(0.5, 1.8, 0.56, i % 2 ? col[0] : col[1], x1 - 0.55, 0, z); box(0.02, 0.06, 0.06, '#c4c9d4', x1 - 0.82, 1.1, z + 0.15); const L = { x: x1 - 1.25, z }; list.push(L); LOCKERS.push(L); });
   lockers(LOCKERS_M, [-1.6, -1.0, -0.4, 0.2, 0.8], ['#2f68ab', '#1e4a85']);
   lockers(LOCKERS_F, [2.0, 2.6, 3.2, 3.8, 4.4], ['#b0506a', '#8a3a52']);
   // a toilet cubicle (door on its east face) and a shower (glass, tiled tray) in each room; benches between them and the lockers
   const cubicle = (z) => { box(1.0, 1.9, 0.9, '#d9dde4', R + 11.65, 0, z); box(0.04, 1.6, 0.6, '#6b7182', R + 12.17, 0.1, z); box(0.06, 0.06, 0.06, '#dfe03a', R + 12.2, 0.95, z + 0.2); };
   const shower = (z) => { box(0.9, 0.06, 0.6, '#74abe0', R + 11.6, 0, z); box(0.9, 2.0, 0.04, '#9fc3e6', R + 11.6, 0, z + 0.3); box(0.04, 2.0, 0.6, '#9fc3e6', R + 12.05, 0, z); box(0.06, 0.25, 0.06, '#c4c9d4', R + 11.25, 1.85, z); };
-  cubicle(-1.65); shower(1.2); cubicle(4.65); shower(2.0);
-  box(0.45, 0.42, 0.9, '#a9733f', R + 12.8, 0, -0.95); box(0.45, 0.42, 0.8, '#a9733f', R + 12.8, 0, 4.3);
+  cubicle(-1.65 + dz); shower(1.2 + dz); cubicle(4.65 + dz); shower(2.0 + dz);
+  box(0.45, 0.42, 0.9, '#a9733f', R + 12.8, 0, -0.95 + dz); box(0.45, 0.42, 0.8, '#a9733f', R + 12.8, 0, 4.3 + dz);
   // door signs (Plan 8b, owner): a small plaque standing on the low wall beside each door, square to the walls; the letter on both faces; M blue, W red
   const plaque = (letter, bg, z) => { const cv = document.createElement('canvas'); cv.width = cv.height = 32; const g = cv.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, 32, 32); g.fillStyle = '#f2f1ea'; g.font = '700 22px Silkscreen, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter, 16, 17);
     const t = new THREE.CanvasTexture(cv); t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; const face = new THREE.MeshLambertMaterial({ map: t }), edge = L(bg);
@@ -207,8 +208,7 @@ function buildHallFixtures() {
   // turnstile
   for (const dx of [-0.75, 0.75]) box(0.25, 1.0, 0.6, '#6b7182', DOOR.x + dx, 0, 8.2);
   box(0.6, 0.05, 0.05, '#c4c9d4', DOOR.x - 0.3, 0.9, 8.2);
-  // fountain
-  box(0.5, 1.0, 0.4, '#c4c9d4', R + 10.65, 0, 5.8); box(0.3, 0.05, 0.25, '#74abe0', R + 10.65, 1.0, 5.8);
+  /* owner 2026-11-15: no drinking fountain */
   for (const c of COLUMNS) box(COL_SIZE, WALL_H, COL_SIZE, '#e8dcc0', c.x, 0, c.z);   /* structural columns, full height */
   // mirror wall on the left, whiteboard and PR board posts
   box(0.06, 2.1, 8.4, '#d5ebfb', x0 + 0.16, 0.3, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 2.42, Bk - 1.0); box(0.08, 0.1, 8.5, '#6b7182', x0 + 0.18, 0.28, Bk - 1.0);

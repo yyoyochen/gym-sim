@@ -59,3 +59,10 @@ test('default mix is whole percents summing to 100, coach from coaching volume',
   assert.equal(JSON.stringify(mix), JSON.stringify({ power: 22, oly: 6, body: 32, beginner: 37, coach: 3 }));   // JSON: the object comes from another vm realm
   assert.equal(Object.values(M.defaultMix(0)).reduce((s, x) => s + x, 0), 100);
 });
+
+test('owner 2026-11-15: the gym opens on today\'s date; the first month is the rest of this month', () => {
+  const P = loadSrc(['src/a1_params.js'], ['todayStart', 'daysInMonth']);
+  const t = P.todayStart(new Date(2026, 10, 15));
+  assert.equal(`${t.year} ${t.month} ${t.startDay}`, '2026 Nov 15');
+  assert.equal(P.daysInMonth(2026, 'Nov'), 30); assert.equal(P.daysInMonth(2028, 'Feb'), 29);
+});

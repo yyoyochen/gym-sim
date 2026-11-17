@@ -24,16 +24,16 @@ function sfx(kind) {
 // ================================================================ boards
 function drawWhiteboard(k) {
   const { ctx: c, cv, tex } = WB; c.fillStyle = '#f2f1ea'; c.fillRect(0, 0, cv.width, cv.height);
-  c.fillStyle = '#2f68ab'; c.font = '700 16px Silkscreen, monospace'; c.fillText('TODAY', 10, 22);
+  c.fillStyle = '#2f68ab'; c.font = '700 16px Digits, Silkscreen, monospace'; c.fillText('TODAY', 10, 22);
   const lines = ['A1 BACK SQUAT 5x5 @80%', 'A2 PULL-UPS 4x8', 'B1 SLED PUSH 6x15M', 'B2 HIP THRUST 3x10', 'C  ROW 2000M'];
-  c.font = '12px Silkscreen, monospace';
+  c.font = '12px Digits, Silkscreen, monospace';
   lines.forEach((l, i) => { const show = clamp(k * lines.length - i, 0, 1); if (show <= 0) return; c.fillStyle = i % 2 ? '#d6403a' : '#1c1f2a'; c.fillText(l.slice(0, Math.ceil(l.length * show)), 10, 44 + i * 19); });
   tex.needsUpdate = true;
 }
 function drawPRBoard() {
   const { ctx: c, cv, tex } = PRB; c.fillStyle = '#1c1f2a'; c.fillRect(0, 0, cv.width, cv.height);
-  c.fillStyle = '#dfe03a'; c.font = '700 16px Silkscreen, monospace'; c.fillText('PR BOARD', 10, 22);
-  c.font = '11px Silkscreen, monospace';
+  c.fillStyle = '#dfe03a'; c.font = '700 16px Digits, Silkscreen, monospace'; c.fillText('PR BOARD', 10, 22);
+  c.font = '11px Digits, Silkscreen, monospace';
   const list = A ? A.prs.slice(-7).reverse() : [];
   if (!list.length) { c.fillStyle = '#959bab'; c.fillText('NO PRS YET TODAY', 10, 46); }
   list.forEach((p, i) => { c.fillStyle = i ? '#f2f1ea' : '#dfe03a'; c.fillText(`${hhmm(p.t)} ${p.name.toUpperCase()} ${p.kg}KG`, 10, 44 + i * 17); c.fillStyle = '#959bab'; c.fillText(p.lift.toUpperCase().slice(0, 14), 150, 44 + i * 17); });
@@ -92,7 +92,7 @@ function chooser(g, key, label, opts) {
 function segmented(g, key, label, opts) {
   const w = el('div', { class: 'w' }); w.innerHTML = `<div class="lab"><span>${tr(label)}<span class="pd">${tr('· Setup')}</span></span></div><div class="seg" role="group" aria-label="${tr(label)}">${opts.map(o => `<button data-v="${o}">${tr(o)}</button>`).join('')}</div>`;
   const bs = [...w.querySelectorAll('button')]; const upd = () => bs.forEach(b => { const on = b.dataset.v === S[key]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
-  bs.forEach(b => b.addEventListener('click', () => { S[key] = b.dataset.v; upd(); refreshPending(); })); upd();
+  bs.forEach(b => b.addEventListener('click', () => { S[key] = b.dataset.v; if (key === 'weather') env.raining = S.weather === 'Rain'; upd(); refreshPending(); })); upd();
   g.appendChild(w); W['w_' + key] = { w, key, onSetup: true, upd }; return w;
 }
 function sw(g, key, label, onSetup) {
@@ -119,49 +119,34 @@ function buildPanel() {
   // log scale: 1x .. 600x (a whole 17-hour day in under two minutes at the top end)
   const spd = { toV: (p) => { const v = Math.pow(600, p / 100); return v < 10 ? Math.round(v) : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 25) * 25; }, toPos: (v) => Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)) };
   slider(run, 'speed', 'Speed (gym seconds per real second)', 0, 100, 1, v => v + '×', false, undefined, spd);
-  const r2 = el('div', { class: 'row' }); r2.innerHTML = `<label for="seed" style="flex:0 0 auto;font-size:var(--f12)">${tr('Seed')}</label><input type="number" id="seed"><button id="dice" style="flex:0 0 auto" aria-label="${tr('Random seed')}">🎲</button>`;
-  const more = el('details', { class: 'more' }, `<summary>${tx('More', '更多')}</summary>`); more.appendChild(r2); W.seed = r2.querySelector('#seed'); W.seed.value = S.seed;   /* playtest: dev controls out of the first screen (Plan 10) */
-  W.seed.addEventListener('change', () => { S.seed = Math.max(1, Math.floor(+W.seed.value || 1)); W.seed.value = S.seed; refreshPending(); });
-  r2.querySelector('#dice').addEventListener('click', () => { S.seed = Math.floor(Math.random() * 1e6) + 1; W.seed.value = S.seed; refreshPending(); });
-  const r3 = el('div', { class: 'row' }); W.copy = el('button', {}, tr('Copy results')); W.build = el('button', { id: 'buildBtn' }, tx('Build a gym', '設計健身房')); W.build.addEventListener('click', () => { if (closing) return; openBuild(); }); r3.append(W.build); run.appendChild(r3);
-  const r5 = el('div', { class: 'row' }); r5.append(W.copy); more.appendChild(r5);
-  const r6 = el('div', { class: 'row' }), again = el('button', { id: 'introAgain' }, tx('Show intro again', '重看開場')), goalB = el('button', { id: 'goalAgain' }, tx('Change goal', '換目標'));
-  again.addEventListener('click', () => { if (closing || BUILD.on) return; try { localStorage.removeItem('gymsim.introDone'); } catch (e) {} goOn = false; refreshGo(); openIntro(true); });
-  goalB.addEventListener('click', () => { if (typeof showGoalCard === 'function') showGoalCard(true); });
-  r6.append(again, goalB); more.appendChild(r6); run.appendChild(more);
+  const r3 = el('div', { class: 'row' }); W.build = el('button', { id: 'buildBtn' }, tx('Build a gym', '設計健身房')); W.build.addEventListener('click', () => { if (closing) return; openBuild(); }); W.rearr = el('button', { id: 'rearrBtn' }, tx('Rearrange', '重新擺設')); W.rearr.addEventListener('click', () => openRearrange()); const goalB = el('button', { id: 'goalAgain' }, tx('Goal', '目標')); goalB.addEventListener('click', () => { if (typeof showGoalCard === 'function') showGoalCard(true); }); r3.append(W.build, W.rearr, goalB); run.appendChild(r3);   /* owner 2026-11-15: Goal sits with the gym's other actions; no More section */
   const r4 = el('div', { class: 'row' }); r4.appendChild(el('span', { style: 'flex:0 0 auto;font-size:var(--f12)' }, tr('Close early')));
   for (const [k, lab] of [['day', tx('Day', '今天')], ['week', tx('Week', '本週')], ['month', tx('Month', '本月')]]) { const b = el('button', { 'data-close': k }, lab); b.addEventListener('click', () => closeEarly(k)); r4.appendChild(b); }
   run.appendChild(r4);
   run.appendChild(el('p', { class: 'note', id: 'runNote' }, ''));
-  const m$ = (v) => moneyK(v);   /* financing sliders step in half-millions */
-  slider(run, 'finOwn', 'Your own money', 0, 20e6, 5e5, m$, true);
-  slider(run, 'finLoan', 'Bank loan', 0, 20e6, 5e5, m$, true);
-  slider(run, 'finRate', 'Loan rate a year', 1, 8, 0.1, v => v.toFixed(1) + '%', true);
-  slider(run, 'finYears', 'Loan term', 3, 15, 1, v => tx(`${v} years`, `${v} 年`), true);
+  /* owner 2026-11-15: own money and the loan are set when the gym is built, not here */
   run.insertBefore(el('div', { id: 'dayLbl', class: 'daylbl' }, ''), run.children[1]);
   const mg = group('Monitors', null, 'monGrp'); mg.querySelector('.pend').remove();
   const mon = el('div', { class: 'mon' });
   for (const [id, lab] of [['mClock', 'Clock'], ['mIn', 'Inside now'], ['mWait', 'Waiting now'], ['mAvg', 'Avg wait'], ['mQ', 'Longest queue'], ['mPR', 'PRs today'], ['mStray', 'Stray weights'], ['mVisits', 'Visits'], ['mRack', 'Rack queue']]) { const d = el('div', {}, `<span>${tr(lab)}</span><b id="${id}">–</b>`); mon.appendChild(d); }
   mg.appendChild(mon);
   const day = group('Day', 'Day');
-  chooser(day, 'month', 'Month', MONTH_NAMES);
+  /* owner 2026-11-15: no month chooser: the month follows the calendar */
   slider(day, 'peak', 'People at the weekly peak', 15, 60, 1, v => v, true);
   slider(day, 'visit', 'Mean visit length', 30, 100, 1, v => v + MIN(), true);
   segmented(day, 'setting', 'Setting', ['Urban', 'Suburban', 'Rural']);
-  chooser(day, 'weather', 'Weather', ['Clear', 'Rain', 'Heatwave']);
+  segmented(day, 'weather', 'Weather', ['Clear', 'Rain', 'Heatwave']);   /* in-game buttons, not an OS dropdown */
   day.appendChild(el('p', { class: 'note' }, tr('Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.')));
   const mem = group('Members', 'Members');
-  mem.appendChild(el('p', { class: 'note', style: 'margin:0 0 4px' }, tr('Archetype mix (sums to 100 %, applies on Setup)')));
-  for (const [k, lab] of [['power', 'Powerlifter'], ['oly', 'Olympic lifter'], ['body', 'Bodybuilder'], ['beginner', 'Beginner']]) slider(mem, k, lab, 0, 100, 1, v => v + ' %', true, 'mix');
+  mem.appendChild(el('p', { class: 'note', style: 'margin:0 0 4px' }, tr('Archetype mix (sums to 100 %, applies from tomorrow)')));
+  for (const [k, lab] of [['power', 'Powerlifter'], ['oly', 'Olympic lifter'], ['body', 'Bodybuilder'], ['beginner', 'Beginner']]) slider(mem, k, lab, 0, 100, 1, v => v + ' %', false, 'mix');   /* owner 2026-11-15: from the next morning, no Setup */
   slider(mem, 'patience', 'Patience before swapping', 0, 15, 0.5, v => v + MIN());
   slider(mem, 'workIn', 'Work-in willingness', 0, 100, 5, v => v + ' %');
   slider(mem, 'rest', 'Rest between sets', 1, 5, 0.25, v => v.toFixed(2).replace(/0$/, '') + MIN());
   slider(mem, 'rerack', 'Re-rack habit', 0, 100, 5, v => v + ' %');
   const gym = group('Gym', 'Gym');
-  slider(gym, 'racks', 'Power racks', 2, 10, 1, v => v, true);
-  slider(gym, 'plats', 'Olympic platforms', 0, 4, 1, v => v, true);
-  slider(gym, 'benches', 'Adjustable benches', 2, 10, 1, v => v, true);
-  slider(gym, 'cleaners', 'Cleaners', 0, 3, 1, v => v);
+  /* owner 2026-11-15: equipment is changed with Rearrange, not with sliders */
+  /* owner 2026-11-16: cleaners are hired on the Staff tab, with a wage */
   slider(gym, 'cap', 'Capacity cap at the turnstile', 20, 80, 1, v => v);
   sw(gym, 'curls', 'Racks used for curls');
   const pl = group('Plots', 'Plots', 'plotGrp');
@@ -179,7 +164,7 @@ function buildPanel() {
   // tabs (phones)
   const tabs = panel.querySelector('.tabs');
   for (const t of ['Run', 'Day', 'Members', 'Gym', 'Plots']) { const b = el('button', { role: 'tab' }, tr(t)); b.dataset.t = t; b.addEventListener('click', () => { showTab(t); panel.classList.remove('closed'); }); tabs.appendChild(b); }
-  { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('📒 Books', '📒 帳本')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
+  { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('P&L', '損益表')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
   panel.querySelector('#sheetHandle').addEventListener('click', () => panel.classList.toggle('closed'));
   showTab('Run');
   // wiring
@@ -187,22 +172,28 @@ function buildPanel() {
   W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) syncSetupWidgets(); refreshPending(); } goOn = !goOn; refreshGo(); });   // Next day; after the last day the business carries into the next month (D9)
   W.step.addEventListener('click', () => { if (closing || !A || A.done) return; for (let i = 0; i < 60 / STEP; i++) simStep(); });
   { const ll = document.getElementById('liveLine'); if (ll && !ll.dataset.wired) { ll.dataset.wired = '1'; ll.addEventListener('click', () => openBooks()); ll.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openBooks(); } }); } }
-  W.copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(resultsText()); showToast(tr('Results copied')); } catch (e) { showToast(tr('Copy was blocked here')); } });
 }
 // the UI side of closing early: one day per macrotask so the page stays responsive, then a summary (A1)
 let closing = null;
 function closeEarly(kind) {
   if (!M || !A || closing) return;
-  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0 }, target = closeTarget(kind), m0 = M; closing = { kind, out };
+  goOn = false; refreshGo(); const out = { days: 0, takings: 0, ebitda: 0, list: [], kind }, target = closeTarget(kind), m0 = M; closing = { kind, out };
+  if (kind === 'month') showToast(tx('Closing the month…', '本月結帳中…'));   /* owner 2026-11-16: no day-by-day messages */
   const step = () => {
     let more = true; try { more = M === m0 && closeOneDay(out, target); } catch (e) { more = false; console.error(e); }
-    showToast(tx(`Closing… day ${M.dayI + 1}`, `結帳中… 第 ${M.dayI + 1} 天`));
     if (more) { setTimeout(step, 0); return; }
-    closing = null; BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending();
-    showToast(tx(`Closed ${out.days} day${out.days === 1 ? '' : 's'} · takings ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`, `已結 ${out.days} 天 · 收入 ${nt$(out.takings)} · EBITDA ${nt$(out.ebitda)}`));
-    if (BOOKS.open) updateBooks(true);
+    closing = null; finishClose(out, kind);
   };
   setTimeout(step, 0);
+}
+function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
+  BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending(); persistSave(true);
+  if (A && A.payQ) A.payQ.length = 0;
+  if (kind === 'month' && out.days) {   /* owner 2026-11-16: one pop of the month's takings; it glows only for a new all-time best month */
+    const tot = M.days.reduce((t, d) => t + d.pnl.takings, 0) + A.pnl.takings, prev = Math.max(0, ...BIZ.months.map(m => (m.pnl && m.pnl.takings) || 0));
+    BIG_POPS.push({ fee: Math.round(tot), month: M.cfg.month, best: prev > 0 && tot > prev }); }
+  if (kind !== 'day' && out.days) { if (delay) setTimeout(() => { if (!BOOKS.open && !closing) openBooks('Today'); }, delay); else openBooks('Today'); }   /* after the pop has had its moment */
+  else if (BOOKS.open) updateBooks(true);
 }
 // after New month the panel shows what a Setup would start from: the month and, for a new build, the months since opening
 // a built gym's equipment comes from the builder: the Setup sliders for it are locked (Plan 8 review)
@@ -224,10 +215,10 @@ function refreshPending() {
   document.getElementById('runNote').textContent = tr(any ? 'Some settings change the building or the day: press Setup to apply them.' : 'Behaviour sliders apply immediately.');
 }
 const ZONES = [['cardio', 'Cardio', '#4a8acb', 'Cardio'], ['machines', 'Machines', '#63a845', 'Machine'], ['dumbbells', 'Dumbbells', '#e08f5a', 'DB'], ['racks', 'Racks', '#d6403a', 'Rack'], ['platforms', 'Platforms', '#dfe03a', 'Platform']];
-function dayLabel() {   // e.g. Tue 1 Jun · day 1/30  ·  6月1日 週二 · 第1/30天
+function dayLabel() {   // e.g. Tue 1 Jun  ·  6月1日 週二 (owner 2026-11-15: no "day 1/30" counter)
   if (!A || !M) return '';
-  const mi = MONTH_NAMES.indexOf(M.cfg.month) + 1, n = M.cal.length;
-  return zh() ? `${mi}月${A.date}日 ${tr(A.dow)} · 第${A.dayI + 1}/${n}天` : `${A.dow} ${A.date} ${M.cfg.month} · day ${A.dayI + 1}/${n}`;
+  const mi = MONTH_NAMES.indexOf(M.cfg.month) + 1;
+  return zh() ? `${mi}月${A.date}日 ${tr(A.dow)}` : `${A.dow} ${A.date} ${M.cfg.month}`;
 }
 function resultsText() {
   const nt = (n) => money(n);   // a missing figure shows as $–, never as $0
@@ -264,7 +255,7 @@ function setText(id, v) { const e = document.getElementById(id); if (e && e.text
 function updateMonitors() {
   if (!A) return;
   syncCosts(); drawPriceBoard(); setText('dayLbl', dayLabel()); updateLiveLine(); if (typeof updateGoalLine === 'function') updateGoalLine(); updateBooks();
-  setText('mClock', hhmm(A.t)); setText('hudClock', `${hhmm(A.t)} · ${tx(`${A.inside} inside`, `館內 ${A.inside} 人`)}${A.closed ? (A.closedWhy === 'closure' ? tx(' · closed', ' · 休館') : tx(' · closed: typhoon', ' · 颱風停班停課，休館')) : A.done ? tx(' · day complete', ' · 今日結束') : (A.t < A.open ? tx(` · opens ${hhmm(A.open)}`, ` · ${hhmm(A.open)} 開門`) : A.t > T_CLOSE ? tx(' · closed', ' · 已打烊') : '')}`);
+  setText('mClock', hhmm(A.t)); setText('hudClock', `${hhmm(A.t)} · ${tx(`${A.inside} inside`, `館內 ${A.inside} 人`)}${A.closed ? (A.closedWhy === 'rearrange' ? tx(' · closed: rearranging', ' · 重新擺設休館') : A.closedWhy === 'closure' ? tx(' · closed', ' · 休館') : tx(' · closed: typhoon', ' · 颱風停班停課，休館')) : A.done ? tx(' · day complete', ' · 今日結束') : (A.t < A.open ? tx(` · opens ${hhmm(A.open)}`, ` · ${hhmm(A.open)} 開門`) : A.t > T_CLOSE ? tx(' · closed', ' · 已打烊') : '')}`);
   setText('mIn', A.inside);
   let waiting = A.outQ.length; for (const s of STATIONS) waiting += s.queue.length; setText('mWait', waiting);
   setText('mAvg', A.waits.length ? (A.waits.reduce((s, v) => s + v, 0) / A.waits.length).toFixed(1) + tx(' min', ' 分') : '–');   /* 'm' read as millions next to $1.5M (playtest) */
@@ -280,7 +271,7 @@ function plotLine(c, arr, max, col, w = 1, dash) {
 }
 function axes(c, max, unit) {
   const W_ = c.canvas.width, H_ = c.canvas.height; c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
-  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '11px Silkscreen, monospace'; c.fillStyle = '#6b7182';
+  c.strokeStyle = '#2f3340'; c.lineWidth = 1; c.font = '11px Digits, Silkscreen, monospace'; c.fillStyle = '#6b7182';
   for (const h of [7, 10, 13, 16, 19, 22]) { const x = 26 + (h - 7) / 17 * (W_ - 30); c.beginPath(); c.moveTo(x, 4); c.lineTo(x, H_ - 12); c.stroke(); c.fillText(String(h).padStart(2, '0'), x - 5, H_ - 2); }
   c.fillText(String(Math.round(max)), 2, 10); c.fillText('0', 2, H_ - 12);
 }
@@ -307,7 +298,7 @@ function drawPlots() {
   c.fillStyle = '#10131c'; c.fillRect(0, 0, W_, H_);
   const bins = new Array(12).fill(0); for (const w of A.waits) bins[Math.min(11, Math.floor(w))]++;
   const bm = Math.max(1, ...bins); const bw = (W_ - 30) / 12;
-  c.font = '11px Silkscreen, monospace';
+  c.font = '11px Digits, Silkscreen, monospace';
   bins.forEach((v, i) => { const h = v / bm * (H_ - 22); c.fillStyle = '#4a8acb'; c.fillRect(26 + i * bw + 1, H_ - 12 - h, bw - 2, h); c.fillStyle = '#6b7182'; if (i % 2 === 0) c.fillText(i === 11 ? '11+' : String(i), 26 + i * bw + 2, H_ - 2); });
   c.fillStyle = '#6b7182'; c.fillText(String(bm), 2, 10);
   setText('pHv', tx(`${A.waits.length} waits`, `${A.waits.length} 次等待`));
