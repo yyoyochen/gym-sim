@@ -88,7 +88,7 @@ function openGym() {
   const wasIntro = BUILD.intro;
   BUILD.snap.EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); }); BUILD.snap = null;
   S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts); S.turf = BUILD.turf; S.layout = BUILD.w ? JSON.parse(JSON.stringify(BUILD.layout)) : null; S.sampleGrid = false;   /* a new build or a fresh take-over is no longer the converted sample */
-  if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; } else { S.build = 'existing'; S.monthsOpen = 1; }   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
+  if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; S.peak = peakForPing(BUILD.w * BUILD.d); S.cap = capForPing(BUILD.w * BUILD.d); } else { S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; }   /* owner 2026-11-20: a bigger floor draws and holds a bigger crowd */   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
   closeBuildUI(); setupRun(); SAVE.live = true; persistSave(true);   /* owner 2026-11-15: a new gym replaces the saved one */ if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshGo(); if (typeof refreshPending === 'function') refreshPending();
   if (typeof onGymOpened === 'function') onGymOpened(wasIntro);
   return true;

@@ -588,11 +588,11 @@ const SELFTESTS = {
       return { ok: S.priceOff === 1.1 && S.pricePeak === 1.3 && S.priceCap === 150 && maxFee > 0 && maxFee <= 150, detail: { maxFee, S: [S.priceOff, S.pricePeak, S.priceCap] } }; }
     finally { Object.assign(S, keep); }
   },
-  newBuildOpens() {   // a brand-new gym: 15% of the steady base, nothing prepaid yet, and the day still runs
+  newBuildOpens() {   // a brand-new gym: 25% of the steady base, nothing prepaid yet, and the day still runs
     const keep = JSON.parse(JSON.stringify(S));
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); const pool = M.pool.length, owed = owedValue(); fastForward(30 * 3600);
       const stuck = A.members.filter(a => a.state !== 'gone').length;
-      return { ok: Math.abs(pool - Math.round(965 * 0.15)) <= 1 && owed === 0 && stuck === 0 && A.visits > 0, detail: { pool, owed, visits: A.visits, stuck } }; }
+      return { ok: Math.abs(pool - Math.round(965 * 0.25)) <= 1 && owed === 0 && stuck === 0 && A.visits > 0, detail: { pool, owed, visits: A.visits, stuck } }; }
     finally { Object.assign(S, keep); }
   },
   rampBreakEven() {   // a new gym loses money in month 1 and makes it by month 9 (break-even around month 7)
@@ -1421,7 +1421,7 @@ const SELFTESTS = {
     try { setupRun(); S.speed = 30; openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
       const out = W.w_speed ? W.w_speed.out.textContent : '';
       return { ok: S.speed === 10 && INTRO.phase === 'wait' && /10/.test(out), detail: { speed: S.speed, phase: INTRO.phase, out } }; }
-    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
+    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; setupRun(); }
   },
   deskHintStays() {   // owner 2026-11-15: the desk hint stays on until the player clicks the desk (or the P&L tab): not hidden by an earlier visit, and gone once clicked
     try { BOOKS_SEEN = false; { const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; } setupRun(); try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}   /* a fresh visit; an old visit's flag must not hide it */
@@ -1605,9 +1605,9 @@ const SELFTESTS = {
   },
   builtGymStartsNew() {   // owner 2026-11-15: a built gym opens as a new business (pre-sale members only, then grows), not an established one; taking over stays established
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
-      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)) };
+      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)), peak: S.peak, cap: S.cap, steady: M.steady };
       openIntro(); buildPick('sample'); openGym(); const b = { build: S.build, pool: M.pool.length };
-      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 200 && b.build === 'existing' && b.pool > 900, detail: { a, b } }; }
+      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 0.3 * a.steady && a.peak === 49 && a.cap === 83 && b.build === 'existing' && b.pool > 900 && S.peak === 35 && S.cap === 60, detail: { a, b, peak: S.peak, cap: S.cap } }; }   /* owner 2026-11-20: a 160-ping gym fills to about 49 at the weekly peak; the sample keeps 35 */
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
   },
   noPillars() {   // owner 2026-11-15: no structural columns in built gyms, and the builder no longer lists them

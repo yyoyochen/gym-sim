@@ -99,8 +99,9 @@ function peakShiftWeights(weights, dow, premium) {
 }
 function staffAdj(staff) { const d = DEMAND_RESP; return d.leanAdj * Math.min(1, Math.max(0, (d.staffBase - staff) / (d.staffBase - d.staffLean))); }
 function balkProb(waitMin) { return 1 - Math.exp(-Math.max(0, waitMin) / DEMAND_RESP.balkScale); }
-// new build: share of steady-state demand reached m months after opening (opens at 15%, time constant 6.4 months: P4.13, P4.16)
-const RAMP = { open: 0.15, tau: 6.4 };
+// new build: share of steady-state demand reached m months after opening (opens at 25%, time constant 6.4 months: P4.13, P4.16)
+// owner 2026-11-20 (research): 15% suits a gym with no pre-sale; with a pre-opening campaign 20-30% is defensible, so a built gym opens at 25%
+const RAMP = { open: 0.25, tau: 6.4 };
 function rampLevel(m) { return 1 - (1 - RAMP.open) * Math.exp(-Math.max(0, m) / RAMP.tau); }
 // ================================================================ pricing mix (owner 2026-11-20): an adjustable PT session price and an optional monthly pass
 // PT: the price of one session in the pack of 8; the packs of 16 and 24 are $100 and $200 a session cheaper, paid in instalments of 8 sessions
@@ -131,3 +132,7 @@ function joinPrice(pr) {
   const k = pr.monthly / payPerUseMonth(PASS.typicalVisits, pr.off, pr.peak, pr.cap);
   return b * (pr.perMinOn ? Math.min(1, k) : k);
 }
+// owner 2026-11-20 (research): the crowd follows the floor. 35 at the weekly peak and room for 60 are the 115-ping sample's figures
+// (about 8 m2 of net floor each when busy, about 5 m2 when full); other sizes scale with the area: 80 ping about 24, 160 about 49, 320 about 97
+function peakForPing(ping) { return Math.round(DEMAND.peak * ping / 115); }
+function capForPing(ping) { return Math.round(60 * ping / 115); }

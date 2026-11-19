@@ -70,3 +70,9 @@ test('the price a newcomer weighs: the minute price, or the pass when that is al
   assert.ok(P.joinPrice({ ...base, perMinOn: false }) > b, 'a pass-only gym at $1,500 is dearer for a 6-visit newcomer');
   assert.ok(Math.abs(P.joinPrice({ ...base, perMinOn: false, monthly: 540 }) - b) < 1e-9);
 });
+
+test('the weekly peak and the door limit follow the floor area (research 2026-11-20): 35 people and room for 60 at 115 ping', () => {
+  const B = loadSrc(['src/a1_params.js'], ['peakForPing', 'capForPing']);
+  assert.deepEqual([80, 115, 160, 320].map(B.peakForPing), [24, 35, 49, 97]);
+  assert.deepEqual([80, 115, 160, 320].map(B.capForPing), [42, 60, 83, 167]);
+});

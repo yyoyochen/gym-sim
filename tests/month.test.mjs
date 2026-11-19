@@ -51,13 +51,13 @@ test('projection sums days field by field', () => {
   assert.equal(r.net, 3);
 });
 
-test('rampLevel follows the new-build curve (opens at 15%, τ 6.4 months)', () => {
+test('rampLevel follows the new-build curve (opens at 25%, τ 6.4 months)', () => {
   const Q = loadSrc(['src/a1_params.js', 'src/a2_pnl.js'], ['rampLevel']);
-  assert.ok(Math.abs(Q.rampLevel(0) - 0.15) < 1e-9);
-  assert.ok(Math.abs(Q.rampLevel(6) - (1 - 0.85 * Math.exp(-6 / 6.4))) < 1e-9);
-  assert.ok(Q.rampLevel(6) > 0.6 && Q.rampLevel(6) < 0.7);
+  assert.ok(Math.abs(Q.rampLevel(0) - 0.25) < 1e-9);
+  assert.ok(Math.abs(Q.rampLevel(6) - (1 - 0.75 * Math.exp(-6 / 6.4))) < 1e-9);
+  assert.ok(Q.rampLevel(6) > 0.68 && Q.rampLevel(6) < 0.74);
   assert.ok(Q.rampLevel(18) > 0.94 && Q.rampLevel(18) < 0.96);
-  assert.ok(Math.abs(Q.rampLevel(-3) - 0.15) < 1e-9);   // before opening counts as opening day
+  assert.ok(Math.abs(Q.rampLevel(-3) - 0.25) < 1e-9);   // before opening counts as opening day
 });
 
 test('dailyRate is capped at certainty above 100% a month', () => {
