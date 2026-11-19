@@ -36,7 +36,7 @@ function showGoalCard(change) {
   const c = document.getElementById('goalCard'); if (!c) return;
   if (INTRO.phase === 'follow' && followA === INTRO.a) clearFollow();   /* logged minor 5: the card always ends the automatic follow */
   INTRO.phase = 'goal'; c.dataset.mode = change ? 'change' : 'first';
-  c.innerHTML = `<h2 class="ttl">${tx('What do you want to try first?', '你想先挑戰什麼？')}</h2>${GOALS.map(([k, en, zh]) => `<button data-goal="${k}">${tx(en, zh)}</button>`).join('')}
+  c.innerHTML = `<h2 class="ttl">${tx('What do you want to try first?', '你想先挑戰什麼？')}</h2>${GOALS.map(([k]) => `<button data-goal="${k}">${goalLabel(k)}</button>`).join('')}
     <button data-goal="" class="skip">${tx("Skip, I'll explore", '先跳過，自己逛逛')}</button><p class="note">${tx('The gym keeps running. Change it any time with the Goal button.', '健身房會繼續營業。之後隨時可以按「目標」更換。')}</p>`;
   c.hidden = false;
 }
@@ -44,15 +44,18 @@ function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) 
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#goalCard button[data-goal]'); if (!b) return;
   const keep = !b.dataset.goal && document.getElementById('goalCard').dataset.mode === 'change';   /* Skip from Change goal keeps the goal */
-  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
+  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); if (INTRO.phase === 'goal' && document.getElementById('goalCard').dataset.mode !== 'change' && S.speed < 60) { S.speed = 60; syncSpeed(); }   /* evaluation 2026-11-20: the opening is slow on purpose; the day is not */ INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
 });
-function resetGoal() { GOAL.key = null; }
+function resetGoal() { GOAL.key = null; GOAL.told = null; }
+function goalTarget() { return M ? membersTarget(M.steady, M.cfg.build) : 500; }
+function goalLabel(k) { const g = GOALS.find(x => x[0] === k), n = String(goalTarget()); return tx(g[1], g[2]).replace('500', k === 'members500' ? n : '500'); }   /* owner 2026-11-20: the members goal follows the gym's size */
 function goalNow() {
   if (!GOAL.key || !BIZ || !M) return null;
-  return goalStatus(GOAL.key, { months: BIZ.months, mtdEbitda: projectMonth().mtd.ebitda, monthIndex: BIZ.monthIndex, cashOut: !!BIZ.cashOutAt, cashOutMonth: BIZ.cashOutAt ? BIZ.cashOutAt.mi : null, openCash: BIZ.openCash, poolNow: M.pool.length, lapsedNow: M.lapsedTotal, startPool: M.pool.length + M.lapsedTotal });
+  return goalStatus(GOAL.key, { months: BIZ.months, mtdEbitda: projectMonth().mtd.ebitda, monthIndex: BIZ.monthIndex, cashOut: !!BIZ.cashOutAt, cashOutMonth: BIZ.cashOutAt ? BIZ.cashOutAt.mi : null, openCash: BIZ.openCash, target: goalTarget(), poolNow: M.pool.length, lapsedNow: M.lapsedTotal, startPool: M.pool.length + M.lapsedTotal });
 }
-function goalLineText() { const g = goalNow(); if (!g) return ''; const lab = GOALS.find(x => x[0] === GOAL.key); return tx(`Goal: ${lab[1]} · ${g.text.en}`, `目標：${lab[2]} · ${g.text.zh}`); }
+function goalLineText() { const g = goalNow(); if (!g) return ''; return tx(`Goal: ${goalLabel(GOAL.key)} · ${g.text.en}`, `目標：${goalLabel(GOAL.key)} · ${g.text.zh}`); }
 function updateGoalLine() {
   const el = document.getElementById('goalLine'); if (!el) return; const g = goalNow(), t = g ? goalLineText() : '';
   if (el.textContent !== t) el.textContent = t; el.className = 'goal' + (g ? ' ' + g.state : '');
+  if (typeof gameNotices === 'function') gameNotices(g);
 }

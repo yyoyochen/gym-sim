@@ -40,11 +40,12 @@ const GOALS = [['members500', 'Reach 500 members by the end of month 3', '第三
 // s: { months (archived), mtdEbitda, monthIndex, cashOut, lapsedNow, startPool } -> { state: on | met | missed, text: { en, zh } }
 function goalStatus(key, s) {
   const T = (en, zh) => ({ en, zh });
-  if (key === 'members500') {
-    const hit = s.months.slice(0, 3).some(m => m.members >= 500) || (s.months.length < 3 && s.poolNow >= 500);
-    if (hit) return { state: 'met', text: T('500 members reached', '已達 500 位會員') };
-    if (s.months.length >= 3) return { state: 'missed', text: T(`month 3 ended at ${s.months[2].members}`, `第三個月結束時 ${s.months[2].members} 位`) };
-    return { state: 'on', text: T(`${s.poolNow} of 500 · month ${s.monthIndex + 1} of 3`, `${s.poolNow}/500 位 · 第 ${s.monthIndex + 1}/3 個月`) };
+  if (key === 'members500') {   /* owner 2026-11-20: the target follows the gym (s.target); an opening month under 15 days is not one of the three */
+    const N = s.target || 500, full = s.months.filter(m => m.days == null || m.days >= 15), third = full[2], upTo = third ? s.months.slice(0, s.months.indexOf(third) + 1) : s.months;
+    const hit = upTo.some(m => m.members >= N) || (!third && s.poolNow >= N);
+    if (hit) return { state: 'met', text: T(`${N} members reached`, `已達 ${N} 位會員`) };
+    if (third) return { state: 'missed', text: T(`month 3 ended at ${third.members}`, `第三個月結束時 ${third.members} 位`) };
+    return { state: 'on', text: T(`${s.poolNow} of ${N} · month ${full.length + 1} of 3`, `${s.poolNow}/${N} 位 · 第 ${full.length + 1}/3 個月`) };
   }
   if (key === 'cash12') {
     if (s.openCash < 0) return { state: 'missed', text: T('opened overdrawn', '開幕就透支') };
@@ -62,3 +63,18 @@ function goalStatus(key, s) {
   }
   return { state: 'on', text: T('', '') };
 }
+// owner 2026-11-20: the members goal asks for 55% of the gym's steady membership (a little more than the ramp gives untouched); an established gym keeps 500
+function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.55 / 10) * 10 : 500; }
+// ================================================================ the month's report (evaluation 2026-11-20): what the month did, in a handful of numbers a player can act on.
+// cur / prev: archived months { days, members, joined, lapsed, returned, visits, cashEnd, cashIn, cashOut, pnl }. A short opening month is scaled to 30.4 days.
+function monthReport(cur, prev) {
+  const p = cur.pnl, k = 30.4 / cur.days, start = cur.members - cur.joined - (cur.returned || 0) + cur.lapsed, avg = (start + cur.members) / 2;
+  const each = avg > 0 ? p.contribution / avg : 0, out = (cur.cashOut - cur.cashIn) * k;
+  const r = { startMembers: start, members: cur.members, joined: cur.joined + (cur.returned || 0), lapsed: cur.lapsed, kept: 1 - cur.lapsed / Math.max(1, cur.members + cur.lapsed),
+    ebitda: p.ebitda, breakEven: each > 0 ? Math.ceil(p.fixed / each) : null, runway: out > 0 && cur.cashEnd > 0 ? Math.round(cur.cashEnd / out * 10) / 10 : null,
+    visitsPerMember: avg > 0 ? (cur.visits || 0) / avg * k : 0, cashEnd: cur.cashEnd, prev: null, better: null };
+  if (prev) { r.prev = { ebitda: prev.pnl.ebitda * 30.4 / prev.days, members: prev.members }; r.better = p.ebitda * k > r.prev.ebitda; }
+  return r;
+}
+// what the player changed between two snapshots of the settings: [{ k, from, to }] in the order of `before`
+function settingChanges(before, after) { return Object.keys(before).filter(k => before[k] !== after[k]).map(k => ({ k, from: before[k], to: after[k] })); }

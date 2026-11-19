@@ -75,7 +75,7 @@ function slider(g, key, label, min, max, step, fmt, onSetup, path, map) {
   const toV = map ? map.toV : (x) => x, toPos = map ? map.toPos : (v) => v;   // optional non-linear scale (speed)
   const get = () => path ? S[path][key] : S[key], set = (v) => { if (path) S[path][key] = v; else S[key] = v; };
   inp.value = toPos(get()); out.textContent = fmt(get());
-  inp.addEventListener('input', () => { const v = toV(+inp.value); set(v); out.textContent = fmt(v); if (path === 'mix') balanceMix(key); refreshPending(); });
+  inp.addEventListener('input', () => { const v = toV(+inp.value); set(v); out.textContent = fmt(v); if (path === 'mix') balanceMix(key); if (key === 'speed') { const b = document.getElementById('spdBtn'); if (b) b.textContent = v + '×'; } refreshPending(); });
   touchSlider(inp);
   g.appendChild(w); W[id] = { w, inp, out, get, fmt, onSetup, key, path }; return w;
 }
@@ -173,9 +173,14 @@ function buildPanel() {
   panel.querySelector('#sheetHandle').addEventListener('click', () => panel.classList.toggle('closed'));
   showTab('Run');
   // wiring
-  W.setup.addEventListener('click', () => { if (closing) return; goOn = false; setupFromPanel(); refreshGo(); refreshPending(); clearFollow(); showToast(tx(`Setup · seed ${S.seed}`, `設定 · 種子 ${S.seed}`)); });
-  W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) syncSetupWidgets(); refreshPending(); } goOn = !goOn; refreshGo(); });   // Next day; after the last day the business carries into the next month (D9)
+  W.setup.addEventListener('click', () => { if (closing) return;
+    const played = !!M && !!BIZ && (M.dayI > 0 || BIZ.monthIndex > 0), armed = W.setup.dataset.armed && performance.now() < +W.setup.dataset.armed;
+    if (played && !armed) { W.setup.dataset.armed = performance.now() + 5000; W.setup.textContent = tx('Start over?', '重新開始？'); W.setup.classList.add('need'); setTimeout(() => { if (W.setup.dataset.armed && performance.now() >= +W.setup.dataset.armed) { delete W.setup.dataset.armed; refreshPending(); } }, 5100); showToast(tx('Setup restarts the business from day one. Tap again to confirm.', '「設定」會讓整間健身房從第一天重來。再點一次確認。')); return; }
+    delete W.setup.dataset.armed; goOn = false; setupFromPanel(); refreshGo(); refreshPending(); clearFollow(); showToast(tx(`Setup · seed ${S.seed}`, `設定 · 種子 ${S.seed}`)); });
+  W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) { syncSetupWidgets(); refreshPending(); showMonthCard(); return; } refreshPending(); } goOn = !goOn; refreshGo(); });   /* evaluation 2026-11-20: a new month opens on last month's report */   // Next day; after the last day the business carries into the next month (D9)
   W.step.addEventListener('click', () => { if (closing || !A || A.done) return; for (let i = 0; i < 60 / STEP; i++) simStep(); });
+  { const sb = document.getElementById('spdBtn'); if (sb && !sb.dataset.wired) { sb.dataset.wired = '1'; sb.addEventListener('click', () => { nextSpeed(); showToast(tx(`Speed ${S.speed}×`, `速度 ${S.speed}×`)); }); } syncSpeed(); }
+  { const bh = document.getElementById('booksHint'); if (bh && !bh.dataset.wired) { bh.dataset.wired = '1'; bh.addEventListener('click', () => openBooks()); } }   /* the hint is a button too */
   { const ll = document.getElementById('liveLine'); if (ll && !ll.dataset.wired) { ll.dataset.wired = '1'; ll.addEventListener('click', () => openBooks()); ll.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openBooks(); } }); } }
 }
 // the UI side of closing early: one day per macrotask so the page stays responsive, then a summary (A1)

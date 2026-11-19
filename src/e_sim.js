@@ -282,11 +282,13 @@ function applyRearrange(q) {
   let left = q.days || 0; for (let i = M.dayI + 1; i < M.cal.length && left > 0; i++, left--) M.cal[i].rearrange = M.cal[i].closure = true;
   BIZ.closedLeft = left; BIZ.pending = JSON.parse(JSON.stringify(q.layout)); BIZ.pendingHall = q.hall || null;   /* the sample gym's hall becomes a grid hall when it reopens */
 }
+// what the player can change during a month, for the month's report (evaluation 2026-11-20)
+function settingSnap() { return { priceOff: S.priceOff, pricePeak: S.pricePeak, priceCap: S.priceCap, perMinOn: S.perMinOn, monthlyOn: S.monthlyOn, monthlyPrice: S.monthlyPrice, ptSession: S.ptSession, rentP: S.rentP, deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, pieces: S.layout ? S.layout.pieces.length : 0 }; }
 function newBusiness() {
   if (S.layout) for (const p of S.layout.pieces) delete p.bought;   /* review I1: a new business owns every piece from its opening */
   const deposit = BUILT ? BUILT.deposit : 0;   /* a built gym's rent deposit leaves the bank at opening (refundable, not depreciated) */
   BIZ = { own: S.finOwn, loan: S.finLoan, rate: S.finRate, years: S.finYears, payment: loanPayment(S.finLoan, S.finRate, S.finYears), balance: S.finLoan,
-    cash: S.finOwn + S.finLoan - COSTS.capex - deposit, deposit, cashOutAt: null, months: [], monthIndex: 0, year: S.year || 2027, mIn: 0, mOut: 0 };
+    cash: S.finOwn + S.finLoan - COSTS.capex - deposit, deposit, cashOutAt: null, months: [], monthIndex: 0, year: S.year || 2027, mIn: 0, mOut: 0, snap: settingSnap() };
   BIZ.openCash = BIZ.cash;   /* Plan 10: the cash goal knows a gym that opened overdrawn */
 }
 // cash a day's trading moves: what came in (fees, cards, PT packs, rentals, add-ons) minus VAT owed and every cost paid
@@ -306,7 +308,8 @@ function closeMonth() {
   const lm = loanMonth(BIZ.balance, BIZ.rate * frac, BIZ.payment * frac); BIZ.balance = lm.balance;
   const loss = BIZ.mLoss || 0, tax = belowEbitda(pnl.ebitda || 0, { ...pnlCosts(), depYear: pnlCosts().depYear * frac }, lm.interest + loss).tax;   /* Plan 12: a loss on equipment sold lowers the taxable profit */
   BIZ.cash -= lm.interest + lm.principal + tax; BIZ.mOut += lm.interest + lm.principal + tax; noteCashOut();
-  BIZ.months.push({ name: M.cfg.month, year: BIZ.year, days: M.cal.length, pnl, members: M.pool.length, joined: M.joinedTotal, lapsed: M.lapsedTotal, cashEnd: BIZ.cash,
+  const snapNow = settingSnap(), changes = BIZ.snap ? settingChanges(BIZ.snap, snapNow) : []; BIZ.snap = snapNow;
+  BIZ.months.push({ name: M.cfg.month, year: BIZ.year, days: M.cal.length, pnl, members: M.pool.length, joined: M.joinedTotal, lapsed: M.lapsedTotal, returned: M.returnedTotal, visits: M.days.reduce((t, d) => t + (d.visits || 0), 0), changes, cashEnd: BIZ.cash,
     interest: lm.interest, principal: lm.principal, tax, loss, depYear: pnlCosts().depYear,   /* review I2: the depreciation rate this month was booked at */ cashIn: BIZ.mIn, cashOut: BIZ.mOut, ptDue: M.ptDue || 0 }); BIZ.mLoss = 0;
   BIZ.mIn = 0; BIZ.mOut = 0;
 }

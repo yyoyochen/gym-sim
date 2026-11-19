@@ -148,7 +148,7 @@ canvas.addEventListener('touchend', touchEnd, { passive: false }); canvas.addEve
 
 for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });   // stop iOS zooming the whole page
 // the receptionist opens the books instead of being followed (Call 13); everyone else is followed
-function onAgentPicked(a) { if (A && a === A.desk) { receptionistSay(); return; }   /* owner 2026-11-15: the receptionist talks; the counter opens the P&L */ followA = a; focusS = null; view.follow = a; updateCard(); }
+function onAgentPicked(a) { if (A && a === A.desk) { if (!booksSeen()) openBooks(); else receptionistSay(); return; }   /* evaluation 2026-11-20: while the desk hint is up, the desk and the person at it both open the books */   /* owner 2026-11-15: the receptionist talks; the counter opens the P&L */ followA = a; focusS = null; view.follow = a; updateCard(); }
 // a tap on the reception desk (within 1.6 m of its centre) opens the books; the price sign opens Pricing
 function groundTarget(x, z) { if (Math.hypot(x - PRICEBOARD_AT.x, z - PRICEBOARD_AT.z) < 0.55) return { kind: 'board' }; if (Math.hypot(x - DESK_C.x, z - DESK_C.z) < 1.6) return { kind: 'desk' }; return null; }
 function actOn(t) { if (t.kind === 'agent') onAgentPicked(t.a); else if (t.kind === 'board') openBooks('Pricing'); else if (t.kind === 'desk') openBooks(); else if (t.kind === 'station') { focusS = t.s; followA = null; view.follow = null; updateCard(); } }
@@ -203,9 +203,16 @@ function render() {
 const focusV = new V3();
 let last = performance.now(), simAcc = 0, uiT = 0, plotT = 0;
 function frame(now) { requestAnimationFrame(frame); const real = Math.min(0.25, Math.max(0, (now - last) / 1000)); last = now; try { tick(real, now); } catch (err) { if (!frame.warned) { frame.warned = true; console.error(err); } } }   // one bad frame must never freeze the sim
+const QUIET = { rate: 600, ahead: 600 };   /* evaluation 2026-11-20: nobody about and nobody due for ten minutes: the clock runs at 600x until someone is */
+function quietNow() {
+  if (!A || A.done || A.inside > 0 || A.outQ.length || (typeof INTRO !== 'undefined' && INTRO.phase !== 'off' && INTRO.phase !== 'done')) return false;
+  const next = A.members[A.spawnI]; if (next && next.spawnT - A.t <= QUIET.ahead) return false;
+  return !A.members.some(a => a.visible);
+}
+function advanceRate() { return quietNow() ? Math.max(S.speed, QUIET.rate) : S.speed; }
 function advance(real) {
   if (!playing()) return;
-  simAcc += real * S.speed; let n = 0;
+  simAcc += real * advanceRate(); let n = 0;
   while (simAcc >= STEP && n < 1200) { simStep(); simAcc -= STEP; n++; if (A.done) { goOn = false; refreshGo(); showToast(tr(monthComplete() ? 'Month complete · press New month' : 'Day complete · press Next day')); break; } }
 }
 // the furthest view never shows past the board: zoom in just enough, and keep the target where every screen corner lands on the board
@@ -486,6 +493,99 @@ const SELFTESTS = {
     try { setupRun(); const v0 = A.visitsExpected; S.priceOff = 1.2 * 1.1; S.pricePeak = 1.5 * 1.1; setupRun(); const v1 = A.visitsExpected;
       return { ok: Math.abs(v1 / v0 - Math.pow(1.1, -0.4)) < 0.005, detail: { v0, v1, ratio: v1 / v0 } }; }
     finally { Object.assign(S, keep); }
+  },
+  hintOpensBooks() {   // evaluation 2026-11-20: the desk hint itself opens the books, and so does the receptionist until the books have been seen once
+    try { setupRun(); BOOKS_SEEN = false; closeBooks(); BOOKS_SEEN = false; document.getElementById('booksHint').click(); const byHint = BOOKS.open; closeBooks();
+      BOOKS_SEEN = false; onAgentPicked(A.desk); const byDesk = BOOKS.open; closeBooks();
+      onAgentPicked(A.desk); const rs = document.getElementById('recepSay'), talks = !BOOKS.open && !!rs && !rs.hidden;
+      return { ok: byHint && byDesk && talks, detail: { byHint, byDesk, talks } }; }
+    finally { closeBooks(); const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; BOOKS_SEEN = false; }
+  },
+  setupNeedsConfirm() {   // evaluation 2026-11-20: Setup never wipes a business that has been played in one tap
+    try { setupRun(); fastForward(30 * 3600); nextDay(); W.setup.click(); const kept = M.dayI === 1, asks = /\?|？/.test(W.setup.textContent);
+      W.setup.click(); const wiped = M.dayI === 0; W.setup.click(); const fresh = M.dayI === 0 && !/\?|？/.test(W.setup.textContent);
+      return { ok: kept && asks && wiped && fresh, detail: { kept, asks, wiped, fresh, text: W.setup.textContent } }; }
+    finally { setupRun(); refreshPending(); }
+  },
+  rearrangeKeepsZoom() {   // evaluation 2026-11-20: closing Rearrange gives the view back as it was
+    try { setupRun(); view.zoomT = 2.2; view.target.set(3, 0, 1); openRearrange(); const moved = view.zoomT < 2.2; cancelBuild();
+      return { ok: moved && view.zoomT === 2.2 && view.target.x === 3 && view.target.z === 1, detail: { moved, zoom: view.zoomT, x: view.target.x, z: view.target.z } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  quietHoursRunFast() {   // evaluation 2026-11-20: with nobody about and nobody due for ten minutes the clock runs fast; with people in, at the chosen speed
+    const keep = S.speed;
+    try { setupRun(); S.speed = 10; A.members.forEach(a => { if (a.spawnT < A.t + 1800) a.spawnT = A.t + 1800; }); const quiet = advanceRate();
+      setupRun(); fastForward(12.5 * 3600); const busy = advanceRate(), inside = A.inside;
+      INTRO.phase = 'wait'; const intro = (() => { setupRun(); A.members.forEach(a => { if (a.spawnT < A.t + 1800) a.spawnT = A.t + 1800; }); return advanceRate(); })(); INTRO.phase = 'off';
+      return { ok: quiet >= 600 && inside > 0 && busy === 10 && intro === 10, detail: { quiet, busy, inside, intro } }; }
+    finally { S.speed = keep; INTRO.phase = 'off'; setupRun(); }
+  },
+  speedButton() {   // evaluation 2026-11-20: the speed is one tap away on the view bar, and the gym runs at 60x once the opening is over
+    const keep = S.speed;
+    try { const b = document.getElementById('spdBtn'); S.speed = 10; syncSpeed(); const t0 = b.textContent; b.click(); const s1 = S.speed, t1 = b.textContent; b.click(); const s2 = S.speed; b.click(); const s3 = S.speed;
+      setupRun(); S.speed = 10; showGoalCard(); document.querySelector('#goalCard button[data-goal=""]').click(); const after = S.speed;
+      return { ok: /10/.test(t0) && s1 === 60 && /60/.test(t1) && s2 === 240 && s3 === 10 && after === 60, detail: { t0, s1, t1, s2, s3, after } }; }
+    finally { S.speed = keep; syncSpeed(); hideGoalCard(); INTRO.phase = 'off'; GOAL.key = null; }
+  },
+  liveLineAddsUp() {   // evaluation 2026-11-20: the line under the result explains it (earned and costs), never a cash figure that contradicts it; no absurd percentages
+    try { runDay({}); updateMonitors(); const small = document.querySelector('#liveLine small').textContent, nums = (small.match(/\$[\d,]+/g) || []).map(x => +x.replace(/[$,]/g, ''));
+      const adds = nums.length === 2 && Math.abs((nums[0] - nums[1]) - A.pnl.ebitda) < 2;
+      return { ok: adds && !/cash in/.test(small) && pctOf(2708, 100) === '–' && pctOf(168, 100) === '168.0%', detail: { small, nums, ebitda: A.pnl.ebitda } }; }
+    finally { setupRun(); }
+  },
+  econS() { return SELFTESTS.econProbe(['S']); }, econM() { return SELFTESTS.econProbe(['M']); }, econL() { return SELFTESTS.econProbe(['L']); },
+  econProbe(sizes = ['S', 'M', 'L']) {   // measurement only (not in the suite): a built gym's first nine months by size, untouched
+    const out = {};
+    for (const k of sizes) {
+      try { setupRun(); openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
+        goOn = false; INTRO.phase = 'off'; clearFollow(); hideGoalCard();
+        const rows = [], cash0 = BIZ.cash;
+        for (let m = 0; m < 9; m++) { let pk = 0; const w = closeEarlySync('month'); finishClose(w, 'month', 0); closeBooks(); for (const d of M.days) pk = Math.max(pk, d.peakIn || 0);
+          const e = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda; rows.push([M.cfg.month, M.pool.length, Math.round(e / 1000), Math.round(BIZ.cash / 1000)]); nextMonth(); }
+        out[k] = { peak: S.peak, cap: S.cap, staff: S.staff, rent: Math.round(pnlCosts().area * (S.rentRate + 70)), cash0: Math.round(cash0 / 1000), rows: rows.map(r => r.join('/')).join(' ') }; }
+      catch (e) { out[k] = String(e && e.stack || e).slice(0, 300); }
+      finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); }
+    }
+    S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; setupRun();
+    return { ok: true, detail: out };
+  },
+  monthCard() {   // evaluation 2026-11-20: a new month starts with last month's report: result, members, cash, what the player changed; it waits for the player
+    const keep = JSON.parse(JSON.stringify(S));
+    try { setupRun(); S.coaches = 3; const closed = monthLabel(M.cfg.month, BIZ.year), w = closeEarlySync('month'); finishClose(w, 'month', 0); closeBooks(); goOn = false; refreshGo();
+      W.go.click(); const c = document.getElementById('noteCard'), up = !c.hidden, text = c.textContent, waits = goOn === false && M.dayI === 0 && BIZ.months.length === 1;
+      const rec = BIZ.months[0], has = text.includes(closed) && /Coaches/.test(text) && text.includes(String(rec.members)) && rec.visits > 0 && rec.changes.length === 1;
+      c.querySelector('button[data-note="0"]').click(); const gone = c.hidden && goOn === true;
+      return { ok: up && waits && has && gone, detail: { up, waits, has, gone, text: text.slice(0, 260), changes: rec.changes } }; }
+    finally { goOn = false; hideNote(); Object.assign(S, keep); setupRun(); refreshGo(); }
+  },
+  cashOutCard() {   // evaluation 2026-11-20: running out of cash stops the game once and says what it means; the player may start over or carry on
+    try { setupRun(); goOn = true; BIZ.cash = -1; noteCashOut(); updateMonitors(); const c = document.getElementById('noteCard'), up = !c.hidden && /cash/i.test(c.textContent), paused = goOn === false, two = c.querySelectorAll('button').length === 2;
+      c.querySelector('button[data-note="1"]').click(); updateMonitors(); const once = c.hidden;
+      return { ok: up && paused && two && once, detail: { up, paused, two, once, text: c.textContent.slice(0, 200) } }; }
+    finally { goOn = false; hideNote(); setupRun(); refreshGo(); }
+  },
+  goalCards() {   // evaluation 2026-11-20: a goal met or missed is announced once, with the next goal a tap away; the members goal fits the gym's size
+    const keepG = GOAL.key;
+    try { setupRun(); GOAL.key = 'members500'; updateMonitors(); const c = document.getElementById('noteCard'), met = !c.hidden && /Goal met/.test(c.textContent);
+      c.querySelector('button[data-note="0"]').click(); const picks = !document.getElementById('goalCard').hidden; hideGoalCard(); INTRO.phase = 'off'; updateMonitors(); const once = c.hidden;
+      openIntro(); document.querySelector('#build [data-intro="S"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click(); goOn = false;
+      showGoalCard(); const label = document.querySelector('#goalCard button[data-goal="members500"]').textContent, fits = label.includes(String(membersTarget(M.steady, 'new'))) && !label.includes('500');
+      return { ok: met && picks && once && fits, detail: { met, picks, once, label } }; }
+    finally { GOAL.key = keepG; goOn = false; INTRO.phase = 'off'; hideGoalCard(); hideNote(); clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; setupRun(); }
+  },
+  pnlSimpleFirst() {   // evaluation 2026-11-20: the P&L opens on six plain lines that add up to the result; the full statement is one tap away and stays open once opened
+    try { runDay({}); BOOKS.full = false; openBooks('Books'); const body = document.getElementById('bkBody'), rows = [...body.querySelectorAll('[data-k="simple"] tr')], v = (k) => +body.querySelector(`[data-k="simple"] [data-k="${k}"] [data-v]`).dataset.v;
+      const sum = v('s_earned') + v('s_coach') + v('s_premises') + v('s_staff') + v('s_running'), adds = Math.abs(sum - v('s_result')) <= 3 && Math.abs(v('s_result') - A.pnl.ebitda) <= 1;
+      const det = body.querySelector('details[data-k="full"]'), closed = !!det && !det.open && !!det.querySelector('[data-k="ebitda"]');
+      det.open = true; det.dispatchEvent(new Event('toggle')); updateBooks(true); const stays = document.querySelector('#bkBody details[data-k="full"]').open;
+      return { ok: rows.length === 6 && adds && closed && stays, detail: { rows: rows.length, sum, result: v('s_result'), closed, stays } }; }
+    finally { BOOKS.full = false; closeBooks(); setupRun(); }
+  },
+  runwayWarns() {   // evaluation 2026-11-20: under six months of running costs the money step says so in the warning colour; a comfortable start does not
+    try { setupRun(); const at = (k) => { openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click(); const w = document.querySelector('#build [data-k="runway"]'), o = { warn: w.classList.contains('warn'), text: w.textContent }; cancelBuild(); return o; };
+      const s = at('S'), m = at('M');
+      return { ok: !s.warn && m.warn && /6/.test(m.text), detail: { s, m } }; }
+    finally { if (BUILD.on) cancelBuild(); }
   },
   ptPriceAdjust() {   // owner 2026-11-20: the PT session price is on the price list; packs carry the price in force when sold; dearer sessions sell fewer packs
     const keep = JSON.parse(JSON.stringify(S));

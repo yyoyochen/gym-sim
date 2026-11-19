@@ -29,6 +29,7 @@ function openBuild() {
   BUILD.w = S.hallW; BUILD.d = S.hallD; BUILD.counts = {}; BUILD.want = {}; for (const [k] of BUILD_KEYS) BUILD.want[k] = BUILD.counts[k] = S[k];
   BUILD.layout = S.hallW ? JSON.parse(JSON.stringify(S.layout || autoBuild(S.hallW, S.hallD, BUILD.want, { turf: BUILD.turf }))) : null;   /* Plan 11: the builder edits a copy of the gym's pieces */
   panel.hidden = true; document.body.classList.add('building'); if (typeof clearFollow === 'function') clearFollow(); buildEl().hidden = false; BUILD_GRID.visible = true; positionUI();
+  BUILD.view = { zoom: view.zoomT, x: view.target.x, z: view.target.z };   /* evaluation 2026-11-20: closing gives the view back */
   view.target.set(0, 0, -2); view.zoomT = Math.min(view.zoomT, innerWidth < 860 ? 0.75 : 1.1); view.follow = null;
   buildPreview();
 }
@@ -75,7 +76,7 @@ function buildTurf(on) {   /* owner: the turf and sled lane is the player's choi
   }
   buildPreview();
 }
-function closeBuildUI() { if (typeof RDRAG !== 'undefined') RDRAG.id = null; BUILD.mode = null;   /* review C1: no drag outlives the sheet */ if (typeof RGHOST !== 'undefined') RGHOST.visible = false; if (typeof RSEL !== 'undefined') RSEL.visible = false; BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
+function closeBuildUI() { if (BUILD.view) { view.zoomT = BUILD.view.zoom; view.target.set(BUILD.view.x, 0, BUILD.view.z); BUILD.view = null; } if (typeof RDRAG !== 'undefined') RDRAG.id = null; BUILD.mode = null;   /* review C1: no drag outlives the sheet */ if (typeof RGHOST !== 'undefined') RGHOST.visible = false; if (typeof RSEL !== 'undefined') RSEL.visible = false; BUILD.on = false; BUILD.introCancel = false; document.body.classList.remove('building'); BUILD.intro = false; if (EQUIP) EQUIP.visible = true; BUILD_GRID.visible = false; buildEl().hidden = true; panel.hidden = false; positionUI(); }
 function cancelBuild() {
   if (!BUILD.on) return; const z = BUILD.snap;
   setHall(z.w, z.d); [LOCKERS_M, LOCKERS_F, LOCKERS].forEach((L, i) => L.splice(0, L.length, ...z.lockers[i]));   /* members keep their own locker objects */
@@ -117,12 +118,14 @@ function introHtml(c, btn) {
       <div class="row bfoot">${btn('data-istep="welcome"', tx('Back', '上一步'))}${btn('data-istep="custom"', tx('Customise', '自訂'))}${btn('data-istep="pay"', tx('Next: pay for it', '下一步：資金'), 'btn-go')}</div>`;
   }
   const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayMonths(cash, monthlyRunCost(c.rentMonth, S.staff, pay));
-  const runway = cash >= 0 ? `<p class="note">${tx(`About ${run < 10 ? run.toFixed(1) : Math.round(run)} months of running costs`, `約可支付 ${run < 10 ? run.toFixed(1) : Math.round(run)} 個月的營運成本`)}</p>`
-    : `<p class="note warn">${tx(`You start ${bnt(-cash)} overdrawn: trading has to pay it back.`, `開幕就透支 ${bnt(-cash)}：要靠營業還。`)}</p>`;
+  const runN = run < 10 ? run.toFixed(1) : Math.round(run);
+  const runway = cash >= 0 ? (run < 6 ? `<p class="note warn" data-k="runway">${tx(`Only about ${runN} months of running costs. A new gym usually loses money for its first 6 to 9 months: borrow more, put in more of your own money, or pick a smaller gym.`, `只夠支付約 ${runN} 個月的營運成本。新健身房通常前 6 到 9 個月都在虧：多借一點、多放自有資金，或選小一點的場地。`)}</p>`
+    : `<p class="note" data-k="runway">${tx(`About ${runN} months of running costs`, `約可支付 ${runN} 個月的營運成本`)}</p>`)
+    : `<p class="note warn" data-k="runway">${tx(`You start ${bnt(-cash)} overdrawn: trading has to pay it back.`, `開幕就透支 ${bnt(-cash)}：要靠營業還。`)}</p>`;
   return `<h2 class="btitle">${tx('How will you pay for it?', '資金從哪裡來？')}</h2><p class="note">${head}</p>
     <div class="bstep"><span>${tx('Your own money', '自有資金')}</span>${btn('data-fin="finOwn,-1"', '−')}<b>${bnt(S.finOwn)}</b>${btn('data-fin="finOwn,1"', '+')}</div>
     <div class="bstep"><span>${tx(`Bank loan · ${S.finRate.toFixed(1)}%, ${S.finYears} years`, `銀行貸款 · ${S.finRate.toFixed(1)}%，${S.finYears} 年`)}</span>${btn('data-fin="finLoan,-1"', '−')}<b>${bnt(S.finLoan)}</b>${btn('data-fin="finLoan,1"', '+')}</div>
-    <table class="bpay"><tr><td>${tx('Loan payment', '每月還款')}</td><td class="n">${tx(`${money(Math.round(pay))} a month`, `每月 ${money(Math.round(pay))}`)}</td></tr><tr><td>${tx('Setup cost', '開辦費用')}</td><td class="n">${bnt(-setup)}</td></tr>
+    <table class="bpay"><tr><td>${tx('Loan payment', '貸款還款')}</td><td class="n">${tx(`${money(Math.round(pay))} a month`, `每月 ${money(Math.round(pay))}`)}</td></tr><tr><td>${tx('Setup cost', '開辦費用')}</td><td class="n">${bnt(-setup)}</td></tr>
     <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n${cash < 0 ? ' neg' : ''}">${bnt(cash)}</td></tr></table>${runway}
     <div class="row bfoot">${btn('data-istep="cost"', tx('Back', '上一步'))}${btn('data-bact="open"', tx('Open this gym', '開這間健身房'), 'btn-go')}</div>`;
 }

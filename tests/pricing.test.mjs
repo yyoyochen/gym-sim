@@ -76,3 +76,45 @@ test('the weekly peak and the door limit follow the floor area (research 2026-11
   assert.deepEqual([80, 115, 160, 320].map(B.peakForPing), [24, 35, 49, 97]);
   assert.deepEqual([80, 115, 160, 320].map(B.capForPing), [42, 60, 83, 167]);
 });
+
+const R = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js'], ['monthReport', 'settingChanges', 'goalStatus', 'membersTarget']);
+const month = (o) => ({ name: 'Nov', year: 2026, days: 30.4, members: 220, joined: 60, lapsed: 30, returned: 10, visits: 1000, cashEnd: 1e6, cashIn: 100000, cashOut: 300000,
+  pnl: { net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000 }, ...o });
+
+test('month report: members at the start, kept share, break-even members and runway', () => {
+  const r = R.monthReport(month({}), null);
+  assert.equal(r.startMembers, 180);                       // 220 - 60 joined - 10 returned + 30 lapsed
+  assert.equal(r.kept, 1 - 30 / 250);
+  assert.equal(r.breakEven, 500);                          // 100,000 from an average of 200 members is $500 each; $250,000 of fixed costs needs 500
+  assert.equal(r.runway, 5);                               // $1.0M left, $200,000 a month going out
+  assert.equal(r.visitsPerMember, 5);
+});
+
+test('month report: a short first month is scaled to a full month; no runway when cash grows; no break-even when members lose money each', () => {
+  const short = R.monthReport(month({ days: 15.2, cashIn: 50000, cashOut: 150000, pnl: { net: 75000, contribution: 50000, fixed: 125000, ebitda: -75000 } }), null);
+  assert.equal(short.runway, 5); assert.equal(short.breakEven, 500);
+  assert.equal(R.monthReport(month({ cashIn: 400000 }), null).runway, null);
+  assert.equal(R.monthReport(month({ pnl: { net: 1, contribution: -5, fixed: 250000, ebitda: -250005 } }), null).breakEven, null);
+});
+
+test('month report compares with the month before', () => {
+  const r = R.monthReport(month({ members: 300, pnl: { net: 200000, contribution: 150000, fixed: 250000, ebitda: -100000 } }), month({}));
+  assert.equal(r.prev.ebitda, -150000); assert.equal(r.prev.members, 220); assert.equal(r.better, true);
+});
+
+test('setting changes: only what moved, with before and after', () => {
+  const a = { priceOff: 1.2, pricePeak: 1.5, coaches: 2, monthlyOn: false, pieces: 40 }, b = { ...a, priceOff: 1.45, coaches: 3, monthlyOn: true };
+  assert.deepEqual(JSON.parse(JSON.stringify(R.settingChanges(a, b))), [{ k: 'priceOff', from: 1.2, to: 1.45 }, { k: 'coaches', from: 2, to: 3 }, { k: 'monthlyOn', from: false, to: true }]);
+  assert.equal(R.settingChanges(a, { ...a }).length, 0);
+});
+
+test('members goal: the target follows the gym (55% of its steady membership, to the nearest 10); a first month under 15 days does not count as one of the three', () => {
+  assert.equal(R.membersTarget(662, 'new'), 360); assert.equal(R.membersTarget(1351, 'new'), 740); assert.equal(R.membersTarget(965, 'existing'), 500);
+  const m = (members, days) => ({ members, days, lapsed: 0 });
+  const s = (months, poolNow) => ({ months, poolNow, monthIndex: months.length, target: 360 });
+  assert.equal(R.goalStatus('members500', s([m(190, 11), m(250, 31), m(300, 31)], 330)).state, 'on');      // the 11-day month is not one of the three
+  assert.equal(R.goalStatus('members500', s([m(190, 11), m(250, 31), m(300, 31), m(340, 30)], 345)).state, 'missed');
+  assert.equal(R.goalStatus('members500', s([m(190, 11), m(250, 31), m(300, 31), m(365, 30)], 365)).state, 'met');
+  assert.equal(R.goalStatus('members500', s([m(190, 11)], 361)).state, 'met');
+  assert.equal(R.goalStatus('members500', { months: [m(400, 30), m(450, 31), m(480, 30)], poolNow: 480, monthIndex: 3 }).state, 'missed');   // no target given: 500, as before
+});

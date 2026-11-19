@@ -7,7 +7,9 @@ const booksEl = () => document.getElementById('books');
 const nt$ = (v) => money(v);   /* Plan 8b: $ with every digit */
 const ntn = (v) => `<span data-v="${Math.round(v || 0)}">${money(v || 0)}</span>`;   /* every digit; the figure also rides along for checks */
 function speedToPos(v) { return Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)); }
-function syncSpeed() { const w = W.w_speed; if (w) { w.inp.value = speedToPos(S.speed); w.out.textContent = w.fmt(S.speed); } }
+function syncSpeed() { const w = W.w_speed; if (w) { w.inp.value = speedToPos(S.speed); w.out.textContent = w.fmt(S.speed); } const b = document.getElementById('spdBtn'); if (b) b.textContent = S.speed + '×'; }
+const SPEEDS = [10, 60, 240];   /* the view bar's speed button steps through these */
+function nextSpeed() { const i = SPEEDS.findIndex(v => v > S.speed); S.speed = SPEEDS[i < 0 ? 0 : i]; syncSpeed(); }
 let BOOKS_SEEN = false;   /* owner 2026-11-15: the desk hint stays until the player opens the P&L in this visit; nothing is remembered between visits */
 function booksSeen() { return BOOKS_SEEN; }
 function openBooks(tab) {
@@ -53,7 +55,7 @@ function updateBooks(force) {
 // tab renderers: html() for read-only tabs (re-rendered when numbers change), build()/update() for tabs with controls
 const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
-function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0, p), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
+function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0, p), sub: tx(`earned ${nt$(p ? p.net : 0)} · costs ${nt$(p ? p.net - p.ebitda : 0)} so far`, `收入 ${nt$(p ? p.net : 0)} · 成本 ${nt$(p ? p.net - p.ebitda : 0)}`) }; }   /* evaluation 2026-11-20: the two numbers that make the result (cash from a PT pack is not today's income) */
 function liveLineText() { const q = liveLineParts(); return tx(q.v.en, q.v.zh) + ' · ' + q.sub; }
 function updateLiveLine() {   /* judge round 1: the day's result on top, labelled; the cash and visits small under it */
   const out = !!(BIZ && BIZ.cashOutAt), ll = document.getElementById('liveLine'); if (!ll) return; const q = liveLineParts();
@@ -101,7 +103,7 @@ function updateBooksHint(toScreen) {
   const t = tx("Tap the desk to see today's money", '點櫃檯看今天的收支'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; } if (show) placeBooksHint(h);
 }
 // ---------------------------------------------------------------- shared row helpers
-const pctOf = (v, net) => net > 0.5 ? (100 * v / net).toFixed(1) + '%' : '–';
+const pctOf = (v, net) => net > 0.5 && v / net < 10 ? (100 * v / net).toFixed(1) + '%' : '–';   /* a cost at 27 times the morning's sales says nothing */
 // one P&L row: label, signed amount (costs negative), % of net sales; `k` tags the amount cell for tests; `note` is a green benchmark line
 function bkRow(k, label, v, net, cls, note) {
   return `<tr class="${cls || ''}"><td>${label}${note ? `<span class="bench">${note}</span>` : ''}</td><td class="n" data-k="${k}">${ntn(v)}</td><td class="p">${net == null ? '' : pctOf(Math.abs(v), net)}</td></tr>`;
@@ -262,12 +264,19 @@ BOOK_RENDER.Books = {
     const st = `<p class="note">${tr('What moves profit most: monthly EBITDA with each input at its low or high value (parameter-book arithmetic, not simulated).')}</p><table data-k="sens">
       <tr class="grp0"><td></td><td class="n">${tr('Low')}</td><td class="n">${tr('High')}</td></tr>
       ${sens.map(r => `<tr><td>${tr(SENS_LABEL[r.key] || r.key)}</td><td class="n">${ntn(r.lo)}</td><td class="n">${ntn(r.hi)}</td></tr>`).join('')}</table>`;
-    if (arch) return seg + plain + bkSection(tx('Profit and loss', '損益表'), `<table>${rows}</table>`, tx('$ · % of net sales', '$ · 占銷售淨額'));
+    // evaluation 2026-11-20: six plain lines first; the accountant's statement folds away under them
+    const sRow = (k, l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="n" data-k="${k}">${ntn(v)}</td></tr>`, running = it.totals.floor + it.totals.compliance;
+    const simple = bkSection(tx('In short', '簡單看'), `<table data-k="simple">${sRow('s_earned', tx('Money earned (after sales tax)', '賺進來的錢（已扣營業稅）'), net)}${sRow('s_coach', tx("Coaches' share, marketing, card fees", '教練分潤、行銷、刷卡手續費'), -(net - p.contribution))}
+      ${sRow('s_premises', tx('Rent and the building', '租金與場地'), -it.totals.premises)}${sRow('s_staff', tx('Staff', '人事'), -it.totals.staff)}${sRow('s_running', tx('Running the gym', '場館營運'), -running)}
+      ${sRow('s_result', p.ebitda >= 0 ? tx('What is left', '剩下的') : tx('Short by', '不夠的'), p.ebitda, 'sum')}</table>`);
+    const fold = (inner) => `<details data-k="full"${BOOKS.full ? ' open' : ''}><summary>${tx('The full statement', '完整損益表')}</summary>${inner}</details>`;
+    if (arch) return seg + plain + simple + fold(bkSection(tx('Profit and loss', '損益表'), `<table>${rows}</table>`, tx('$ · % of net sales', '$ · 占銷售淨額')));
     const goal = typeof goalLineText === 'function' && goalLineText() ? `<p class="note goalnote" data-k="goal">${goalLineText()}</p>` : '';
-    return seg + plain + goal + bkSection(tx('Profit and loss', '損益表'), `<table>${rows}</table>${extra}`, tx('$ · % of net sales', '$ · 占銷售淨額'))
-      + bkSection(tx('Cash vs earned', '現金與實際收入'), cash) + bkSection(tx('What moves profit most', '影響獲利最大的因素'), st);
+    return seg + plain + goal + simple + fold(bkSection(tx('Profit and loss', '損益表'), `<table>${rows}</table>${extra}`, tx('$ · % of net sales', '$ · 占銷售淨額'))
+      + bkSection(tx('Cash vs earned', '現金與實際收入'), cash) + bkSection(tx('What moves profit most', '影響獲利最大的因素'), st));
   },
-  wire(body) { body.querySelectorAll('.seg button[data-p]').forEach(b => b.addEventListener('click', () => { BOOKS.period = b.dataset.p; updateBooks(true); }));
+  wire(body) { const det = body.querySelector('details[data-k="full"]'); if (det) det.addEventListener('toggle', () => { BOOKS.full = det.open; });
+    body.querySelectorAll('.seg button[data-p]').forEach(b => b.addEventListener('click', () => { BOOKS.period = b.dataset.p; updateBooks(true); }));
     body.querySelectorAll('tr[data-arch]').forEach(r => r.addEventListener('click', () => { BOOKS.period = 'arch:' + r.dataset.arch; updateBooks(true); })); }
 };
 // ---------------------------------------------------------------- Members: the register and who is drifting away
