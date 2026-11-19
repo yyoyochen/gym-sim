@@ -29,7 +29,7 @@ function booksNextDay() { if (typeof closing !== 'undefined' && closing) return;
 // the binder frame: header, tab strip, body; the body of the open tab is filled by its renderer
 function renderBooks() {
   const b = booksEl(); if (!b) return; b.hidden = !BOOKS.open; if (!BOOKS.open) return;
-  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · P&L', '櫃檯 · 損益表')}</h2><div class="bks" id="bkWhen"></div></div>
+  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx("Front desk · today's money", '櫃檯 · 今天的收支')}</h2><div class="bks" id="bkWhen"></div></div>
     <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the P&L', '關閉損益表')}">✕</button></header>
     <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'P&L' : t)}</button>`).join('')}</nav>
     <div class="bkbody" id="bkBody"></div>`;
@@ -53,7 +53,7 @@ function updateBooks(force) {
 // tab renderers: html() for read-only tabs (re-rendered when numbers change), build()/update() for tabs with controls
 const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
-function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
+function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0, p), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
 function liveLineText() { const q = liveLineParts(); return tx(q.v.en, q.v.zh) + ' · ' + q.sub; }
 function updateLiveLine() {   /* judge round 1: the day's result on top, labelled; the cash and visits small under it */
   const out = !!(BIZ && BIZ.cashOutAt), ll = document.getElementById('liveLine'); if (!ll) return; const q = liveLineParts();
@@ -97,7 +97,7 @@ function placeBooksHint(h) {   /* judge round 1: keep the desk hint on screen; i
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
   const gc = document.getElementById('goalCard'), rs = document.getElementById('recepSay'), show = !!A && !BOOKS.open && !booksSeen() && !(rs && !rs.hidden) &&   /* not under the receptionist's bubble */ !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
-  const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
+  const p = toScreen({ x: DESK_C.x, y: 0, z: DESK_C.z });   /* judge round 2: the ring on the desk's foot and the words under it, clear of the money that rises from the gate */ h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
   const t = tx("Tap the desk to see today's money", '點櫃檯看今天的收支'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; } if (show) placeBooksHint(h);
 }
 // ---------------------------------------------------------------- shared row helpers
@@ -115,10 +115,10 @@ BOOK_RENDER.Today = {
     const till = `<table>
       <tr><td>${tx('Visit fees', '入場費')}${cnt(A.paidVisits)}</td><td class="n" data-k="entry">${ntn(p.entry)}</td></tr>
       <tr><td>${tx('New member cards (joining fee)', '新會員卡（入會費）')}${cnt(Math.round((p.cards || 0) / CHURN.card))}</td><td class="n" data-k="cards">${ntn(p.cards)}</td></tr>
-      <tr><td>${tx('PT packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
-      <tr><td>${tx('Floor rentals', '場地租借')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
-      <tr class="sum"><td>${tx('In the till', '收銀合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note">${tx('This is cash, not profit: the result is at the top.', '這是現金，不是利潤；結果在最上面。')}</p>`;
+      <tr><td>${tx('Personal-training packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
+      <tr><td>${tx('Coaches renting the floor', '教練租場地')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
+      <tr class="sum"><td>${tx('Cash taken today', '今日收現合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
+      <p class="note">${tx('Money that came in today. Whether you made money is at the top.', '今天收進來的錢；有沒有賺錢看最上面。')}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>

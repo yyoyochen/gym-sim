@@ -673,11 +673,20 @@ const SELFTESTS = {
       return { ok: shown && M.dayI === d0 + 1 && BOOKS.open && !A.done, detail: { shown, d0, d1: M.dayI, open: BOOKS.open } }; }
     finally { closeBooks(); goOn = false; }
   },
+  cardAndBooksPlain() {   // judge round 2: a member card never covers the HUD; the books' header and Today rows use plain words; the goal and hint lines sit on a plate
+    try { setupRun(); fastForward(9 * 3600 - A.t); const a = AGENTS.find(q => q.visible && q.kind === 'member'); onAgentPicked(a); updateMonitors(); updateHudBottom(); updateCard();
+      const card = document.getElementById('card').getBoundingClientRect(), hud = document.getElementById('hud').getBoundingClientRect(), shown = getComputedStyle(document.getElementById('card')).display !== 'none';
+      openBooks('Today'); const head = document.querySelector('#books .bkh h2').textContent, body = document.getElementById('bkBody').textContent; closeBooks();
+      const plate = getComputedStyle(document.getElementById('goalLine')).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(document.getElementById('hudSub')).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      const ok = shown && card.top >= hud.bottom - 1 && !/P&L/.test(head) && !/In the till|Floor rentals|PT packs sold/.test(body) && plate;
+      return { ok, detail: { shown, cardTop: card.top, hudBottom: hud.bottom, head, plate } }; }
+    finally { clearFollow(); closeBooks(); }
+  },
   hudClear() {   // judge round 1: on a phone-width page the clock line clears the toolbar, the goal line stays on screen, and the desk hint stays on screen
     const keep = GOAL.key; try { setupRun(); GOAL.key = 'members500'; updateMonitors(); updateGoalLine();
       const r = (id) => document.getElementById(id).getBoundingClientRect(), clk = r('hudClock'), vb = r('viewbar'), gl = r('goalLine'), narrow = innerWidth < 860;
       const clear = !narrow || clk.top >= vb.bottom - 1 || clk.right <= vb.left + 1, goalIn = gl.right <= innerWidth + 1;
-      const h = document.getElementById('booksHint'); updateBooksHint(window.__LO.toScreen); h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
+      const h = document.getElementById('booksHint'), seen0 = BOOKS_SEEN; BOOKS_SEEN = false; closeBooks(); updateBooksHint(window.__LO.toScreen); BOOKS_SEEN = seen0; h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
       const t = h.textContent;
       return { ok: clear && goalIn && hintIn && t.length > 8 && !/P&L|損益表/.test(t), detail: { narrow, clk: [clk.top, clk.right], vb: [vb.bottom, vb.left], gl: gl.right, w: innerWidth, hb: [hb.left, hb.right], t } }; }
     finally { GOAL.key = keep; const h = document.getElementById('booksHint'); h.style.display = 'none'; updateGoalLine(); }
@@ -705,7 +714,7 @@ const SELFTESTS = {
     finally { document.body.classList.remove('hinted'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {} }
   },
   verdictShown() {   // first-minute polish: whether the day made money is readable without opening a tab, and is the first thing on the Today tab and under the day's pop
-    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda).en;
+    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda, A.pnl).en;
       openBooks('Today'); const first = (document.querySelector('#bkBody .grp') || {}).textContent || ''; closeBooks();
       BIG_POPS.length = 0; nextDay(); closeEarlySync('day'); const p = BIG_POPS[0], html = p ? bigPopHtml(p) : '';
       const ok = ll.includes(short) && first.includes(v.en) && !!p && p.ebitda === Math.round(A.pnl.ebitda) && html.includes(verdictShort(p.ebitda));

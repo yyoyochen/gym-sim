@@ -121,13 +121,13 @@ function moneyK(v) {
 // ================================================================ first-minute polish: a day or a month in one plain sentence. r: P&L lines; ebitda is operating profit
 // (before the loan and depreciation), so the sentence names the operating costs that drove it, not the loan.
 function roundAbout(x) { const a = Math.abs(x); return a < 10000 ? Math.round(a / 100) * 100 : Math.round(a / 1000) * 1000; }
+function topCosts(r) { return [['rent', '租金', r.occupancy], ['staff', '人事', r.staff], ['running costs', '水電雜支', (r.elec || 0) + (r.otherOpex || 0)], ['coach pay', '教練分潤', r.coach]].filter(c => c[2] > 0).sort((a, b) => b[2] - a[2]).slice(0, 2); }
 function verdictText(r, span = 'day') {
   const amt = '$' + roundAbout(r.ebitda).toLocaleString('en-US'), W = span === 'month' ? ['This month', '本月', 'the month', '當月'] : ['Today', '今天', 'the day', '當天'];
-  const top = [['rent', '租金', r.occupancy], ['staff', '人事', r.staff], ['running costs', '水電雜支', (r.elec || 0) + (r.otherOpex || 0)], ['coach pay', '教練分潤', r.coach]]
-    .filter(c => c[2] > 0).sort((a, b) => b[2] - a[2]).slice(0, 2), en = top.map(c => c[0]).join(' and '), zh = top.map(c => c[1]).join('和');
+  const top = topCosts(r), en = top.map(c => c[0]).join(' and '), zh = top.map(c => c[1]).join('和');
   if (roundAbout(r.ebitda) === 0) return { sign: 0, en: `${W[0]} broke even.`, zh: `${W[1]}打平。` };
   if (r.ebitda < 0) return { sign: -1, en: `${W[0]} lost about ${amt}: ${en} cost more than ${W[2]} brought in.`, zh: `${W[1]}虧了約 ${amt}：${zh}比${W[3]}的收入還多。` };
   return { sign: 1, en: `${W[0]} made about ${amt} after ${en}.`, zh: `扣掉${zh}後，${W[1]}賺了約 ${amt}。` };
 }
 function verdictShort(e) { const a = roundAbout(e); return a === 0 ? '±$0' : (e < 0 ? '−' : '+') + '$' + a.toLocaleString('en-US'); }   /* the day's result in the HUD and under the day's pop */
-function verdictLive(e) { const a = roundAbout(e), m = '$' + a.toLocaleString('en-US'); return a === 0 ? { en: 'Today: broke even', zh: '今日打平', sign: 0 } : e < 0 ? { en: `Today: lost ${m}`, zh: `今日虧 ${m}`, sign: -1 } : { en: `Today: made ${m}`, zh: `今日賺 ${m}`, sign: 1 }; }   /* judge round 1: one labelled result, not two bare numbers */
+function verdictLive(e, r) { const a = roundAbout(e), m = '$' + a.toLocaleString('en-US'), t = r ? topCosts(r) : [], ce = t.length ? ` (${t.map(c => c[0]).join(', ')})` : '', cz = t.length ? `（${t.map(c => c[1]).join('、')}）` : ''; return a === 0 ? { en: 'Today: broke even', zh: '今日打平', sign: 0 } : e < 0 ? { en: `Today: lost ${m}${ce}`, zh: `今日虧 ${m}${cz}`, sign: -1 } : { en: `Today: made ${m}`, zh: `今日賺 ${m}`, sign: 1 }; }   /* judge round 1: one labelled result, not two bare numbers */

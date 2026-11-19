@@ -58,14 +58,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #hud .clk{font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f15);color:var(--accent);margin-top:4px}
 #hud .sub{font-size:var(--f12);color:#e8dcc0}
 #hud .live{pointer-events:auto;cursor:pointer;display:inline-block;margin-top:3px;font-size:var(--f12);color:var(--ink);background:rgba(16,19,28,.75);border:1px solid var(--edge);padding:2px 6px;min-height:22px;text-shadow:none}
-#hud .live:empty{display:none}#hud .live b{display:block;font-weight:400}#hud .live b.loss{color:#ff9b8e}#hud .live b.gain{color:#8fe0a0}#hud .live small{display:block;font-size:var(--f11);color:#c4c9d4}body.introing #hudSub{display:none}#hud{max-width:calc(100vw - 20px - var(--safe-l) - var(--safe-r))}body.hinted #hudSub{display:none}body.building #liveLine,body.building #goalLine{display:none}
+#hud .live:empty{display:none}#hud .live b{display:block;font-weight:400}#hud .live b.loss{color:#ff9b8e}#hud .live b.gain{color:#8fe0a0}#hud .live small{display:block;font-size:var(--f11);color:#c4c9d4}body.introing #hudSub{display:none}#hud .goal,#hud .sub{background:rgba(16,19,28,.75);padding:2px 6px;width:fit-content;max-width:100%}#hud{max-width:calc(100vw - 20px - var(--safe-l) - var(--safe-r))}body.hinted #hudSub{display:none}body.building #liveLine,body.building #goalLine{display:none}
 #hud .goal{display:block;margin-top:3px;font-size:var(--f12);color:var(--accent)}#hud .goal:empty{display:none}#hud .goal.met{color:#7fcf6b}#hud .goal.missed{color:var(--warn)}
 #goalCard{position:fixed;z-index:25;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 32px));background:rgba(16,19,28,.97);border:2px solid var(--accent);box-shadow:6px 6px 0 rgba(0,0,0,.4);padding:12px;display:flex;flex-direction:column;gap:6px}#goalCard[hidden]{display:none}#goalCard h2{font-size:var(--f14);margin:0 0 4px;color:var(--accent)}#goalCard button{min-height:44px;text-align:left}#goalCard button.skip{background:transparent;color:var(--muted);box-shadow:none}
 #hud .live.out{border-color:var(--warn);color:var(--warn)}
 #recepSay{position:fixed;z-index:6;transform:translate(-50%,-100%);max-width:min(300px,80vw);background:rgba(16,19,28,.95);border:2px solid var(--accent);padding:6px 9px;pointer-events:none;box-shadow:3px 3px 0 rgba(0,0,0,.4)}#recepSay[hidden]{display:none}#recepSay b{display:block;font-size:var(--f11);color:var(--accent);font-weight:400;margin-bottom:2px}#recepSay p{margin:0;font-size:var(--f13);color:var(--ink)}
-#booksHint{position:fixed;z-index:4;transform:translate(-50%,-100%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+#booksHint{position:fixed;z-index:4;transform:translate(-50%,-7px);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px}
 #booksHint span{background:rgba(16,19,28,.92);border:2px solid var(--accent);color:var(--accent);font-size:var(--f12);padding:3px 7px;white-space:nowrap}
-#booksHint i{order:2;width:14px;height:14px;border:3px solid var(--accent);border-radius:50%;animation:bkpulse 1.2s infinite}
+#booksHint i{order:0;width:14px;height:14px;border:3px solid var(--accent);border-radius:50%;animation:bkpulse 1.2s infinite}
 @keyframes bkpulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.8);opacity:0}}
 /* front-desk books: full-view binder in the panel's own style */
 #books{position:fixed;z-index:30;left:50%;top:calc(24px + var(--safe-t));bottom:calc(24px + var(--safe-b));width:min(720px,calc(100vw - 24px));transform:translateX(-50%);background:rgba(16,19,28,.98);border:2px solid var(--edge);box-shadow:6px 6px 0 rgba(0,0,0,.4);display:flex;flex-direction:column}
@@ -97,7 +97,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #books .step{display:flex;align-items:center;gap:4px}#books .step button{min-width:44px;min-height:44px}#books .step b{min-width:76px;text-align:center;font-family:Digits,Silkscreen,"Cubic 11",monospace;font-weight:400;font-size:var(--f12);color:var(--accent)}
 #books button{min-height:44px}#books #bkClose{min-height:44px}#books .step button{min-width:44px}
 @media (max-width:859px){#books{left:0;right:0;top:0;bottom:0;width:auto;transform:none;border:0;box-shadow:none;padding-top:var(--safe-t)}}
-#card{position:fixed;left:calc(10px + var(--safe-l));top:calc(78px + var(--safe-t));width:250px;background:rgba(16,19,28,.9);border:2px solid var(--edge);padding:8px 10px;font-size:var(--f12);display:none;box-shadow:4px 4px 0 rgba(0,0,0,.35)}
+#card{position:fixed;left:calc(10px + var(--safe-l));top:calc(var(--hudB,78px) + 6px);width:250px;background:rgba(16,19,28,.9);border:2px solid var(--edge);padding:8px 10px;font-size:var(--f12);display:none;box-shadow:4px 4px 0 rgba(0,0,0,.35)}
 #card h3{font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f13);margin:0 0 4px;display:flex;justify-content:space-between;gap:6px}
 #card h3 button{font-size:var(--f11);padding:0 6px;min-height:20px}
 #card .now{color:var(--accent);margin:2px 0 5px}

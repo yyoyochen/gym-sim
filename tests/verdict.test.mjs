@@ -25,3 +25,7 @@ test('the live line leads with a labelled result, not two bare numbers (judge ro
   assert.deepEqual({ ...verdictLive(12400) }, { en: 'Today: made $12,000', zh: '今日賺 $12,000', sign: 1 });
   assert.deepEqual({ ...verdictLive(20) }, { en: 'Today: broke even', zh: '今日打平', sign: 0 });
 });
+test('a loss on the live line names its two biggest costs (judge round 2)', () => {
+  assert.deepEqual({ ...verdictLive(-5634, loss) }, { en: 'Today: lost $5,600 (rent, staff)', zh: '今日虧 $5,600（租金、人事）', sign: -1 });
+  assert.equal(verdictLive(12400, loss).en, 'Today: made $12,000');
+});

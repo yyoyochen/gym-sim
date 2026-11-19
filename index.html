@@ -58,14 +58,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #hud .clk{font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f15);color:var(--accent);margin-top:4px}
 #hud .sub{font-size:var(--f12);color:#e8dcc0}
 #hud .live{pointer-events:auto;cursor:pointer;display:inline-block;margin-top:3px;font-size:var(--f12);color:var(--ink);background:rgba(16,19,28,.75);border:1px solid var(--edge);padding:2px 6px;min-height:22px;text-shadow:none}
-#hud .live:empty{display:none}#hud .live b{display:block;font-weight:400}#hud .live b.loss{color:#ff9b8e}#hud .live b.gain{color:#8fe0a0}#hud .live small{display:block;font-size:var(--f11);color:#c4c9d4}body.introing #hudSub{display:none}#hud{max-width:calc(100vw - 20px - var(--safe-l) - var(--safe-r))}body.hinted #hudSub{display:none}body.building #liveLine,body.building #goalLine{display:none}
+#hud .live:empty{display:none}#hud .live b{display:block;font-weight:400}#hud .live b.loss{color:#ff9b8e}#hud .live b.gain{color:#8fe0a0}#hud .live small{display:block;font-size:var(--f11);color:#c4c9d4}body.introing #hudSub{display:none}#hud .goal,#hud .sub{background:rgba(16,19,28,.75);padding:2px 6px;width:fit-content;max-width:100%}#hud{max-width:calc(100vw - 20px - var(--safe-l) - var(--safe-r))}body.hinted #hudSub{display:none}body.building #liveLine,body.building #goalLine{display:none}
 #hud .goal{display:block;margin-top:3px;font-size:var(--f12);color:var(--accent)}#hud .goal:empty{display:none}#hud .goal.met{color:#7fcf6b}#hud .goal.missed{color:var(--warn)}
 #goalCard{position:fixed;z-index:25;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 32px));background:rgba(16,19,28,.97);border:2px solid var(--accent);box-shadow:6px 6px 0 rgba(0,0,0,.4);padding:12px;display:flex;flex-direction:column;gap:6px}#goalCard[hidden]{display:none}#goalCard h2{font-size:var(--f14);margin:0 0 4px;color:var(--accent)}#goalCard button{min-height:44px;text-align:left}#goalCard button.skip{background:transparent;color:var(--muted);box-shadow:none}
 #hud .live.out{border-color:var(--warn);color:var(--warn)}
 #recepSay{position:fixed;z-index:6;transform:translate(-50%,-100%);max-width:min(300px,80vw);background:rgba(16,19,28,.95);border:2px solid var(--accent);padding:6px 9px;pointer-events:none;box-shadow:3px 3px 0 rgba(0,0,0,.4)}#recepSay[hidden]{display:none}#recepSay b{display:block;font-size:var(--f11);color:var(--accent);font-weight:400;margin-bottom:2px}#recepSay p{margin:0;font-size:var(--f13);color:var(--ink)}
-#booksHint{position:fixed;z-index:4;transform:translate(-50%,-100%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+#booksHint{position:fixed;z-index:4;transform:translate(-50%,-7px);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px}
 #booksHint span{background:rgba(16,19,28,.92);border:2px solid var(--accent);color:var(--accent);font-size:var(--f12);padding:3px 7px;white-space:nowrap}
-#booksHint i{order:2;width:14px;height:14px;border:3px solid var(--accent);border-radius:50%;animation:bkpulse 1.2s infinite}
+#booksHint i{order:0;width:14px;height:14px;border:3px solid var(--accent);border-radius:50%;animation:bkpulse 1.2s infinite}
 @keyframes bkpulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.8);opacity:0}}
 /* front-desk books: full-view binder in the panel's own style */
 #books{position:fixed;z-index:30;left:50%;top:calc(24px + var(--safe-t));bottom:calc(24px + var(--safe-b));width:min(720px,calc(100vw - 24px));transform:translateX(-50%);background:rgba(16,19,28,.98);border:2px solid var(--edge);box-shadow:6px 6px 0 rgba(0,0,0,.4);display:flex;flex-direction:column}
@@ -97,7 +97,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #books .step{display:flex;align-items:center;gap:4px}#books .step button{min-width:44px;min-height:44px}#books .step b{min-width:76px;text-align:center;font-family:Digits,Silkscreen,"Cubic 11",monospace;font-weight:400;font-size:var(--f12);color:var(--accent)}
 #books button{min-height:44px}#books #bkClose{min-height:44px}#books .step button{min-width:44px}
 @media (max-width:859px){#books{left:0;right:0;top:0;bottom:0;width:auto;transform:none;border:0;box-shadow:none;padding-top:var(--safe-t)}}
-#card{position:fixed;left:calc(10px + var(--safe-l));top:calc(78px + var(--safe-t));width:250px;background:rgba(16,19,28,.9);border:2px solid var(--edge);padding:8px 10px;font-size:var(--f12);display:none;box-shadow:4px 4px 0 rgba(0,0,0,.35)}
+#card{position:fixed;left:calc(10px + var(--safe-l));top:calc(var(--hudB,78px) + 6px);width:250px;background:rgba(16,19,28,.9);border:2px solid var(--edge);padding:8px 10px;font-size:var(--f12);display:none;box-shadow:4px 4px 0 rgba(0,0,0,.35)}
 #card h3{font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f13);margin:0 0 4px;display:flex;justify-content:space-between;gap:6px}
 #card h3 button{font-size:var(--f11);padding:0 6px;min-height:20px}
 #card .now{color:var(--accent);margin:2px 0 5px}
@@ -433,16 +433,16 @@ function moneyK(v) {
 // ================================================================ first-minute polish: a day or a month in one plain sentence. r: P&L lines; ebitda is operating profit
 // (before the loan and depreciation), so the sentence names the operating costs that drove it, not the loan.
 function roundAbout(x) { const a = Math.abs(x); return a < 10000 ? Math.round(a / 100) * 100 : Math.round(a / 1000) * 1000; }
+function topCosts(r) { return [['rent', '租金', r.occupancy], ['staff', '人事', r.staff], ['running costs', '水電雜支', (r.elec || 0) + (r.otherOpex || 0)], ['coach pay', '教練分潤', r.coach]].filter(c => c[2] > 0).sort((a, b) => b[2] - a[2]).slice(0, 2); }
 function verdictText(r, span = 'day') {
   const amt = '$' + roundAbout(r.ebitda).toLocaleString('en-US'), W = span === 'month' ? ['This month', '本月', 'the month', '當月'] : ['Today', '今天', 'the day', '當天'];
-  const top = [['rent', '租金', r.occupancy], ['staff', '人事', r.staff], ['running costs', '水電雜支', (r.elec || 0) + (r.otherOpex || 0)], ['coach pay', '教練分潤', r.coach]]
-    .filter(c => c[2] > 0).sort((a, b) => b[2] - a[2]).slice(0, 2), en = top.map(c => c[0]).join(' and '), zh = top.map(c => c[1]).join('和');
+  const top = topCosts(r), en = top.map(c => c[0]).join(' and '), zh = top.map(c => c[1]).join('和');
   if (roundAbout(r.ebitda) === 0) return { sign: 0, en: `${W[0]} broke even.`, zh: `${W[1]}打平。` };
   if (r.ebitda < 0) return { sign: -1, en: `${W[0]} lost about ${amt}: ${en} cost more than ${W[2]} brought in.`, zh: `${W[1]}虧了約 ${amt}：${zh}比${W[3]}的收入還多。` };
   return { sign: 1, en: `${W[0]} made about ${amt} after ${en}.`, zh: `扣掉${zh}後，${W[1]}賺了約 ${amt}。` };
 }
 function verdictShort(e) { const a = roundAbout(e); return a === 0 ? '±$0' : (e < 0 ? '−' : '+') + '$' + a.toLocaleString('en-US'); }   /* the day's result in the HUD and under the day's pop */
-function verdictLive(e) { const a = roundAbout(e), m = '$' + a.toLocaleString('en-US'); return a === 0 ? { en: 'Today: broke even', zh: '今日打平', sign: 0 } : e < 0 ? { en: `Today: lost ${m}`, zh: `今日虧 ${m}`, sign: -1 } : { en: `Today: made ${m}`, zh: `今日賺 ${m}`, sign: 1 }; }   /* judge round 1: one labelled result, not two bare numbers */
+function verdictLive(e, r) { const a = roundAbout(e), m = '$' + a.toLocaleString('en-US'), t = r ? topCosts(r) : [], ce = t.length ? ` (${t.map(c => c[0]).join(', ')})` : '', cz = t.length ? `（${t.map(c => c[1]).join('、')}）` : ''; return a === 0 ? { en: 'Today: broke even', zh: '今日打平', sign: 0 } : e < 0 ? { en: `Today: lost ${m}${ce}`, zh: `今日虧 ${m}${cz}`, sign: -1 } : { en: `Today: made ${m}`, zh: `今日賺 ${m}`, sign: 1 }; }   /* judge round 1: one labelled result, not two bare numbers */
 // ================================================================ gym builder model (Plan 8): plot cells, presets, equipment prices, rules and costs. Pure (no THREE, no DOM).
 const CELL = 1.82;                                                   // one grid cell is 1.82 m square, about 1 坪
 const PRESETS = { S: { w: 10, d: 8 }, M: { w: 16, d: 10 }, L: { w: 20, d: 16 } };
@@ -4791,7 +4791,7 @@ function booksNextDay() { if (typeof closing !== 'undefined' && closing) return;
 // the binder frame: header, tab strip, body; the body of the open tab is filled by its renderer
 function renderBooks() {
   const b = booksEl(); if (!b) return; b.hidden = !BOOKS.open; if (!BOOKS.open) return;
-  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx('Front desk · P&L', '櫃檯 · 損益表')}</h2><div class="bks" id="bkWhen"></div></div>
+  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx("Front desk · today's money", '櫃檯 · 今天的收支')}</h2><div class="bks" id="bkWhen"></div></div>
     <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the P&L', '關閉損益表')}">✕</button></header>
     <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'P&L' : t)}</button>`).join('')}</nav>
     <div class="bkbody" id="bkBody"></div>`;
@@ -4815,7 +4815,7 @@ function updateBooks(force) {
 // tab renderers: html() for read-only tabs (re-rendered when numbers change), build()/update() for tabs with controls
 const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
-function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
+function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0, p), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
 function liveLineText() { const q = liveLineParts(); return tx(q.v.en, q.v.zh) + ' · ' + q.sub; }
 function updateLiveLine() {   /* judge round 1: the day's result on top, labelled; the cash and visits small under it */
   const out = !!(BIZ && BIZ.cashOutAt), ll = document.getElementById('liveLine'); if (!ll) return; const q = liveLineParts();
@@ -4859,7 +4859,7 @@ function placeBooksHint(h) {   /* judge round 1: keep the desk hint on screen; i
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
   const gc = document.getElementById('goalCard'), rs = document.getElementById('recepSay'), show = !!A && !BOOKS.open && !booksSeen() && !(rs && !rs.hidden) &&   /* not under the receptionist's bubble */ !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
-  const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
+  const p = toScreen({ x: DESK_C.x, y: 0, z: DESK_C.z });   /* judge round 2: the ring on the desk's foot and the words under it, clear of the money that rises from the gate */ h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
   const t = tx("Tap the desk to see today's money", '點櫃檯看今天的收支'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; } if (show) placeBooksHint(h);
 }
 // ---------------------------------------------------------------- shared row helpers
@@ -4877,10 +4877,10 @@ BOOK_RENDER.Today = {
     const till = `<table>
       <tr><td>${tx('Visit fees', '入場費')}${cnt(A.paidVisits)}</td><td class="n" data-k="entry">${ntn(p.entry)}</td></tr>
       <tr><td>${tx('New member cards (joining fee)', '新會員卡（入會費）')}${cnt(Math.round((p.cards || 0) / CHURN.card))}</td><td class="n" data-k="cards">${ntn(p.cards)}</td></tr>
-      <tr><td>${tx('PT packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
-      <tr><td>${tx('Floor rentals', '場地租借')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
-      <tr class="sum"><td>${tx('In the till', '收銀合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note">${tx('This is cash, not profit: the result is at the top.', '這是現金，不是利潤；結果在最上面。')}</p>`;
+      <tr><td>${tx('Personal-training packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
+      <tr><td>${tx('Coaches renting the floor', '教練租場地')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
+      <tr class="sum"><td>${tx('Cash taken today', '今日收現合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
+      <p class="note">${tx('Money that came in today. Whether you made money is at the top.', '今天收進來的錢；有沒有賺錢看最上面。')}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>
@@ -6259,11 +6259,20 @@ const SELFTESTS = {
       return { ok: shown && M.dayI === d0 + 1 && BOOKS.open && !A.done, detail: { shown, d0, d1: M.dayI, open: BOOKS.open } }; }
     finally { closeBooks(); goOn = false; }
   },
+  cardAndBooksPlain() {   // judge round 2: a member card never covers the HUD; the books' header and Today rows use plain words; the goal and hint lines sit on a plate
+    try { setupRun(); fastForward(9 * 3600 - A.t); const a = AGENTS.find(q => q.visible && q.kind === 'member'); onAgentPicked(a); updateMonitors(); updateHudBottom(); updateCard();
+      const card = document.getElementById('card').getBoundingClientRect(), hud = document.getElementById('hud').getBoundingClientRect(), shown = getComputedStyle(document.getElementById('card')).display !== 'none';
+      openBooks('Today'); const head = document.querySelector('#books .bkh h2').textContent, body = document.getElementById('bkBody').textContent; closeBooks();
+      const plate = getComputedStyle(document.getElementById('goalLine')).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(document.getElementById('hudSub')).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      const ok = shown && card.top >= hud.bottom - 1 && !/P&L/.test(head) && !/In the till|Floor rentals|PT packs sold/.test(body) && plate;
+      return { ok, detail: { shown, cardTop: card.top, hudBottom: hud.bottom, head, plate } }; }
+    finally { clearFollow(); closeBooks(); }
+  },
   hudClear() {   // judge round 1: on a phone-width page the clock line clears the toolbar, the goal line stays on screen, and the desk hint stays on screen
     const keep = GOAL.key; try { setupRun(); GOAL.key = 'members500'; updateMonitors(); updateGoalLine();
       const r = (id) => document.getElementById(id).getBoundingClientRect(), clk = r('hudClock'), vb = r('viewbar'), gl = r('goalLine'), narrow = innerWidth < 860;
       const clear = !narrow || clk.top >= vb.bottom - 1 || clk.right <= vb.left + 1, goalIn = gl.right <= innerWidth + 1;
-      const h = document.getElementById('booksHint'); updateBooksHint(window.__LO.toScreen); h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
+      const h = document.getElementById('booksHint'), seen0 = BOOKS_SEEN; BOOKS_SEEN = false; closeBooks(); updateBooksHint(window.__LO.toScreen); BOOKS_SEEN = seen0; h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
       const t = h.textContent;
       return { ok: clear && goalIn && hintIn && t.length > 8 && !/P&L|損益表/.test(t), detail: { narrow, clk: [clk.top, clk.right], vb: [vb.bottom, vb.left], gl: gl.right, w: innerWidth, hb: [hb.left, hb.right], t } }; }
     finally { GOAL.key = keep; const h = document.getElementById('booksHint'); h.style.display = 'none'; updateGoalLine(); }
@@ -6291,7 +6300,7 @@ const SELFTESTS = {
     finally { document.body.classList.remove('hinted'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {} }
   },
   verdictShown() {   // first-minute polish: whether the day made money is readable without opening a tab, and is the first thing on the Today tab and under the day's pop
-    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda).en;
+    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda, A.pnl).en;
       openBooks('Today'); const first = (document.querySelector('#bkBody .grp') || {}).textContent || ''; closeBooks();
       BIG_POPS.length = 0; nextDay(); closeEarlySync('day'); const p = BIG_POPS[0], html = p ? bigPopHtml(p) : '';
       const ok = ll.includes(short) && first.includes(v.en) && !!p && p.ebitda === Math.round(A.pnl.ebitda) && html.includes(verdictShort(p.ebitda));
