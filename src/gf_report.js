@@ -20,15 +20,20 @@ function monthCardHtml(rec, prev) {
   const be = r.breakEven ? row(tx('Members needed to cover costs', '打平需要的會員數'), tx(`about ${r.breakEven} (you have ${r.members})`, `約 ${r.breakEven} 位（目前 ${r.members} 位）`)) : '';
   const ch = (rec.changes || []).map(c => { const n = CHANGE_NAMES[c.k]; return n ? `${tx(n[0], n[1])} ${n[2](c.from)} → ${n[2](c.to)}` : ''; }).filter(Boolean);
   const g = typeof goalNow === 'function' ? goalNow() : null;
+  const top = topCosts(rec.pnl)[0], LEVER = { rent: tx('Rent is fixed, so the answer is more members: a lower minute price or a monthly pass brings them in faster (Pricing).', '租金是固定的，所以要靠更多會員：降低每分鐘價格或開放月費，會員來得更快（價目）。'),
+    staff: tx('Staff is the biggest cost. Fewer desk hours save money at once, but new members leave a little faster (Staff).', '人事是最大的成本。減少櫃檯時數馬上省錢，但新會員會流失得快一點（人力）。'),
+    'running costs': tx('Running costs are the biggest cost and mostly fixed: you need more members, or coaching income on top (Pricing, Staff).', '營運成本最大、而且大多固定：需要更多會員，或增加教練課收入（價目、人力）。'),
+    'coach pay': tx('Coach pay is the biggest cost: it only goes out when coaching brings money in, so look at the fixed costs next.', '教練分潤最大：有教練課收入才會支出，所以接著看固定成本。') };
+  const tip = lost && top ? `<p class="note" data-k="tip"><b>${tx('What to try', '可以試試')}</b> ${LEVER[top[0]] || ''}</p>` : '';
   return `<h2 class="ttl">${tx(`${monthLabel(rec.name, rec.year)} closed${short}`, `${monthLabel(rec.name, rec.year)} 結帳${short}`)}</h2>
     <p class="big ${lost ? 'loss' : 'gain'}">${lost ? tx(`Lost ${amt}`, `虧 ${amt}`) : tx(`Made ${amt}`, `賺 ${amt}`)}<small>${tx('after rent, staff and running costs', '已扣租金、人事與營運成本')}</small></p>
     <table>${row(tx('Members', '會員'), `${r.startMembers} → <b>${r.members}</b> <small>(+${r.joined} ${tx('joined', '加入')}, −${r.lapsed} ${tx('left', '離開')})</small>`)}${be}${row(tx('Cash in the bank', '銀行現金'), cash)}${vs}</table>
     <p class="note">${ch.length ? tx('You changed: ', '你這個月調整了：') + ch.join(tx('; ', '；')) : tx('You changed nothing this month: prices, staff and equipment are as they were.', '這個月你沒有調整任何東西：價格、人力和器材都沒變。')}</p>
-    ${g ? `<p class="note">${goalLineText()}</p>` : ''}`;
+    ${tip}${g ? `<p class="note">${goalLineText()}</p>` : ''}`;
 }
 function showMonthCard() {
   if (!BIZ || !BIZ.months.length || !M) return; if (typeof closeBooks === 'function') closeBooks(); const rec = BIZ.months[BIZ.months.length - 1], prev = BIZ.months[BIZ.months.length - 2] || null;
-  showNote(monthCardHtml(rec, prev), [[tx(`Start ${monthLabel(M.cfg.month, BIZ.year)}`, `開始 ${monthLabel(M.cfg.month, BIZ.year)}`), () => { goOn = true; refreshGo(); }, 'btn-go on'], [tx('Open the books', '打開帳本'), () => openBooks('Books')]]);
+  showNote(monthCardHtml(rec, prev), [[tx(`Start ${monthLabel(M.cfg.month, BIZ.year)}`, `開始 ${monthLabel(M.cfg.month, BIZ.year)}`), () => { goOn = true; refreshGo(); }, 'btn-go on'], [tx('Open the P&L', '打開損益表'), () => openBooks('Books')]]);
 }
 // called with the goal's status from the HUD refresh: each notice is shown once
 function gameNotices(g) {

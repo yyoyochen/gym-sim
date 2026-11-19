@@ -533,13 +533,14 @@ const SELFTESTS = {
       return { ok: adds && !/cash in/.test(small) && pctOf(2708, 100) === '–' && pctOf(168, 100) === '168.0%', detail: { small, nums, ebitda: A.pnl.ebitda } }; }
     finally { setupRun(); }
   },
-  econS() { return SELFTESTS.econProbe(['S']); }, econM() { return SELFTESTS.econProbe(['M']); }, econL() { return SELFTESTS.econProbe(['L']); },
+  econS() { return SELFTESTS.econProbe(['S']); }, econSlean() { return SELFTESTS.econProbe(['S', 'lean']); }, econM() { return SELFTESTS.econProbe(['M']); }, econL() { return SELFTESTS.econProbe(['L']); },
   econProbe(sizes = ['S', 'M', 'L']) {   // measurement only (not in the suite): a built gym's first nine months by size, untouched
     const out = {};
-    for (const k of sizes) {
+    for (const k of sizes.slice(0, sizes[1] === 'lean' ? 1 : 3)) {
       try { setupRun(); openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
         goOn = false; INTRO.phase = 'off'; clearFollow(); hideGoalCard();
         const rows = [], cash0 = BIZ.cash;
+        if (sizes[1] === 'lean') { S.deskFT = 1; S.deskPTh = 20; S.staff = rosterCost(S); }
         for (let m = 0; m < 9; m++) { let pk = 0; const w = closeEarlySync('month'); finishClose(w, 'month', 0); closeBooks(); for (const d of M.days) pk = Math.max(pk, d.peakIn || 0);
           const e = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda; rows.push([M.cfg.month, M.pool.length, Math.round(e / 1000), Math.round(BIZ.cash / 1000)]); nextMonth(); }
         out[k] = { peak: S.peak, cap: S.cap, staff: S.staff, rent: Math.round(pnlCosts().area * (S.rentRate + 70)), cash0: Math.round(cash0 / 1000), rows: rows.map(r => r.join('/')).join(' ') }; }
@@ -565,13 +566,13 @@ const SELFTESTS = {
     finally { goOn = false; hideNote(); setupRun(); refreshGo(); }
   },
   goalCards() {   // evaluation 2026-11-20: a goal met or missed is announced once, with the next goal a tap away; the members goal fits the gym's size
-    const keepG = GOAL.key;
+    const keepG = GOAL.key, keepS = JSON.stringify(S);
     try { setupRun(); GOAL.key = 'members500'; updateMonitors(); const c = document.getElementById('noteCard'), met = !c.hidden && /Goal met/.test(c.textContent);
       c.querySelector('button[data-note="0"]').click(); const picks = !document.getElementById('goalCard').hidden; hideGoalCard(); INTRO.phase = 'off'; updateMonitors(); const once = c.hidden;
       openIntro(); document.querySelector('#build [data-intro="S"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click(); goOn = false;
       showGoalCard(); const label = document.querySelector('#goalCard button[data-goal="members500"]').textContent, fits = label.includes(String(membersTarget(M.steady, 'new'))) && !label.includes('500');
       return { ok: met && picks && once && fits, detail: { met, picks, once, label } }; }
-    finally { GOAL.key = keepG; goOn = false; INTRO.phase = 'off'; hideGoalCard(); hideNote(); clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; setupRun(); }
+    finally { GOAL.key = keepG; goOn = false; INTRO.phase = 'off'; hideGoalCard(); hideNote(); clearFollow(); if (BUILD.on) cancelBuild(); for (const q of Object.keys(S)) delete S[q]; Object.assign(S, JSON.parse(keepS)); document.body.classList.remove('introing'); syncSpeed(); setupRun(); refreshGo(); }
   },
   pnlSimpleFirst() {   // evaluation 2026-11-20: the P&L opens on six plain lines that add up to the result; the full statement is one tap away and stays open once opened
     try { runDay({}); BOOKS.full = false; openBooks('Books'); const body = document.getElementById('bkBody'), rows = [...body.querySelectorAll('[data-k="simple"] tr')], v = (k) => +body.querySelector(`[data-k="simple"] [data-k="${k}"] [data-v]`).dataset.v;
@@ -866,9 +867,9 @@ const SELFTESTS = {
       return { ok, detail: { ll, short, first: first.slice(0, 120), v: v.en, pop: html.slice(0, 160) } }; }
     finally { BIG_POPS.length = 0; closeBooks(); setupRun(); }
   },
-  liveLineTakings() {   // Plan 6 D2: the live line shows today's takings and check-ins
+  liveLineTakings() {   // Plan 6 D2: the live line shows what the day earned and what it cost
     runDay({}); updateMonitors(); const t = document.getElementById('liveLine').textContent;
-    return { ok: t.includes(money(A.pnl.takings)) && t.includes(String(A.checkins)) && A.pnl.takings > 0, detail: t };
+    return { ok: t.includes(money(A.pnl.net)) && t.includes(money(A.pnl.net - A.pnl.ebitda)) && A.pnl.takings > 0, detail: t };   /* evaluation 2026-11-20: earned and costs, the two numbers behind the result */
   },
   booksTodayTill() {   // Plan 6: the till on the Today tab matches the day's P&L
     try { runDay({}); openBooks('Today'); const v = (k) => (document.querySelector(`#bkBody [data-k="${k}"]`) || {}).textContent;
@@ -1572,8 +1573,8 @@ const SELFTESTS = {
   },
   goalTracker() {   // frame 6: the picked goal shows under the clock with its progress (a newly opened gym: 145 members)
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); showGoalCard(); document.querySelector('#goalCard [data-goal="members500"]').click(); updateMonitors(); const g = document.getElementById('goalLine');
-      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 500 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 500`), detail: { key: GOAL.key, line: g.textContent } }; }
-    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; }
+      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 530 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 530`), detail: { key: GOAL.key, line: g.textContent } }; }
+    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* owner 2026-11-20: a new gym on the sample floor aims at 55% of 965 */
   },
   goalResetsOnSetup() {   // Review focus 5: a new business starts without the old goal
     try { setupRun(); GOAL.key = 'cash12'; updateMonitors(); const a = document.getElementById('goalLine').textContent; setupRun(); updateMonitors(); const b = document.getElementById('goalLine').textContent;
@@ -1705,9 +1706,9 @@ const SELFTESTS = {
   },
   builtGymStartsNew() {   // owner 2026-11-15: a built gym opens as a new business (pre-sale members only, then grows), not an established one; taking over stays established
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
-      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)), peak: S.peak, cap: S.cap, steady: M.steady };
+      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)), peak: S.peak, cap: S.cap, steady: M.steady, elec: Math.round(pnlCosts().elec) };
       openIntro(); buildPick('sample'); openGym(); const b = { build: S.build, pool: M.pool.length };
-      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 0.3 * a.steady && a.peak === 49 && a.cap === 83 && b.build === 'existing' && b.pool > 900 && S.peak === 35 && S.cap === 60, detail: { a, b, peak: S.peak, cap: S.cap } }; }   /* owner 2026-11-20: a 160-ping gym fills to about 49 at the weekly peak; the sample keeps 35 */
+      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 0.3 * a.steady && a.peak === 49 && a.cap === 83 && a.elec === Math.round(66000 * 160 / 115) && pnlCosts().elec === 66000 && b.build === 'existing' && b.pool > 900 && S.peak === 35 && S.cap === 60, detail: { a, b, peak: S.peak, cap: S.cap } }; }   /* owner 2026-11-20: a 160-ping gym fills to about 49 at the weekly peak; the sample keeps 35 */
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
   },
   noPillars() {   // owner 2026-11-15: no structural columns in built gyms, and the builder no longer lists them

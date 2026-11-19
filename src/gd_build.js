@@ -100,12 +100,13 @@ function introStep(to) {   /* one way to change intro step (buttons and Escape):
   if (to === 'cost' && BUILD.intro && BUILD.w && !checkPlot(BUILD.w, BUILD.d).ok) { BUILD.tab = 'Plot'; renderBuild(); showToast(tx('This plot breaks a rule: see the list under 1 Plot.', '這塊場地不符合規則：請看「1 場地」下方的清單。')); return false; }
   BUILD.step = to; if (to === 'custom') BUILD.tab = 'Plot'; renderBuild(); return true;
 }
+const SIZE_NOTE = { S: ['low rent, thin margins: the hard one', '租金低、利潤薄：最難'], M: ['the standard start', '標準起步'], L: ['big rent, big crowd: needs deep pockets', '租金高、人也多：口袋要夠深'] };   /* evaluation 2026-11-20: say what a size buys */
 function openIntro(cancellable) { openBuild(); BUILD.introCancel = !!cancellable; BUILD.intro = true; BUILD.step = 'welcome'; renderBuild(); }
 const PRESET_NAME = { S: ['Small', '小型'], M: ['Medium', '中型'], L: ['Large', '大型'] };
 function introHtml(c, btn) {
   const step = BUILD.step;
   if (step === 'welcome') {
-    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping}&nbsp;坪 · ${Math.round(ping * 3.3058)}&nbsp;m²</small>`); }).join('');
+    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping}&nbsp;坪 · ${Math.round(ping * 3.3058)}&nbsp;m²</small><small data-k="sizeNote">${tx(`busy at about ${peakForPing(ping)} people`, `尖峰約 ${peakForPing(ping)} 人`)} · ${tx(...SIZE_NOTE[k])}</small>`); }).join('');
     return `<h2 class="btitle">${tx('Open your first gym', '開你的第一間健身房')}</h2><p class="bwel">${tx('Pick a size for your gym in Taipei. A few members signed up before you open; you win the rest month by month. All money is in NT dollars.', '替你在台北的健身房選個大小。開幕前有少數會員預售報名，其餘要一個月一個月慢慢招募。所有金額都是新台幣。')}</p>
       <div class="bpick">${pick}</div>${BUILD.introCancel ? `<div class="row">${btn('data-bact="cancel"', tx('Cancel: back to my gym', '取消：回到我的健身房'))}</div>` : ''}`;
   }

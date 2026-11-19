@@ -44,7 +44,7 @@ function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) 
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#goalCard button[data-goal]'); if (!b) return;
   const keep = !b.dataset.goal && document.getElementById('goalCard').dataset.mode === 'change';   /* Skip from Change goal keeps the goal */
-  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); if (INTRO.phase === 'goal' && document.getElementById('goalCard').dataset.mode !== 'change' && S.speed < 60) { S.speed = 60; syncSpeed(); }   /* evaluation 2026-11-20: the opening is slow on purpose; the day is not */ INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
+  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); if (INTRO.phase === 'goal' && document.getElementById('goalCard').dataset.mode !== 'change') { if (S.speed < 60) { S.speed = 60; syncSpeed(); } if (!followA) { view.target.set((HALL.x0 + HALL.x1) / 2, 0, (HALL.zb + HZ) / 2); view.zoomT = innerWidth < 860 ? 1.0 : 1.5; } }   /* and the view steps back to the whole floor */   /* evaluation 2026-11-20: the opening is slow on purpose; the day is not */ INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
 });
 function resetGoal() { GOAL.key = null; GOAL.told = null; }
 function goalTarget() { return M ? membersTarget(M.steady, M.cfg.build) : 500; }

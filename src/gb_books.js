@@ -31,7 +31,7 @@ function booksNextDay() { if (typeof closing !== 'undefined' && closing) return;
 // the binder frame: header, tab strip, body; the body of the open tab is filled by its renderer
 function renderBooks() {
   const b = booksEl(); if (!b) return; b.hidden = !BOOKS.open; if (!BOOKS.open) return;
-  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx("Front desk · today's money", '櫃檯 · 今天的收支')}</h2><div class="bks" id="bkWhen"></div></div>
+  b.innerHTML = `<header class="bkh"><div class="bkt"><h2>${tx("Front desk · the gym's money", '櫃檯 · 健身房的帳')}</h2><div class="bks" id="bkWhen"></div></div>
     <button id="bkNext" hidden></button><button id="bkClose" aria-label="${tx('Close the P&L', '關閉損益表')}">✕</button></header>
     <nav class="bktabs" role="tablist">${BOOK_TABS.map(t => `<button role="tab" data-t="${t}" class="${t === BOOKS.tab ? 'on' : ''}">${tr(t === 'Books' ? 'P&L' : t)}</button>`).join('')}</nav>
     <div class="bkbody" id="bkBody"></div>`;

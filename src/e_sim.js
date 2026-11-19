@@ -296,7 +296,7 @@ function dayCash(p) { return p ? p.cashIn - p.vat - p.coach - p.mkt - p.card - (
 function liveCash() { return BIZ ? BIZ.cash + (A && A.pnl ? dayCash(A.pnl) : 0) : 0; }
 function noteCashOut() { if (BIZ.cash < 0 && !BIZ.cashOutAt) BIZ.cashOutAt = { month: M.cfg.month, year: BIZ.year, day: A.date, mi: BIZ.monthIndex }; }
 function bookCash(p) { if (!BIZ || !p) return; BIZ.cash += dayCash(p); BIZ.mIn += p.cashIn; BIZ.mOut += p.cashIn - dayCash(p); noteCashOut(); }
-function setupRun() { if (typeof resetGoal === 'function') resetGoal(); applyPublished(); if (typeof BOOKS !== 'undefined') BOOKS.stage = null; applyBuild(); newBusiness(); setupMonth(); setupDay(0); }
+function setupRun() { if (typeof hideNote === 'function') hideNote();   /* a new business starts without an old notice */ if (typeof resetGoal === 'function') resetGoal(); applyPublished(); if (typeof BOOKS !== 'undefined') BOOKS.stage = null; applyBuild(); newBusiness(); setupMonth(); setupDay(0); }
 function bookDay() { return { dayI: A.dayI, dow: A.dow, date: A.date, visits: A.visits, paidVisits: A.paidVisits || 0, blendSum: A.blendSum || 0, lens: (A.visitLens || []).slice(), ptSessions: A.ptSessions, balked: A.balked || 0, bad: A.bad || 0, pnl: A.pnl }; }
 function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
 // ================================================================ the month closes and the business carries on (D9)
@@ -526,7 +526,7 @@ function setupDay(i) {
   A.ptSessions = 0; A.ptEarnedToday = 0; A.ptPrices = []; A.deferred = owedValue(); A.pnlMin = -1; A.pnl = computePnl();
 }
 function updateLadderLess() {}
-function pnlCosts() { return { ...COSTS, area: S.area, rentRate: BUILT && BIZ && BIZ.monthIndex < BUILT.rentFreeMonths ? 0 : S.rentRate,   /* a built gym's first month is rent-free; management is still paid */ staff: S.staff, addOns: A && A.closed ? 0 : COSTS.addOns }; }   // no add-on sales on a closed day
+function pnlCosts() { return { ...COSTS, area: S.area, rentRate: BUILT && BIZ && BIZ.monthIndex < BUILT.rentFreeMonths ? 0 : S.rentRate,   /* a built gym's first month is rent-free; management is still paid */ staff: S.staff, elec: BUILT ? COSTS.elec * S.area / 115 : COSTS.elec,   /* owner 2026-11-20: a built gym's power bill follows its floor */ addOns: A && A.closed ? 0 : COSTS.addOns }; }   // no add-on sales on a closed day
 function computePnl() {
   const ptCash = A.ptRev || 0, rentals = A.rentRev || 0, passes = A.passRev || 0;
   return dailyPnl({ passes, entry: (A.rev || 0) - ptCash - rentals - passes, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
