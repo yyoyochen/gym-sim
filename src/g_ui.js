@@ -41,6 +41,11 @@ function drawPRBoard() {
 }
 // ================================================================ toasts
 const toastEl = document.getElementById('toast');
+function updateHudBottom() { const h = document.getElementById('hud'); if (h) document.documentElement.style.setProperty('--hudB', Math.round(h.getBoundingClientRect().bottom) + 'px'); }   /* first-minute polish: phone toasts sit just below the HUD, whatever it holds */
+{ const h = document.getElementById('hud'); if (h && typeof ResizeObserver === 'function') new ResizeObserver(updateHudBottom).observe(h); }
+function hintSeen() { document.body.classList.add('hinted'); try { localStorage.setItem('gymsim.hinted', '1'); } catch (e) {} updateHudBottom(); }   /* the gesture hint goes after the first touch of the scene */
+try { if (localStorage.getItem('gymsim.hinted')) document.body.classList.add('hinted'); } catch (e) {}
+canvas.addEventListener('pointerdown', hintSeen, { passive: true }); canvas.addEventListener('wheel', hintSeen, { passive: true });
 function showToast(text) { const d = document.createElement('div'); d.textContent = text; toastEl.appendChild(d); while (toastEl.children.length > 3) toastEl.firstChild.remove(); setTimeout(() => d.remove(), 3500); }
 // ================================================================ NetLogo-style panel
 const panel = document.getElementById('panel');
@@ -191,7 +196,7 @@ function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or
   if (A && A.payQ) A.payQ.length = 0;
   if (kind === 'month' && out.days) {   /* owner 2026-11-16: one pop of the month's takings; it glows only for a new all-time best month */
     const tot = M.days.reduce((t, d) => t + d.pnl.takings, 0) + A.pnl.takings, prev = Math.max(0, ...BIZ.months.map(m => (m.pnl && m.pnl.takings) || 0));
-    BIG_POPS.push({ fee: Math.round(tot), month: M.cfg.month, best: prev > 0 && tot > prev }); }
+    BIG_POPS.push({ fee: Math.round(tot), ebitda: Math.round(M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda), month: M.cfg.month, best: prev > 0 && tot > prev }); }
   if (kind !== 'day' && out.days) { if (delay) setTimeout(() => { if (!BOOKS.open && !closing) openBooks('Today'); }, delay); else openBooks('Today'); }   /* after the pop has had its moment */
   else if (BOOKS.open) updateBooks(true);
 }

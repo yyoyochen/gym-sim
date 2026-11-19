@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>gym-sim</title>
+<meta name="description" content="A pixel-art gym you run in Taipei: pick a size, open the doors, watch members train, and find out whether rent, staff and the rack queue let you break even.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="gym-sim · run a gym in Taipei">
+<meta property="og:description" content="Open a pixel-art gym in Taipei, watch members train, and see whether the month made money.">
+<meta property="og:image" content="https://yyoyochen.github.io/gym-sim/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
@@ -50,7 +58,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #hud .clk{font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f15);color:var(--accent);margin-top:4px}
 #hud .sub{font-size:var(--f12);color:#e8dcc0}
 #hud .live{pointer-events:auto;cursor:pointer;display:inline-block;margin-top:3px;font-size:var(--f12);color:var(--ink);background:rgba(16,19,28,.75);border:1px solid var(--edge);padding:2px 6px;min-height:22px;text-shadow:none}
-#hud .live:empty{display:none}body.building #liveLine,body.building #goalLine{display:none}
+#hud .live:empty{display:none}#hud .live b{display:block;font-weight:400}#hud .live b.loss{color:#ff9b8e}#hud .live b.gain{color:#8fe0a0}#hud .live small{display:block;font-size:var(--f11);color:#c4c9d4}body.introing #hudSub{display:none}#hud{max-width:calc(100vw - 20px - var(--safe-l) - var(--safe-r))}body.hinted #hudSub{display:none}body.building #liveLine,body.building #goalLine{display:none}
 #hud .goal{display:block;margin-top:3px;font-size:var(--f12);color:var(--accent)}#hud .goal:empty{display:none}#hud .goal.met{color:#7fcf6b}#hud .goal.missed{color:var(--warn)}
 #goalCard{position:fixed;z-index:25;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 32px));background:rgba(16,19,28,.97);border:2px solid var(--accent);box-shadow:6px 6px 0 rgba(0,0,0,.4);padding:12px;display:flex;flex-direction:column;gap:6px}#goalCard[hidden]{display:none}#goalCard h2{font-size:var(--f14);margin:0 0 4px;color:var(--accent)}#goalCard button{min-height:44px;text-align:left}#goalCard button.skip{background:transparent;color:var(--muted);box-shadow:none}
 #hud .live.out{border-color:var(--warn);color:var(--warn)}
@@ -101,7 +109,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 .pay.pt{color:#ffb81c;z-index:6;text-shadow:-2px 0 #3a2300,2px 0 #3a2300,0 -2px #3a2300,0 2px #3a2300,-2px -2px #3a2300,2px 2px #3a2300,-2px 2px #3a2300,2px -2px #3a2300,0 0 14px rgba(255,184,28,.85)}
 .pay.pt small{color:#fff}
 .pay.sum{color:#5ee08a;z-index:7}.pay.sum small{color:#fff}.pay.sum.best{color:#ffe14a;text-shadow:-2px 0 #3a2300,2px 0 #3a2300,0 -2px #3a2300,0 2px #3a2300,-2px -2px #3a2300,2px 2px #3a2300,-2px 2px #3a2300,2px -2px #3a2300,0 0 16px rgba(255,225,74,.9)}
-.pay small{display:block;font-size:var(--f10);color:#fff}
+.pay small{display:block;font-size:var(--f10);color:#fff}.pay small.v.loss{color:#ff7a6b}.pay small.v.gain{color:#7fcf6b}#hud .live.loss{border-color:#a8483e}#books p.verdict{font-size:var(--f15);line-height:1.35;margin:4px 0 6px;color:var(--ink)}#books p.verdict.loss{color:#ff9b8e}#books p.verdict.gain{color:#8fe0a0}
 #toast{position:fixed;left:calc(10px + var(--safe-l));bottom:calc(58px + var(--plotOff,0px) + var(--safe-b));display:flex;flex-direction:column;gap:4px;pointer-events:none}
 #toast div{background:rgba(16,19,28,.92);border:2px solid var(--accent);color:var(--ink);font-family:Digits,Silkscreen,"Cubic 11",monospace;font-size:var(--f12);padding:4px 8px;animation:tin .2s}
 @keyframes tin{from{transform:translateY(6px);opacity:0}}
@@ -171,7 +179,8 @@ select,input[type=number]{width:100%;font-family:Digits,"Pixelify Sans","Cubic 1
   .mon span{font-size:var(--f9)}
   #hud h1{font-size:18px}
   #card{width:210px}
-  #toast{bottom:auto;top:calc(80px + var(--safe-t))}
+  #toast{bottom:auto;top:calc(var(--hudB,80px) + 6px)}
+  #hud .clk{margin-top:14px}
   #viewbar{bottom:auto;top:calc(10px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r))}
   #plotbar{grid-template-columns:1fr 1fr}
 }
@@ -180,7 +189,7 @@ select,input[type=number]{width:100%;font-family:Digits,"Pixelify Sans","Cubic 1
 #books td.n{font-size:var(--f12)}#books table.yr td.n{font-size:var(--f11)}#books .step b{font-size:var(--f13)}.w .lab b{font-size:var(--f12)}.mon b{font-size:var(--f15)}#build td.n,#build .bstep b{font-size:var(--f14)}
 @media (max-width:859px){.mon b{font-size:var(--f13)}}
 /* phone books (owner, 2026-11-15): read, not glanced at, so notes and figures go to 14px; tabs keep to one row where they fit, else wrap */
-@media (max-width:859px){#books{--f11:16px}#books .bktabs{flex-wrap:wrap;row-gap:2px}#books .bktabs button{padding:6px 4px}}
+@media (max-width:859px){#books{--f11:16px}#books .bktabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px}#books .bktabs button{padding:6px 2px;min-width:0}}
 </style>
 </head>
 <body>

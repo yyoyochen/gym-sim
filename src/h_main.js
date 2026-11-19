@@ -278,6 +278,10 @@ function tick(raw, now) {
 // ================================================================ "+$" pops at the gate as members pay on the way out
 const PAYS = [], _payV = new V3();
 let payNext = 0, payDing = 0, payRun = null, payBiz = null;
+function bigPopHtml(p) {   /* a closed day's or month's takings, labelled as takings, with its result under it (first-minute polish: the till is not the headline win) */
+  const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase(), r = p.ebitda != null ? verdictShort(p.ebitda) : null;
+  return `+$${p.fee.toLocaleString('en-US')}<small>${lab} · ${tx('TAKINGS', '收入')}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>${r ? `<small class="v ${p.ebitda < 0 && r !== '±$0' ? 'loss' : 'gain'}">${tx(`${r} AFTER COSTS`, `扣除成本後 ${r}`)}</small>` : ''}`;
+}
 function updatePays() {
   const now = performance.now();
   if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
@@ -300,8 +304,7 @@ function updatePays() {
   }
   for (const p of BIG_POPS.splice(0)) {   /* owner 2026-11-16: a closed day's or the month's takings: big, like a PT sale; glowing only for an all-time best */
     const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
-    const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase();
-    el.innerHTML = `+$${p.fee.toLocaleString('en-US')}<small>${lab}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>`; document.body.appendChild(el);
+    el.innerHTML = bigPopHtml(p); document.body.appendChild(el);
     payNext = Math.max(now, payNext + 700); PAYS.push({ el, born: payNext, pt: true, vx: 0, size: p.month ? 2.8 : 2.2, rung: false });
   }
   const r = canvas.getBoundingClientRect();
@@ -669,6 +672,45 @@ const SELFTESTS = {
       document.getElementById('bkNext').click(); goOn = false;
       return { ok: shown && M.dayI === d0 + 1 && BOOKS.open && !A.done, detail: { shown, d0, d1: M.dayI, open: BOOKS.open } }; }
     finally { closeBooks(); goOn = false; }
+  },
+  hudClear() {   // judge round 1: on a phone-width page the clock line clears the toolbar, the goal line stays on screen, and the desk hint stays on screen
+    const keep = GOAL.key; try { setupRun(); GOAL.key = 'members500'; updateMonitors(); updateGoalLine();
+      const r = (id) => document.getElementById(id).getBoundingClientRect(), clk = r('hudClock'), vb = r('viewbar'), gl = r('goalLine'), narrow = innerWidth < 860;
+      const clear = !narrow || clk.top >= vb.bottom - 1 || clk.right <= vb.left + 1, goalIn = gl.right <= innerWidth + 1;
+      const h = document.getElementById('booksHint'); updateBooksHint(window.__LO.toScreen); h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
+      const t = h.textContent;
+      return { ok: clear && goalIn && hintIn && t.length > 8 && !/P&L|損益表/.test(t), detail: { narrow, clk: [clk.top, clk.right], vb: [vb.bottom, vb.left], gl: gl.right, w: innerWidth, hb: [hb.left, hb.right], t } }; }
+    finally { GOAL.key = keep; const h = document.getElementById('booksHint'); h.style.display = 'none'; updateGoalLine(); }
+  },
+  introHidesHint() {   // judge round 1: the gesture hint is not shown while the opening follows the first member; it comes back after the goal card
+    try { document.body.classList.remove('hinted'); setupRun(); clearFollow(); onGymOpened(true); const sub = document.getElementById('hudSub'), vis = () => getComputedStyle(sub).display !== 'none';
+      let during = false; for (let i = 0; i < 20000 && INTRO.phase !== 'goal'; i++) { fastForward(1); updateIntro(0.1); if (INTRO.phase === 'follow' && vis()) during = true; }
+      document.querySelector('#goalCard [data-goal=""]').click(); const after = vis();
+      return { ok: !during && after, detail: { during, after, phase: INTRO.phase } }; }
+    finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); document.body.classList.remove('introing'); }
+  },
+  booksTabsNoLoneRow() {   // first-minute polish: on a phone-width page the books' tabs never leave one tab alone on a row
+    const bk = document.getElementById('books'), w0 = bk.style.width; try { openBooks('Today'); bk.style.width = '370px'; const tops = [...document.querySelectorAll('#books .bktabs button')].map(b => Math.round(b.getBoundingClientRect().top)), rows = {};
+      for (const t of tops) rows[t] = (rows[t] || 0) + 1; const counts = Object.values(rows), narrow = innerWidth < 860;
+      return { ok: tops.length === 7 && (!narrow || counts.join() === '4,3'),   /* two even rows whatever the font: 4 then 3 */ detail: { w: innerWidth, bw: bk.getBoundingClientRect().width, counts } }; }
+    finally { bk.style.width = w0; closeBooks(); }
+  },
+  hudHintAndToasts() {   // first-minute polish: the gesture hint goes after the first touch of the scene, and toasts sit below the HUD block, never on it
+    try { document.body.classList.remove('hinted', 'introing'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {}
+      const sub = document.getElementById('hudSub'), before = getComputedStyle(sub).display !== 'none';
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40, pointerId: 9 })); window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 40, clientY: 40, pointerId: 9 }));
+      const after = getComputedStyle(sub).display === 'none';
+      updateHudBottom(); const hb = parseFloat(document.documentElement.style.getPropertyValue('--hudB')), real = document.getElementById('hud').getBoundingClientRect().bottom;
+      return { ok: before && after && Math.abs(hb - real) <= 1, detail: { before, after, hb, real } }; }
+    finally { document.body.classList.remove('hinted'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {} }
+  },
+  verdictShown() {   // first-minute polish: whether the day made money is readable without opening a tab, and is the first thing on the Today tab and under the day's pop
+    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda).en;
+      openBooks('Today'); const first = (document.querySelector('#bkBody .grp') || {}).textContent || ''; closeBooks();
+      BIG_POPS.length = 0; nextDay(); closeEarlySync('day'); const p = BIG_POPS[0], html = p ? bigPopHtml(p) : '';
+      const ok = ll.includes(short) && first.includes(v.en) && !!p && p.ebitda === Math.round(A.pnl.ebitda) && html.includes(verdictShort(p.ebitda));
+      return { ok, detail: { ll, short, first: first.slice(0, 120), v: v.en, pop: html.slice(0, 160) } }; }
+    finally { BIG_POPS.length = 0; closeBooks(); setupRun(); }
   },
   liveLineTakings() {   // Plan 6 D2: the live line shows today's takings and check-ins
     runDay({}); updateMonitors(); const t = document.getElementById('liveLine').textContent;
@@ -1355,9 +1397,15 @@ const SELFTESTS = {
   introFollowsFirst() {   // Plan 10 frames 3–5: the doors open, the camera follows the first member in, then hands off and asks for a goal
     try { setupRun(); clearFollow(); onGymOpened(true); const lead = A.members[0].spawnT - A.t, near = lead >= 0 && lead <= 15, playingNow = goOn;   /* review I1: just before the first member, not before the doors */
       for (let i = 0; i < 7200 && INTRO.phase === 'wait'; i++) { fastForward(30); updateIntro(0.1); }
-      const first = followA, ph1 = INTRO.phase; updateIntro(8.1); const card = document.getElementById('goalCard');
+      const first = followA, ph1 = INTRO.phase; for (let i = 0; i < 20000 && INTRO.phase !== 'goal'; i++) { fastForward(1); updateIntro(0.1); } const card = document.getElementById('goalCard');
       const ok = near && playingNow && ph1 === 'follow' && first && first.kind === 'member' && INTRO.phase === 'goal' && followA === null && !card.hidden && card.querySelectorAll('[data-goal]').length === 4;
       return { ok, detail: { near, playingNow, ph1, kind: first && first.kind, phase: INTRO.phase, card: !card.hidden } }; }
+    finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); }
+  },
+  introShowsLift() {   // first-minute polish: the camera follows the first member only once they are inside, and the goal card comes while they are lifting
+    try { setupRun(); clearFollow(); onGymOpened(true); let followedOutside = false, liftAtCard = null, liftedS = 0, steps = 0;
+      for (; steps < 20000 && INTRO.phase !== 'goal'; steps++) { fastForward(1); updateIntro(0.1); const a = INTRO.a; if (a && followA === a && !introInside(a.pos.z, HZ)) followedOutside = true; if (INTRO.phase === 'goal') { liftAtCard = !!a && introLifting(a); liftedS = INTRO.lift; } }
+      return { ok: INTRO.phase === 'goal' && !followedOutside && liftedS >= INTRO_SET_MIN_S && liftAtCard === false, detail: { phase: INTRO.phase, followedOutside, liftAtCard, liftedS, realS: +(steps * 0.1).toFixed(1) } }; }
     finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); }
   },
   introUserTakesOver() {   // Review focus 3: tapping someone else during the automatic follow keeps the player's pick
@@ -1964,8 +2012,8 @@ const SELFTESTS = {
   if (q.has('shot') && st) {
     openIntro(); if (st !== 'welcome') { buildPick('M'); BUILD.step = 'cost'; renderBuild(); } if (st === 'pay') { BUILD.step = 'pay'; renderBuild(); }
     if (!['welcome', 'cost', 'pay'].includes(st)) { openGym();
-      for (let i = 0; i < 7200 && INTRO.phase === 'wait'; i++) { fastForward(30); updateIntro(0); }
-      if (st !== 'follow') { updateIntro(INTRO_FOLLOW_S); }
+      for (let i = 0; i < 7200 && (INTRO.phase === 'wait' || INTRO.phase === 'enter'); i++) { fastForward(5); updateIntro(0); }
+      if (st !== 'follow') { updateIntro(INTRO_CAP_S); }
       if (st === 'tracker' || st === 'books') { document.querySelector('#goalCard [data-goal="members500"]').click(); goOn = false; refreshGo(); fastForward((+q.get('h') || 15) * 3600 - A.t); updateMonitors(); }
       if (st === 'books') { BOOKS.period = 'today'; openBooks('Books'); }
       if (st === 'follow' || st === 'goal') S.speed = 1; } } }

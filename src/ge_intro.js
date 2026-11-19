@@ -1,25 +1,30 @@
 // ================================================================ first session (Plan 10, frames 3–6): the doors open on the player's new gym, the camera follows
 // the first member in, hands off after about 8 seconds, then a card asks for a goal; the goal's progress sits under the HUD clock.
-const INTRO = { phase: 'off', t: 0, a: null };   /* off | wait (for the first member) | follow | goal (card up) | done */
+const INTRO = { phase: 'off', t: 0, a: null, lift: 0 };   /* off | wait (for the first member) | enter (they walk in; the camera holds the door) | follow | goal (card up) | done */
 const GOAL = { key: null };
-const INTRO_FOLLOW_S = 8;
 function introWantedFor(search) { const q = new URLSearchParams(search); return !q.has('selftest') && !q.has('shot'); }   /* owner 2026-11-15: every load starts at the size screen (nothing is saved and the sample is hidden); never on test or screenshot pages */
 function introWanted() { return introWantedFor(location.search); }
+const introLifting = (a) => !!a.act && a.act.k === 'lift' && a.act.reps != null;   /* mid-set, not walking to the station or standing ready */
 function onGymOpened(wasIntro) {
   if (!wasIntro || !A) return;
   const at = A.members.length ? A.members[0].spawnT - 5 : A.open - 60; if (A.t < at) fastForward(at - A.t);   /* the clock moves to just before the first member arrives (review I1: not a long empty door) */
   S.speed = 10; syncSpeed();   /* owner 2026-11-15: the opening, following the first member in, runs at 10× */
-  goOn = true; refreshGo(); INTRO.phase = 'wait'; INTRO.t = 0; INTRO.a = null;
+  goOn = true; refreshGo(); INTRO.phase = 'wait'; INTRO.t = 0; INTRO.a = null; INTRO.lift = 0; document.body.classList.add('introing');   /* judge round 1: no gesture hint over the opening */
   view.target.set(DOOR.x, 0, HZ - 2); view.zoomT = 2.2;
 }
 function updateIntro(real) {
-  if (INTRO.phase === 'wait') {
+  if (INTRO.phase === 'wait' || INTRO.phase === 'enter') {
     if (followA || (A && (A.closed || A.done))) { showGoalCard(); return; }   /* the player already follows someone, or the day is closed: no automatic follow */
-    const a = AGENTS.find(q => q.visible && q.kind === 'member');
-    if (a) { a.straight = true; if (!a.exI && a.state !== 'ex') squatFirst(a); if (a.state === 'toLocker' || a.state === 'locker') skipLocker(a); else squatNow(a); onAgentPicked(a); INTRO.a = a; INTRO.t = 0; INTRO.phase = 'follow'; INTRO.zoom0 = view.zoomT; view.zoomT = ZMAX; }   /* owner 2026-11-15: no changing room for the member the opening follows; close up on them */
+    if (INTRO.phase === 'wait') {
+      const a = AGENTS.find(q => q.visible && q.kind === 'member'); if (!a) return;
+      a.straight = true; if (!a.exI && a.state !== 'ex') squatFirst(a); if (a.state === 'toLocker' || a.state === 'locker') skipLocker(a); else squatNow(a);   /* owner 2026-11-15: no changing room for the member the opening follows */
+      INTRO.a = a; INTRO.phase = 'enter';
+    }
+    const a = INTRO.a;
+    if (introInside(a.pos.z, HZ)) { onAgentPicked(a); INTRO.t = 0; INTRO.lift = 0; INTRO.phase = 'follow'; INTRO.zoom0 = view.zoomT; view.zoomT = ZMAX; }   /* first-minute polish: close up only once they are inside, not among the street trees */
   } else if (INTRO.phase === 'follow') {
-    INTRO.t += real;
-    if (followA !== INTRO.a || INTRO.t >= INTRO_FOLLOW_S) {   /* the player picked someone else, or the follow has run its time */
+    INTRO.t += real; const liftingNow = !!INTRO.a && introLifting(INTRO.a); if (liftingNow) INTRO.lift += real;
+    if (followA !== INTRO.a || introHandoff(INTRO.t, INTRO.lift, liftingNow)) {   /* the player picked someone else, or they have lifted for a moment (or the cap ran out) */
       if (followA === INTRO.a) { clearFollow(); if (INTRO.zoom0) view.zoomT = INTRO.zoom0; }
       showToast(followWord());
       showGoalCard();
@@ -39,7 +44,7 @@ function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) 
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#goalCard button[data-goal]'); if (!b) return;
   const keep = !b.dataset.goal && document.getElementById('goalCard').dataset.mode === 'change';   /* Skip from Change goal keeps the goal */
-  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); INTRO.phase = 'done'; if (typeof updateMonitors === 'function') updateMonitors();
+  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
 });
 function resetGoal() { GOAL.key = null; }
 function goalNow() {

@@ -104,7 +104,7 @@ const PRESET_NAME = { S: ['Small', '小型'], M: ['Medium', '中型'], L: ['Larg
 function introHtml(c, btn) {
   const step = BUILD.step;
   if (step === 'welcome') {
-    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping} 坪 · ${Math.round(ping * 3.3058)} m²</small>`); }).join('');
+    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping}&nbsp;坪 · ${Math.round(ping * 3.3058)}&nbsp;m²</small>`); }).join('');
     return `<h2 class="btitle">${tx('Open your first gym', '開你的第一間健身房')}</h2><p class="bwel">${tx('Pick a size for your gym in Taipei. A few members signed up before you open; you win the rest month by month. All money is in NT dollars.', '替你在台北的健身房選個大小。開幕前有少數會員預售報名，其餘要一個月一個月慢慢招募。所有金額都是新台幣。')}</p>
       <div class="bpick">${pick}</div>${BUILD.introCancel ? `<div class="row">${btn('data-bact="cancel"', tx('Cancel: back to my gym', '取消：回到我的健身房'))}</div>` : ''}`;
   }

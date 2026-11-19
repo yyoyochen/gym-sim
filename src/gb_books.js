@@ -53,8 +53,13 @@ function updateBooks(force) {
 // tab renderers: html() for read-only tabs (re-rendered when numbers change), build()/update() for tabs with controls
 const BOOK_RENDER = {};
 // ---------------------------------------------------------------- live takings line under the HUD clock (D2) and first-visit hint
-function liveLineText() { const p = A && A.pnl; return tx(`Today ${nt$(p && p.takings)} · ${(A && A.checkins) || 0} check-ins`, `今日 ${nt$(p && p.takings)} · 進場 ${(A && A.checkins) || 0} 人`); }
-function updateLiveLine() { const out = !!(BIZ && BIZ.cashOutAt); setText('liveLine', liveLineText() + (out ? tx(' · cash ran out', ' · 現金用完') : '')); const ll = document.getElementById('liveLine'); if (ll) ll.classList.toggle('out', out); }
+function liveLineParts() { const p = A && A.pnl, n = (A && A.checkins) || 0; return { v: verdictLive(p ? p.ebitda : 0), sub: tx(`${nt$(p && p.takings)} cash in · ${n} ${n === 1 ? 'visit' : 'visits'}`, `收現 ${nt$(p && p.takings)} · 進場 ${n} 人`) }; }
+function liveLineText() { const q = liveLineParts(); return tx(q.v.en, q.v.zh) + ' · ' + q.sub; }
+function updateLiveLine() {   /* judge round 1: the day's result on top, labelled; the cash and visits small under it */
+  const out = !!(BIZ && BIZ.cashOutAt), ll = document.getElementById('liveLine'); if (!ll) return; const q = liveLineParts();
+  const html = `<b class="${q.v.sign < 0 ? 'loss' : q.v.sign > 0 ? 'gain' : ''}">${tx(q.v.en, q.v.zh)}</b><small>${q.sub}${out ? tx(' · cash ran out', ' · 現金用完') : ''}</small>`;
+  if (ll.dataset.h !== html) { ll.dataset.h = html; ll.innerHTML = html; } ll.classList.toggle('out', out);
+}
 // owner 2026-11-15: the receptionist; a tap gets a line about the gym and what they noticed about its people
 const RECEP = { last: '', until: 0 };
 function receptionistLines() {
@@ -85,11 +90,15 @@ function updateRecepSay(toScreen) {
   if (performance.now() > RECEP.until || BOOKS.open || (typeof BUILD !== 'undefined' && BUILD.on) || !A || !A.desk) { box.hidden = true; return; }
   const p = toScreen({ x: A.desk.pos.x, y: 2.2, z: A.desk.pos.z }); box.style.left = Math.round(p[0]) + 'px'; box.style.top = Math.round(p[1]) + 'px';
 }
+function placeBooksHint(h) {   /* judge round 1: keep the desk hint on screen; it is centred on the desk, so near an edge it slides inward */
+  const r = h.getBoundingClientRect(), over = r.right - (innerWidth - 6), under = 6 - r.left, x = parseFloat(h.style.left) || 0;
+  if (over > 0) h.style.left = Math.round(x - over) + 'px'; else if (under > 0) h.style.left = Math.round(x + under) + 'px';
+}
 function updateBooksHint(toScreen) {
   const h = document.getElementById('booksHint'); if (!h) return;
   const gc = document.getElementById('goalCard'), rs = document.getElementById('recepSay'), show = !!A && !BOOKS.open && !booksSeen() && !(rs && !rs.hidden) &&   /* not under the receptionist's bubble */ !(typeof BUILD !== 'undefined' && BUILD.on) && !(gc && !gc.hidden);   /* not over the builder or the goal card (Plan 10) */ h.style.display = show ? '' : 'none'; if (!show) return;
   const p = toScreen({ x: DESK_C.x, y: 1.4, z: DESK_C.z }); h.style.left = Math.round(p[0]) + 'px'; h.style.top = Math.round(p[1]) + 'px';
-  const t = tx('Tap the desk to open the P&L', '點櫃檯打開損益表'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; }
+  const t = tx("Tap the desk to see today's money", '點櫃檯看今天的收支'); if (h.dataset.t !== t) { h.dataset.t = t; h.querySelector('span').textContent = t; } if (show) placeBooksHint(h);
 }
 // ---------------------------------------------------------------- shared row helpers
 const pctOf = (v, net) => net > 0.5 ? (100 * v / net).toFixed(1) + '%' : '–';
@@ -109,7 +118,7 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('PT packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
       <tr><td>${tx('Floor rentals', '場地租借')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
       <tr class="sum"><td>${tx('In the till', '收銀合計')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note">${tx('The till shows cash. Whether today made money is in the P&L tab.', '收銀機只顯示現金。今天有沒有賺錢，要看「損益表」分頁。')}</p>`;
+      <p class="note">${tx('This is cash, not profit: the result is at the top.', '這是現金，不是利潤；結果在最上面。')}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>
@@ -121,7 +130,8 @@ BOOK_RENDER.Today = {
     const stamp = A.done ? `<div class="stamp">${tx('Day closed', '本日結帳')} · EBITDA ${nt$(p.ebitda)}</div>` : '';
     const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? closedSummary(BOOKS.closed) + `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} days · takings ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.takings)} · EBITDA ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
-    return closed + stamp + cl + bkSection(tx('Till', '收銀'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the P&L records every one of them.', '這些天會在背景跑完，損益表照樣記下每一天。')}</p>`);
+    const v = verdictText(A.pnl), vsec = bkSection(A.done ? tx('The day', '今天') : tx('The day so far', '今天到目前'), `<p class="verdict ${v.sign < 0 ? 'loss' : v.sign > 0 ? 'gain' : ''}">${tx(v.en, v.zh)}</p><p class="note">${tx('After rent, staff and running costs. The bank loan is on the Bank tab.', '已扣租金、人事與水電雜支；銀行貸款在「銀行」分頁。')}</p>`);   /* first-minute polish: the verdict first */
+    return closed + stamp + cl + vsec + bkSection(tx('Cash taken', '今日收現'), till) + bkSection(tx('Floor', '場內'), floor) + bkSection(tx('Close early', '提前結帳'), closeBtns + `<p class="note">${tx('The days run without being shown; the P&L records every one of them.', '這些天會在背景跑完，損益表照樣記下每一天。')}</p>`);
   },
   wire(body) { body.querySelectorAll('button[data-close]').forEach(b => b.addEventListener('click', () => closeEarly(b.dataset.close))); }
 };

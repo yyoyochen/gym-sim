@@ -345,7 +345,7 @@ function closeOneDay(out, target) {   // one step of a close: finish today, or m
   fastForward(30 * 3600); if (!A.done) endStuckDay();   // a member who never leaves cannot hang a close
   out.days++; out.takings += A.pnl.takings; out.ebitda += A.pnl.ebitda; (out.list = out.list || []).push({ date: A.date, dow: A.dow, month: M.cfg.month, pnl: { ...A.pnl } });   /* owner 2026-11-15: every closed day is shown */
   if (A.payQ) A.payQ.length = 0;   /* no member pops for unwatched days */
-  const best = noteDayBest(A.pnl.takings); if (out.kind !== 'month') BIG_POPS.push({ fee: Math.round(A.pnl.takings), day: { dow: A.dow, date: A.date }, best });   /* owner 2026-11-16: each closed day pops its takings */
+  const best = noteDayBest(A.pnl.takings); if (out.kind !== 'month') BIG_POPS.push({ fee: Math.round(A.pnl.takings), ebitda: Math.round(A.pnl.ebitda), day: { dow: A.dow, date: A.date }, best });   /* owner 2026-11-16: each closed day pops its takings */
   return M.dayI < target;
 }
 function endStuckDay() { for (const a of A.members) if (a.state !== 'gone' && a.state !== 'pending') { a.state = 'gone'; a.visible = false; if (a.coach) { a.coach.visible = false; a.coach.state = 'gone'; } } A.done = true; A.pnl = computePnl(); }

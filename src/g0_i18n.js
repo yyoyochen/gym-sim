@@ -4,7 +4,7 @@ let LANG = (() => { try { return localStorage.getItem('gymsim.lang') || 'en'; } 
 const ZH = {
   // panel groups and buttons
   'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'P&L': '損益表', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
-  'Run': '執行', 'Monitors': '監測', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
+  'Run': '執行', 'Monitors': '現在', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
   'Setup': '設定', 'Go': '開始', 'Pause': '暫停', 'Step': '單步', 'Go (new day)': '開始（新的一天）',
   'Sound off': '音效：關', 'Sound on': '音效：開', 'Copy results': '複製結果', 'Seed': '種子', 'Random seed': '隨機種子',
   'applies on Setup': '按「設定」後生效', '· Setup': '· 設定', 'On': '開', 'Off': '關',
@@ -13,7 +13,7 @@ const ZH = {
   // accessibility labels
   'Pixel-art gym diorama': '像素風健身房場景', 'Rotate left': '向左旋轉', 'Rotate right': '向右旋轉', 'Zoom out': '縮小', 'Zoom in': '放大',
   // sliders and choosers
-  'Speed (gym seconds per real second)': '速度（每實際一秒經過的館內秒數）',
+  'Speed (gym seconds per real second)': '速度',
   'Arrival curve': '到場曲線', 'Weekday': '平日', 'Weekend': '週末', 'January rush': '新年人潮', 'Holiday week': '連假週',
   'People at the weekly peak': '每週尖峰在場人數', 'Month': '月份',
   'Jan': '1月', 'Feb': '2月', 'Mar': '3月', 'Apr': '4月', 'May': '5月', 'Jun': '6月', 'Jul': '7月', 'Aug': '8月', 'Sep': '9月', 'Oct': '10月', 'Nov': '11月', 'Dec': '12月',
@@ -74,7 +74,8 @@ const ZH = {
   'Pull-up': '引體向上', 'Dip': '雙槓撐體', 'Sled push': '推雪橇'
 };
 const zh = () => LANG === 'zh';
-const tr = (s) => (zh() && ZH[s] !== undefined ? ZH[s] : s);
+const EN = { 'Speed (gym seconds per real second)': 'Speed', 'Monitors': 'Right now', 'Plots': 'Charts' };   /* first-minute polish: plain words on the panel; the keys stay as they were */
+const tr = (s) => (zh() && ZH[s] !== undefined ? ZH[s] : EN[s] !== undefined && !zh() ? EN[s] : s);
 // a sentence with numbers in it: English and Chinese written side by side at the call site
 const tx = (en, zhs) => (zh() ? zhs : en);
 // "Coach Mara" -> "Mara 教練"
