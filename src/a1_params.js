@@ -102,3 +102,32 @@ function balkProb(waitMin) { return 1 - Math.exp(-Math.max(0, waitMin) / DEMAND_
 // new build: share of steady-state demand reached m months after opening (opens at 15%, time constant 6.4 months: P4.13, P4.16)
 const RAMP = { open: 0.15, tau: 6.4 };
 function rampLevel(m) { return 1 - (1 - RAMP.open) * Math.exp(-Math.max(0, m) / RAMP.tau); }
+// ================================================================ pricing mix (owner 2026-11-20): an adjustable PT session price and an optional monthly pass
+// PT: the price of one session in the pack of 8; the packs of 16 and 24 are $100 and $200 a session cheaper, paid in instalments of 8 sessions
+// (the first at the full price, each later one $200 a session cheaper). At PT_BASE this is the price list of 2026-11. ePrice: invented, unit elastic.
+const PT_BASE = 1690, PT_E_PRICE = -1;
+function ptPacks(p = PT_BASE) {
+  return [{ n: 8, price: 8 * p, parts: [8 * p] }, { n: 16, price: 16 * (p - 100), parts: [8 * p, 8 * (p - 200)] }, { n: 24, price: 24 * (p - 200), parts: [8 * p, 8 * (p - 200), 8 * (p - 400)] }];
+}
+function ptDemandMult(p) { return p === PT_BASE ? 1 : Math.pow(Math.max(100, p) / PT_BASE, PT_E_PRICE); }
+// Monthly pass: unlimited visits for 30 days. A member takes it when it costs less than their month of visits by the minute, give or take a
+// personal taste of ±25% (invented). Pass holders come 25% more often (the next visit is free; invented). pr: { off, peak, cap, perMinOn, monthlyOn, monthly }
+const PASS = { price: 1000,   /* no-contract gyms in Taipei sell a month at about 880-1,088 (research 2026-11-20) */ visitUp: 1.25, taste: 0.25, days: 30, typicalVisits: 6 };
+function payPerUseMonth(vpu, off, peak, cap, stay = DEMAND.stay) { return vpu * Math.min(cap, Math.round(stay * blendedPrice(off, peak))); }
+function memberTaste(id) { let x = Math.imul(id + 1, 2654435761) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x = (x ^ (x >>> 13)) >>> 0; return x / 2147483648 - 1; }
+function wantsPass(vpu, id, pr) {
+  if (!pr.monthlyOn) return false;
+  if (!pr.perMinOn) return true;
+  return pr.monthly < payPerUseMonth(vpu, pr.off, pr.peak, pr.cap) * (1 + PASS.taste * memberTaste(id));
+}
+// a pass-only gym: a member whose visits were worth less than the pass leaves faster (square root of the overpayment, at most double)
+function passChurnMult(vpu, pr) {
+  if (!pr.monthlyOn || pr.perMinOn) return 1;
+  return Math.min(2, Math.max(1, Math.sqrt(pr.monthly / Math.max(1, payPerUseMonth(vpu, pr.off, pr.peak, pr.cap)))));
+}
+// the per-minute price a newcomer effectively faces (feeds the join elasticity): a typical newcomer makes 6 visits a month
+function joinPrice(pr) {
+  const b = blendedPrice(pr.off, pr.peak); if (!pr.monthlyOn) return b;
+  const k = pr.monthly / payPerUseMonth(PASS.typicalVisits, pr.off, pr.peak, pr.cap);
+  return b * (pr.perMinOn ? Math.min(1, k) : k);
+}

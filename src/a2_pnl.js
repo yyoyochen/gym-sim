@@ -9,8 +9,8 @@ function dayFraction(t, open, close) { return Math.min(1, Math.max(0, (t - open)
 function fixedPerDay(c = COSTS) { return (c.area * c.rentRate + c.area * c.mgmtPerPing + c.elec + c.otherOpex + c.staff) / PT.daysPerMonth; }
 function dailyPnl(t, frac, c = COSTS) {
   const d = PT.daysPerMonth, r = {};
-  r.entry = t.entry; r.entryPeak = t.entryPeak || 0; r.entryOff = r.entry - r.entryPeak; r.cards = t.cards || 0; r.ptEarned = t.ptEarned != null ? t.ptEarned : t.ptSessions * c.ptPrice; r.rentals = t.rentals; r.addOns = c.addOns / d * frac;
-  r.gross = r.entry + r.cards + r.ptEarned + r.rentals + r.addOns;
+  r.entry = t.entry; r.entryPeak = t.entryPeak || 0; r.entryOff = r.entry - r.entryPeak; r.cards = t.cards || 0; r.ptEarned = t.ptEarned != null ? t.ptEarned : t.ptSessions * c.ptPrice; r.rentals = t.rentals; r.addOns = c.addOns / d * frac; r.passes = t.passes || 0;   /* monthly passes: counted on the day they are sold */
+  r.gross = r.entry + r.passes + r.cards + r.ptEarned + r.rentals + r.addOns;
   r.net = r.gross / (1 + c.vat); r.vat = r.gross - r.net;
   r.coach = r.ptEarned * (1 - c.gymShare / 100); r.mkt = r.net * c.mktPct / 100; r.card = r.net * c.cardPct / 100;
   r.retain = t.retain || 0;   /* Plan 9: retention actions paid today (taster coach pay, win-back SMS) */
@@ -19,7 +19,7 @@ function dailyPnl(t, frac, c = COSTS) {
   r.occupancy = c.area * (c.rentRate + c.mgmtPerPing) / d * frac; r.elec = c.elec / d * frac; r.otherOpex = c.otherOpex / d * frac; r.staff = c.staff / d * frac;
   r.fixed = r.occupancy + r.elec + r.otherOpex + r.staff;
   r.ebitda = r.contribution - r.fixed;
-  r.cashIn = t.entry + r.cards + t.ptCash + t.rentals + r.addOns; r.takings = t.entry + r.cards + t.ptCash + t.rentals; r.deferredChange = t.ptCash - r.ptEarned;   // takings: cash through the till, estimated add-ons excluded
+  r.cashIn = t.entry + r.passes + r.cards + t.ptCash + t.rentals + r.addOns; r.takings = t.entry + r.passes + r.cards + t.ptCash + t.rentals; r.deferredChange = t.ptCash - r.ptEarned;   // takings: cash through the till, estimated add-ons excluded
   return r;
 }
 // field-wise sum of a P&L function over the remaining days of the month

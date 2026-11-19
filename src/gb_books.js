@@ -114,6 +114,7 @@ BOOK_RENDER.Today = {
     const p = A.pnl, cnt = (n) => `<span class="pend"> × ${n || 0}</span>`, ptCash = p.deferredChange + p.ptEarned;
     const till = `<table>
       <tr><td>${tx('Visit fees', '入場費')}${cnt(A.paidVisits)}</td><td class="n" data-k="entry">${ntn(p.entry)}</td></tr>
+      ${S.monthlyOn || p.passes ? `<tr><td>${tx('Monthly passes sold', '售出月費')}${cnt(A.passN)}</td><td class="n" data-k="passes">${ntn(p.passes)}</td></tr>` : ''}
       <tr><td>${tx('New member cards (joining fee)', '新會員卡（入會費）')}${cnt(Math.round((p.cards || 0) / CHURN.card))}</td><td class="n" data-k="cards">${ntn(p.cards)}</td></tr>
       <tr><td>${tx('Personal-training packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
       <tr><td>${tx('Coaches renting the floor', '教練租場地')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
@@ -163,7 +164,7 @@ function closedSummary(cl) {
   const p = {}; for (const d of cl.list) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') p[k] = (p[k] || 0) + d.pnl[k];
   const it = itemiseFixed(p, pnlCosts()), row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td>${n(v)}</tr>`;
   const body = `<tr class="grp0"><td colspan="2">${tx('Revenue', '營收')}</td></tr>`
-    + row(tx('Visit fees, off-peak', '入場費（離峰）'), p.entryOff || 0) + row(tx('Visit fees, peak', '入場費（尖峰）'), p.entryPeak || 0) + row(tx('Member cards', '會員卡'), p.cards || 0)
+    + row(tx('Visit fees, off-peak', '入場費（離峰）'), p.entryOff || 0) + row(tx('Visit fees, peak', '入場費（尖峰）'), p.entryPeak || 0) + (p.passes ? row(tx('Monthly passes', '月費'), p.passes) : '') + row(tx('Member cards', '會員卡'), p.cards || 0)
     + row(tx('PT earned', '教練課收入'), p.ptEarned || 0) + row(tx('Floor rentals', '場地租借'), p.rentals || 0) + row(tx('Add-ons (estimated)', '其他收入（估計）'), p.addOns || 0)
     + row(tx('Gross revenue', '總營收'), p.gross || 0, 'sum') + row(tx('VAT', '營業稅'), -(p.vat || 0))
     + `<tr class="grp0"><td colspan="2">${tx('Costs', '成本')}</td></tr>`
@@ -207,6 +208,7 @@ BOOK_RENDER.Books = {
     let rows = bkGroup(tx('Revenue', '營收'))
       + bkRow('entryOff', tx('Visit fees, off-peak', '入場費（離峰）'), p.entryOff, net)
       + bkRow('entryPeak', tx('Visit fees, peak (Mon–Fri 18–22)', '入場費（尖峰，週一至五 18–22）'), p.entryPeak, net)
+      + (p.passes || S.monthlyOn ? bkRow('passes', tx('Monthly passes (when sold)', '月費（售出當天入帳）'), p.passes || 0, net) : '')
       + bkRow('cards', tx('Member cards', '會員卡'), p.cards, net)
       + bkRow('ptEarned', tx('PT earned (sessions delivered)', '教練課收入（已上課）'), p.ptEarned, net)
       + bkRow('rentals', tx('Floor rentals', '場地租借'), p.rentals, net)
@@ -314,15 +316,29 @@ BOOK_RENDER.Members = {
 };
 // ---------------------------------------------------------------- Pricing: a price list with staged changes, published for tomorrow morning (A6, Call 1)
 const PRICE_STEPS = [['priceOff', 0.05, 0.8, 2.5, 'Off-peak price per minute', v => '$' + v.toFixed(2)], ['pricePeak', 0.05, 0.8, 2.5, 'Peak price per minute (Mon–Fri 18–22)', v => '$' + v.toFixed(2)],
-  ['priceCap', 10, 100, 300, 'Cap per visit', v => '$' + v], ['rentP', 10, 150, 600, 'Rental price per 90 min', v => '$' + v]];
-const livePrices = () => ({ priceOff: S.priceOff, pricePeak: S.pricePeak, priceCap: S.priceCap, rentP: M ? M.cfg.rentP : S.rentP, allowOutside: S.allowOutside });
+  ['priceCap', 10, 100, 300, 'Cap per visit', v => '$' + v], ['rentP', 10, 150, 600, 'Rental price per 90 min', v => '$' + v],
+  ['monthlyPrice', 50, 300, 3000, ['Monthly pass price', '月費'], v => '$' + v.toLocaleString('en-US')], ['ptSession', 50, 1000, 3000, ['One coaching session (pack of 8)', '教練課一堂（8 堂方案）'], v => '$' + v.toLocaleString('en-US')]];
+const livePrices = () => ({ priceOff: S.priceOff, pricePeak: S.pricePeak, priceCap: S.priceCap, rentP: M ? M.cfg.rentP : S.rentP, allowOutside: S.allowOutside, ptSession: S.ptSession, perMinOn: S.perMinOn, monthlyOn: S.monthlyOn, monthlyPrice: S.monthlyPrice });
 BOOK_RENDER.Pricing = {
   html() {
     if (!BOOKS.stage) BOOKS.stage = { ...(PUBLISH || livePrices()) };
     const st = BOOKS.stage, live = livePrices(), r2 = (v) => Math.round(v * 100) / 100;
-    const rows = PRICE_STEPS.map(([k, , , , lab, f]) => `<tr><td>${tr(lab)}${r2(st[k]) !== r2(live[k]) ? `<span class="bench" style="color:var(--warn)">${tx('now', '目前')} ${f(live[k])}</span>` : ''}</td>
-      <td><div class="step"><button data-f="${k}" data-d="-1" aria-label="−">−</button><b>${f(st[k])}</b><button data-f="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`).join('')
-      + `<tr><td>${tr('Allow outside coaches')}</td><td><div class="step"><button data-t="allowOutside" class="${st.allowOutside ? 'on' : ''}" style="min-width:120px">${tr(st.allowOutside ? 'On' : 'Off')}</button></div></td></tr>`;
+    const lab1 = (lab) => Array.isArray(lab) ? tx(lab[0], lab[1]) : tr(lab);
+    const stepRow = (k, dim) => { const [, , , , lab, f] = PRICE_STEPS.find(x => x[0] === k); return `<tr${dim ? ' style="opacity:.4"' : ''}><td>${lab1(lab)}${r2(st[k]) !== r2(live[k]) ? `<span class="bench" style="color:var(--warn)">${tx('now', '目前')} ${f(live[k])}</span>` : ''}</td>
+      <td><div class="step"><button data-f="${k}" data-d="-1" aria-label="−">−</button><b>${f(st[k])}</b><button data-f="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`; };
+    const togRow = (k, label) => `<tr><td><b>${label}</b>${st[k] !== live[k] ? `<span class="bench" style="color:var(--warn)">${tx('now', '目前')} ${tr(live[k] ? 'On' : 'Off')}</span>` : ''}</td><td><div class="step"><button data-t="${k}" class="${st[k] ? 'on' : ''}" style="min-width:120px">${tr(st[k] ? 'On' : 'Off')}</button></div></td></tr>`;
+    // the pass against this gym's own members: who would take it at the staged prices, and from how many visits a month it pays off
+    const prS = { off: st.priceOff, peak: st.pricePeak, cap: st.priceCap, perMinOn: st.perMinOn, monthlyOn: st.monthlyOn, monthly: st.monthlyPrice }, pool = M ? M.pool : [];
+    const takers = pool.filter(m => wantsPass(m.vpu, m.id, prS)).length, even = Math.ceil(st.monthlyPrice / Math.max(1, payPerUseMonth(1, st.priceOff, st.pricePeak, st.priceCap)));
+    const passNote = !st.monthlyOn ? `<p class="note">${tx('Off: everyone pays by the minute.', '未開放：所有人都計時付費。')}</p>`
+      : `<p class="note" data-k="passShare">${st.perMinOn ? tx(`About ${takers} of your ${pool.length} members would take the pass: it pays off from ${even} visits a month. They stop paying by the minute and come more often.`, `你的 ${pool.length} 位會員中，約 ${takers} 位會改用月費：每月來 ${even} 次以上才划算。他們不再計時付費，也會更常來。`)
+        : tx(`Pass only: all ${pool.length} members must buy it. It pays off from ${even} visits a month, so occasional members leave faster and fewer people join.`, `只收月費：${pool.length} 位會員都要買。每月來 ${even} 次以上才划算，所以偶爾來的會員流失更快、新會員也更少。`)}</p>`;
+    const entry = `<table>${togRow('perMinOn', tx('Pay by the minute', '計時收費'))}${stepRow('priceOff', !st.perMinOn)}${stepRow('pricePeak', !st.perMinOn)}${stepRow('priceCap', !st.perMinOn)}
+      ${togRow('monthlyOn', tx('Monthly pass (30 days, unlimited visits)', '月費（30 天不限次數）'))}${st.monthlyOn ? stepRow('monthlyPrice') : ''}</table>${passNote}`;
+    const stPacks = ptPacks(st.ptSession), ptDelta = ptDemandMult(st.ptSession) / ptDemandMult(S.ptSession);
+    const coaching = `<table>${stepRow('ptSession')}${stPacks.map((pk, i) => `<tr><td style="padding-left:14px;color:var(--muted)">${tx(`${pk.n} sessions`, `${pk.n} 堂`)}${pk.parts.length > 1 ? `<span class="bench" style="color:var(--muted)">${tx(`or ${pk.parts.length} instalments`, `可分 ${pk.parts.length} 期`)}</span>` : ''}</td><td class="n"${i === 0 ? ' data-k="pack8"' : ''}>${nt$(pk.price)}</td></tr>`).join('')}
+      ${stepRow('rentP')}<tr><td>${tr('Allow outside coaches')}</td><td><div class="step"><button data-t="allowOutside" class="${st.allowOutside ? 'on' : ''}" style="min-width:120px">${tr(st.allowOutside ? 'On' : 'Off')}</button></div></td></tr></table>
+      <p class="note"${Math.abs(ptDelta - 1) > 1e-9 ? ' data-k="ptNote"' : ''}>${Math.abs(ptDelta - 1) > 1e-9 ? tx(`At this price about ${Math.round(Math.abs(ptDelta - 1) * 100)}% ${ptDelta < 1 ? 'fewer' : 'more'} members start coaching. Packs already sold keep their price; coaches keep their share of each session.`, `這個價格下，開始上教練課的會員約${ptDelta < 1 ? '少' : '多'} ${Math.round(Math.abs(ptDelta - 1) * 100)}%。已售出的方案維持原價；教練照比例分潤。`) : tx('Dearer sessions earn more each but fewer members start; cheaper ones sell more.', '單堂越貴賺越多，但開始上課的人越少；便宜則賣得多。')}</p>`;
     const pv = pricePreview({ off: S.priceOff, peak: S.pricePeak, cap: S.priceCap }, { off: st.priceOff, peak: st.pricePeak, cap: st.priceCap });
     const pc = (x) => (x >= 1 ? '+' : '−') + Math.abs(100 * (x - 1)).toFixed(1) + '%';
     // a heavy user (12 visits of 90 min a month) against a big-box monthly membership: always shown; a warning when this change makes it worse and above that level
@@ -333,15 +349,17 @@ BOOK_RENDER.Pricing = {
       <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Worked out from the model\'s assumptions for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
     const pub = PUBLISH ? `<p class="note" style="color:var(--accent)" data-k="published">${tx('Published: the new price list applies from tomorrow morning.', '已公告：新價目從明天早上開始。')}</p>` : '';
     const nextMonth = (st.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside) || S.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside)) ? `<p class="note warn" data-k="nextMonthNote">${tx('Who may rent the floor changes from next month (Setup or New month).', '外部教練能否租場地，從下個月起生效（設定或新的一個月）。')}</p>` : '';
-    const packs = `<table>${PT_PACKS.map(pk => `<tr><td>${tx(`${pk.n} sessions`, `${pk.n} 堂`)}${pk.parts.length > 1 ? `<span class="bench" style="color:var(--muted)">${tx(`or ${pk.parts.length} instalments`, `可分 ${pk.parts.length} 期`)}</span>` : ''}</td><td class="n">${nt$(pk.price)}</td></tr>`).join('')}</table>`;
-    return bkSection(tx('Price list', '價目表'), `<table>${rows}</table><div class="row" style="margin-top:6px"><button data-k="publish" class="btn-go on">${tx('Publish new prices', '公告新價格')}</button><button data-k="reset">${tx('Undo changes', '取消變更')}</button></div>${pub}${nextMonth}`, tx('applies from tomorrow', '明天起生效'))
-      + bkSection(tx('Preview', '試算'), preview) + bkSection(tx('PT packs (fixed)', '教練課方案（固定）'), packs);
+    const actions = `<div class="row" style="margin-top:6px"><button data-k="publish" class="btn-go on">${tx('Publish new prices', '公告新價格')}</button><button data-k="reset">${tx('Undo changes', '取消變更')}</button></div>${pub}${nextMonth}`;
+    return bkSection(tx('Entry', '入場'), entry, tx('applies from tomorrow', '明天起生效')) + bkSection(tx('Coaching', '教練課'), coaching + actions)
+      + bkSection(tx('What the minute prices do', '計時價格的影響'), preview);
   },
   wire(body) {
     body.querySelectorAll('button[data-f]').forEach(b => b.addEventListener('click', () => {
       const [k, step, lo, hi] = PRICE_STEPS.find(x => x[0] === b.dataset.f); const v = BOOKS.stage[k] + step * +b.dataset.d;
-      BOOKS.stage[k] = Math.round(Math.min(hi, Math.max(lo, v)) / step) * step; updateBooks(true); }));
-    body.querySelectorAll('button[data-t]').forEach(b => b.addEventListener('click', () => { BOOKS.stage.allowOutside = !BOOKS.stage.allowOutside; updateBooks(true); }));
+      const c = Math.min(hi, Math.max(lo, v)); BOOKS.stage[k] = step < 1 ? Math.round(c / step) * step : c;   /* whole-dollar steps keep their starting point ($1,690 + $50) */ updateBooks(true); }));
+    body.querySelectorAll('button[data-t]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.t, st = BOOKS.stage; st[k] = !st[k];
+      if (!st.perMinOn && !st.monthlyOn) st[k === 'perMinOn' ? 'monthlyOn' : 'perMinOn'] = true;   /* the gym always sells entry one way or the other */
+      updateBooks(true); }));
     const pubB = body.querySelector('[data-k="publish"]'); if (pubB) pubB.addEventListener('click', () => { publishPrices(BOOKS.stage); showToast(tx('New prices from tomorrow morning', '新價格明天早上生效')); updateBooks(true); });
     const rs = body.querySelector('[data-k="reset"]'); if (rs) rs.addEventListener('click', () => { PUBLISH = null; BOOKS.stage = null; updateBooks(true); });
   }
@@ -419,7 +437,7 @@ BOOK_RENDER.Bank = {
   }
 };
 // ---------------------------------------------------------------- the price board on the desk follows the price list in force (Plan 7b)
-function priceBoardKey() { return [S.priceOff, S.pricePeak, S.priceCap, M ? M.cfg.rentP : S.rentP].join('|'); }
+function priceBoardKey() { return [S.priceOff, S.pricePeak, S.priceCap, M ? M.cfg.rentP : S.rentP, S.ptSession, S.monthlyOn, S.perMinOn, S.monthlyPrice].join('|'); }
 function drawPriceBoard(force) {
   const key = priceBoardKey(); if (!force && key === PRICEBOARD.drawn) return; PRICEBOARD.drawn = key;
   const g = PRICEBOARD.canvas.getContext('2d'), W = 256, H = 160, f2 = (v) => v.toFixed(2), rent = M ? M.cfg.rentP : S.rentP;
@@ -427,8 +445,10 @@ function drawPriceBoard(force) {
   g.fillStyle = '#10131c'; g.fillRect(0, 0, W, H); g.fillStyle = '#dfe03a'; g.fillRect(0, 0, W, 26);
   g.textBaseline = 'middle'; put('PRICE LIST', 8, 14, 16, '#10131c', true, 150); g.textAlign = 'right'; put('價目表', W - 8, 14, 16, '#10131c', true, 80); g.textAlign = 'left';
   const row = (x, y, label, price) => { put(label, x, y, 10, '#959bab', false, 116); put(price, x, y + 17, 18, '#dfe03a', true, 116); };
-  row(8, 40, 'OFF-PEAK / MIN', '$' + f2(S.priceOff)); row(8, 80, 'PEAK WKDAY 18-22', '$' + f2(S.pricePeak)); row(8, 120, 'CAP PER VISIT', '$' + S.priceCap);
+  const pass = '$' + S.monthlyPrice.toLocaleString('en-US');
+  if (S.perMinOn) { row(8, 40, 'OFF-PEAK / MIN', '$' + f2(S.priceOff)); row(8, 80, 'PEAK WKDAY 18-22', '$' + f2(S.pricePeak)); if (S.monthlyOn) row(8, 120, 'MONTHLY PASS', pass); else row(8, 120, 'CAP PER VISIT', '$' + S.priceCap); }
+  else row(8, 40, 'MONTHLY PASS', pass);
   row(136, 40, 'RENTAL / 90 MIN', '$' + rent); put('PT PACKS', 136, 80, 10, '#959bab', false, 116);
-  PT_PACKS.forEach((p, i) => put(`${p.n} · ${money(p.price)}`, 136, 97 + i * 19, 15, '#f2f1ea', true, 116));
+  ptPacksNow().forEach((p, i) => put(`${p.n} · ${money(p.price)}`, 136, 97 + i * 19, 15, '#f2f1ea', true, 116));
   PRICEBOARD.tex.needsUpdate = true;
 }

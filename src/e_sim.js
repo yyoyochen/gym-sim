@@ -5,6 +5,7 @@ const S = {
   mix: (({ coach, ...m }) => m)(defaultMix(0)),   // four archetypes in whole percents summing to 100; coaching comes from PT client records
   patience: 5, workIn: 30, rest: 2.5, rerack: 75,
   racks: 6, plats: 2, benches: 6, cardio: 9, machines: 7, plates: 4, hallW: null, hallD: null, /* hallW x hallD cells: a built gym (Plan 8); null = the sample gym */ cleaners: 0, cap: 60, curls: false, speed: 30, turf: true, layout: null, /* a built gym's pieces (Plan 11); null: laid out by zones */ /* a built gym's turf and sled lane (owner 2026-11-15) */
+  ptSession: PT_BASE, perMinOn: true, monthlyOn: false, monthlyPrice: PASS.price,   // owner 2026-11-20: the PT session price and the optional monthly pass (live, published like the minute prices)
   priceOff: 1.2, pricePeak: 1.5, priceCap: 180,   // NT$ per minute off-peak and peak, cap per visit (P3.1–P3.3; same as PRICE); live: bill at once, members react from the next morning
   build: 'existing', monthsOpen: 1, shock: 'none',   // new-build ramp-up (P4.13, P4.16) and shocks (D8): engine settings with no control yet
   deskFT: 2, deskPTh: 40, coaches: 2,   // owner 2026-11-15: the roster (live): full-time desk staff, part-time desk hours a week, in-house coaches
@@ -96,9 +97,20 @@ function visitFee(t0, t1) {
   visitFee.peakPart = fee > 0 ? pk / fee : 0;   // share of this visit billed at the peak rate (the cap scales both parts alike)
   return Math.min(S.priceCap, Math.round(fee));
 }
+function priceList() { return { off: S.priceOff, peak: S.pricePeak, cap: S.priceCap, perMinOn: S.perMinOn, monthlyOn: S.monthlyOn, monthly: S.monthlyPrice }; }
+function ptPacksNow() { return ptPacks(S.ptSession); }
+function onPass(rec, day = M.dayI) { return rec.passUntil != null && rec.passUntil > day; }
+function passMember(rec, pr = priceList()) { return onPass(rec) || wantsPass(rec.vpu, rec.id, pr); }   /* comes like a pass holder: has one, or will buy one at the next visit */
 function chargeOut(a) {   // billed once, as the member walks out past the desk
   if (a.paid || !a.tDoor) return;
-  a.paid = true; a.fee = a.rec ? applyVoucher(a.rec, visitFee(a.tDoor, A.t)) : visitFee(a.tDoor, A.t);   /* Plan 9: a voucher comes off the fee */ A.feePeak = (A.feePeak || 0) + a.fee * visitFee.peakPart; A.paidVisits = (A.paidVisits || 0) + 1; A.blendSum = (A.blendSum || 0) + blendedPrice(S.priceOff, S.pricePeak);
+  a.paid = true; A.payQ = A.payQ || [];
+  if (a.rec && onPass(a.rec)) { a.fee = 0; a.pass = 'held'; A.passVisits = (A.passVisits || 0) + 1; }   /* a pass holder walks out without paying */
+  else if (a.rec && wantsPass(a.rec.vpu, a.rec.id, priceList())) {   /* buys (or renews) the monthly pass: cash today, 30 days of visits */
+    a.fee = 0; a.pass = 'bought'; a.rec.passUntil = M.dayI + PASS.days; A.passN = (A.passN || 0) + 1; A.passRev = (A.passRev || 0) + S.monthlyPrice; A.rev = (A.rev || 0) + S.monthlyPrice; A.passVisits = (A.passVisits || 0) + 1;
+    A.payQ.push({ a, fee: S.monthlyPrice, pass: true });
+  } else {
+  a.fee = a.rec ? applyVoucher(a.rec, visitFee(a.tDoor, A.t)) : visitFee(a.tDoor, A.t);   /* Plan 9: a voucher comes off the fee */ A.feePeak = (A.feePeak || 0) + a.fee * visitFee.peakPart; A.paidVisits = (A.paidVisits || 0) + 1; A.blendSum = (A.blendSum || 0) + blendedPrice(S.priceOff, S.pricePeak);
+  }
   if (a.rec && !a.rec.card) { a.rec.card = true; A.cards = (A.cards || 0) + CHURN.card; A.payQ = A.payQ || []; A.payQ.push({ a, fee: CHURN.card }); }   // NT$100 member card (P3.5)
   A.rev = (A.rev || 0) + a.fee;
   A.payQ = A.payQ || []; if (a.fee > 0) A.payQ.push({ a, fee: a.fee, min: Math.round((A.t - a.tDoor) / 60) });   /* a visit a voucher paid in full shows no +$0 */
@@ -110,8 +122,8 @@ function chargeOut(a) {   // billed once, as the member walks out past the desk
     A.payQ.push({ a, fee: entry, min: Math.round(min) }, { a, fee: rent, rent: true });
   }
   // a client who has used the last session renews half the time (P5.12); a member without a coach occasionally starts PT
-  else if (a.rec && (pt ? pt.left <= 0 && a.rng() < PT.renew : !a.rec.outside && a.rng() < ptConvert() && ptRoom())) {   /* owner 2026-11-15: more coaches sell more PT, up to what they can carry */
-    const pk = PT_PACKS[pickPack(a.rng())];   // one draw: 45% pack of 8, 37% of 16, 18% of 24
+  else if (a.rec && (pt ? pt.left <= 0 && a.rng() < Math.min(1, PT.renew * Math.sqrt(ptDemandMult(S.ptSession))) : !a.rec.outside && a.rng() < ptConvert() && ptRoom())) {   /* owner 2026-11-20: dearer sessions convert and renew less */   /* owner 2026-11-15: more coaches sell more PT, up to what they can carry */
+    const pk = ptPacksNow()[pickPack(a.rng())];   // one draw: 45% pack of 8, 37% of 16, 18% of 24
     const inst = pk.parts.length > 1 && a.rng() < 0.5;   // half spread the bigger packs over instalments
     const paid = inst ? pk.parts[0] : pk.price;
     A.rev += paid; A.ptRev = (A.ptRev || 0) + paid; A.packs = (A.packs || 0) + 1; A.ptOwed = (A.ptOwed || 0) + pk.n;
@@ -126,11 +138,7 @@ function owedValue() { return M ? M.pool.concat(M.lapsed).reduce((t, m) => t + (
 const OUTSIDE_SHARE = outsideShare();   // rentals / (PT sessions + rentals) a month
 const RENT_90 = [250, 350, 450, 550, 650, 750, 850, 950];
 // PT packages, cash or transfer (gym's LINE price list, 2026-11): 16 and 24 can be paid in instalments
-const PT_PACKS = [
-  { n: 8, price: 13520, parts: [13520] },
-  { n: 16, price: 25440, parts: [13520, 11920] },
-  { n: 24, price: 35760, parts: [13520, 11920, 10320] }
-];
+// PT packages (price list, 2026-11): ptPacks(session price) in the parameters; 16 and 24 can be paid in instalments
 function round25(x) { return Math.max(20, Math.round(x / 2.5) * 2.5); }
 function setsFor(base, list) { return list.map(([pct, reps]) => ({ kg: pct === 0 ? 20 : round25(base * pct), reps, pct })); }
 function makeEx(lift, a, rng, o = {}) {
@@ -233,7 +241,7 @@ function setupMonth() {
   const outBase = cfg.outsideClients * cfg.peak / 35, outN = cfg.allowOutside ? Math.round(outBase * Math.pow(cfg.rentP / DEMAND_RESP.rentBase, DEMAND_RESP.rentElastic)) : 0;
   const moved = Math.round((Math.round(outBase) - outN) * DEMAND_RESP.substitute);
   const lv = M.level * (cfg.shock === 'competitor' ? 0.9 : 1), firstMonth = cfg.build === 'new' && cfg.monthsOpen === 0;   // a gym that has just opened owes no sessions yet
-  choose(firstMonth ? 0 : Math.min(ptCap(cfg.coaches != null ? cfg.coaches : 2), Math.round((Math.round(cfg.ptClients * cfg.peak / 35) + Math.max(0, moved)) * lv)), m => { const i = pickPack(rng()), pk = PT_PACKS[i]; m.pt = { n: pk.n, left: 1 + Math.floor(rng() * pk.n), price: pk.price }; });
+  choose(firstMonth ? 0 : Math.min(ptCap(cfg.coaches != null ? cfg.coaches : 2), Math.round((Math.round(cfg.ptClients * cfg.peak / 35) + Math.max(0, moved)) * lv)), m => { const i = pickPack(rng()), pk = ptPacks(cfg.ptSession || PT_BASE)[i]; m.pt = { n: pk.n, left: 1 + Math.floor(rng() * pk.n), price: pk.price }; });
   choose(Math.round(outN * lv), m => { m.outside = true; });
 }
 // prices published at the desk wait for the next morning (Calls 1, 14); Setup and a new month apply them at once
@@ -315,6 +323,7 @@ function nextMonth() {
     m.joinedDay -= L; m.visits = m.visits.map(d => d - L).filter(d => d >= -60);
     if (m.bad) m.bad = m.bad.map(d => d - L).filter(d => d >= -60);
     if (m.lapsedDay != null) m.lapsedDay -= L;
+    if (m.passUntil != null) m.passUntil -= L;
     if (m.protect) m.protect.until -= L; if (m.voucher) m.voucher.until -= L; if (m.acts) for (const a of m.acts) a.day -= L;   /* Plan 9 */
   }
   // the business keeps its set-up: settings waiting for Setup (layout, demand, seed, scenario, financing) stay pending; only the calendar,
@@ -368,14 +377,15 @@ function projectMonth() {
   const feePerVisit = paid ? (mtd.entry || 0) / paid * modelFee(now) / modelFee(billed / paid) : 90 * modelFee(now) / modelFee(DEMAND_RESP.basePrice);
   const perDay = (k, base) => n ? tot(k) / n : base;                                         // completed-day averages, base values before the first day ends
   const sc = M.cfg.peak / 35 * (M.level || 1) * (M.cfg.shock === 'competitor' ? 0.9 : 1);   // base fallbacks follow the ramp and a competitor
-  const pt = perDay('ptEarned', PT.sessions / PT.daysPerMonth * c.ptPrice * M.cfg.ptClients / 22 * sc),
+  const pt = perDay('ptEarned', PT.sessions / PT.daysPerMonth * c.ptPrice * S.ptSession / PT_BASE * M.cfg.ptClients / 22 * sc),
     rent = perDay('rentals', PT.rentals / PT.daysPerMonth * M.cfg.rentP * M.pool.filter(m => m.outside).length / 10), cards = perDay('cards', CHURN.newPerMonth / PT.daysPerMonth * CHURN.card * sc);
   const rain = M.cfg.weather === 'Rain' ? WEATHER_DAY.rainMult : 1;
   const rest = projectRest(M.cal.slice(M.dayI + 1), (day) => {
     if (day.closure) return dailyPnl({ entry: 0, cards: 0, ptSessions: 0, ptEarned: 0, ptCash: 0, rentals: 0 }, 1, { ...c, addOns: 0 });   // a known closure: fixed costs only
     const base = dayShape(day.dow), sh = peakShiftWeights(base, day.dow, S.pricePeak / S.priceOff - 1), sm = (r) => r.reduce((t, v) => t + v, 0);
-    const f = dayFactor(day.dow, day.mult) * rain * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eExisting) * sm(sh) / sm(base), ev = M.pool.reduce((t, m) => t + Math.min(0.95, m.vpu / 30.4 * f), 0);
-    return dailyPnl({ entry: ev * feePerVisit, cards, ptSessions: 0, ptEarned: pt, ptCash: 0, rentals: rent }, 1, c);
+    const f = dayFactor(day.dow, day.mult) * rain * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eExisting) * sm(sh) / sm(base), PRf = priceList(), anyP = PRf.monthlyOn || M.pool.some(m => m.passUntil != null), ev = M.pool.reduce((t, m) => t + (anyP && passMember(m, PRf) ? 0 : Math.min(0.95, m.vpu / 30.4 * f)), 0);
+    const j = M.cal.indexOf(day), due = anyP ? M.pool.filter(m => PRf.monthlyOn && wantsPass(m.vpu, m.id, PRf) && Math.max(M.dayI + 1, m.passUntil || 0) === j).length : 0;   /* passes that run out that day are renewed (9 in 10) */
+    return dailyPnl({ passes: due * 0.9 * S.monthlyPrice, entry: ev * feePerVisit, cards, ptSessions: 0, ptEarned: pt, ptCash: 0, rentals: rent }, 1, c);
   });
   const total = {}; for (const k of new Set([...Object.keys(mtd), ...Object.keys(rest)])) total[k] = (mtd[k] || 0) + (rest[k] || 0);
   return { mtd, rest, total };
@@ -383,7 +393,8 @@ function projectMonth() {
 function lapseHazard(m, i) {   // today's chance this member lapses: tenure, visit frequency, bad visits in the last 30 days, staffing (P4.3, P4.11, P4.12, P4.15, D10)
   const v30 = i - m.joinedDay < 30 ? null : m.visits.filter(d => d > i - 30 && d <= i).length, bad = (m.bad || []).filter(d => d > i - 30 && d <= i).length;
   const h = dailyRate(churnMonthly((i - m.joinedDay) / 30.4, v30, bad, staffAdj(S.staff)));
-  return m.protect && i < m.protect.until ? h / 2 : h;   /* Plan 9: a retention action that landed halves churn for a while */
+  const hp = S.monthlyOn && !S.perMinOn ? Math.min(1, h * passChurnMult(m.vpu, priceList())) : h;   /* a pass-only gym loses its occasional members faster */
+  return m.protect && i < m.protect.until ? hp / 2 : hp;   /* Plan 9: a retention action that landed halves churn for a while */
 }
 // ================================================================ retention actions (Plan 9, spec R1–R4): the learner picks an action for a drifting member;
 // each lands with a chance; doing nothing leaves the model's churn. Messages (check-in, win-back SMS) reach crowding members half as often (R4);
@@ -412,7 +423,7 @@ function retainAct(m, kind, roll, packRoll) {
     const until = M.dayI + Math.round(R.months * 30.4); if (!m.protect || m.protect.until < until) m.protect = { until, kind };
     if (kind === 'voucher') m.voucher = { left: R.off, until: M.dayI + R.days };
     if (kind === 'taster' && !m.pt && !m.outside && (packRoll != null ? packRoll : rng()) < R.packP && ptRoom()) {   /* members with an outside coach never buy an in-house pack */   /* one in four buys a pack, paid in full; the gym owes the sessions */
-      const pk = PT_PACKS[pickPack(rng())]; A.rev = (A.rev || 0) + pk.price; A.ptRev = (A.ptRev || 0) + pk.price; A.packs = (A.packs || 0) + 1; A.ptOwed = (A.ptOwed || 0) + pk.n;
+      const pk = ptPacksNow()[pickPack(rng())]; A.rev = (A.rev || 0) + pk.price; A.ptRev = (A.ptRev || 0) + pk.price; A.packs = (A.packs || 0) + 1; A.ptOwed = (A.ptOwed || 0) + pk.n;
       m.pt = { n: pk.n, left: pk.n, price: pk.price }; A.deferred += pk.price; pack = pk;
     }
   }
@@ -435,7 +446,7 @@ function endDay() {
   }
   M.lapsed = still;
   const gap = M.cfg.build === 'new' ? Math.max(0, M.steady - M.pool.length) / (RAMP.tau * 30.4) : 0;
-  out.joined = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eNew));   // dearer prices, fewer joins (P3.12b)
+  out.joined = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(joinPrice(priceList()), DEMAND_RESP.eNew));   // dearer prices, fewer joins (P3.12b)
   for (let k = 0; k < out.joined; k++) M.pool.push(newMember(rng, i + 1, true));
   M.joinedTotal += out.joined; M.lapsedTotal += out.lapsed; M.returnedTotal += out.returned;
   out.actives = M.pool.length;
@@ -443,7 +454,7 @@ function endDay() {
 }
 const PT_PER_COACH = 15;   /* owner 2026-11-15: an in-house coach carries about 15 clients */
 function ptCap(coaches = S.coaches) { return Math.max(0, coaches) * PT_PER_COACH; }
-function ptConvert() { return PT.convert * Math.max(0, S.coaches) / 2; }   /* 2 coaches = the researched rate */
+function ptConvert() { return PT.convert * Math.max(0, S.coaches) / 2 * ptDemandMult(S.ptSession); }   /* 2 coaches = the researched rate */
 function ptRoom() { return !M || M.pool.reduce((n, m) => n + (m.pt && !m.outside && m.pt.left > 0 ? 1 : 0), 0) < ptCap(); }
 const CHANGE = { skip: 0.35, loo: 0.15, leaveAsIs: 0.7 };   /* owner 2026-11-15: share who skip the changing room, take a washroom break, and (having skipped) leave without changing */
 function lockerOf(a) { if (!a.locker) { const room = a.female ? LOCKERS_F : LOCKERS_M; a.locker = room[Math.floor(a.rng() * room.length)]; } return a.locker; }   /* their own washroom */
@@ -478,8 +489,9 @@ function setupDay(i) {
   A.hourWeights = weights;
   A.open = openHour(day.dow) * 3600;
   for (let t = T_START + 10 * 60; t < 24.7 * 3600; t += (BUS_GAP[cfg.setting] || 12) * 60) A.buses.push(t);
+  const PR = priceList(), anyPass = PR.monthlyOn || M.pool.some(m => m.passUntil != null);
   for (const rec of (A.closed ? [] : M.pool)) {   // a typhoon day: closed, nobody comes
-    const pv = Math.min(0.95, rec.vpu / 30.4 * f); A.visitsExpected += pv;
+    const pv = Math.min(0.95, rec.vpu / 30.4 * (anyPass && passMember(rec, PR) ? f / priceMult * PASS.visitUp : f)); A.visitsExpected += pv;
     if (rng() >= pv) continue;
     let r = rng(), h = 23; for (let w = 0; w < weights.length; w++) { r -= weights[w]; if (r <= 0) { h = 7 + w; break; } }
     const arr = h * 3600 + rng() * 3600;
@@ -513,8 +525,8 @@ function setupDay(i) {
 function updateLadderLess() {}
 function pnlCosts() { return { ...COSTS, area: S.area, rentRate: BUILT && BIZ && BIZ.monthIndex < BUILT.rentFreeMonths ? 0 : S.rentRate,   /* a built gym's first month is rent-free; management is still paid */ staff: S.staff, addOns: A && A.closed ? 0 : COSTS.addOns }; }   // no add-on sales on a closed day
 function computePnl() {
-  const ptCash = A.ptRev || 0, rentals = A.rentRev || 0;
-  return dailyPnl({ entry: (A.rev || 0) - ptCash - rentals, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
+  const ptCash = A.ptRev || 0, rentals = A.rentRev || 0, passes = A.passRev || 0;
+  return dailyPnl({ passes, entry: (A.rev || 0) - ptCash - rentals - passes, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
 }
 
 // ================================================================ simulation step

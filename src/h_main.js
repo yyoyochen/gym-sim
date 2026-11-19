@@ -290,12 +290,12 @@ function updatePays() {
     const q = A.payQ.splice(0);
     // fast-forward can bill dozens at once: show the latest few floor fees, and every PT sale
     const last = (f, n) => q.filter(f).slice(-n);
-    const show = [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
+    const show = [...last(p => !p.pt && !p.rent && !p.pass, 3), ...last(p => p.rent, 2), ...last(p => p.pass, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
     for (const p of show) {
       // colour: green = money in (fee, rent), yellow = capped visit, gold = PT sale (gold is reserved for it)
-      const crit = !p.pt && !p.rent && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
+      const crit = !p.pt && !p.rent && !p.pass && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
       const el = document.createElement('div'); el.className = 'pay' + (p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
-      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
+      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : p.pass ? `<small>${tx('MONTH PASS', '月費')}</small>` : crit ? '<small>MAX!</small>' : ''}`;
       document.body.appendChild(el);
       payNext = Math.max(now, payNext + (p.pt ? 700 : 450));
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -486,6 +486,51 @@ const SELFTESTS = {
     try { setupRun(); const v0 = A.visitsExpected; S.priceOff = 1.2 * 1.1; S.pricePeak = 1.5 * 1.1; setupRun(); const v1 = A.visitsExpected;
       return { ok: Math.abs(v1 / v0 - Math.pow(1.1, -0.4)) < 0.005, detail: { v0, v1, ratio: v1 / v0 } }; }
     finally { Object.assign(S, keep); }
+  },
+  ptPriceAdjust() {   // owner 2026-11-20: the PT session price is on the price list; packs carry the price in force when sold; dearer sessions sell fewer packs
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      const run = (p) => { let packs = 0, priced = true; const prices = ptPacks(p).map(k => k.price);
+        for (const sd of [1, 2, 3]) { Object.assign(S, JSON.parse(JSON.stringify(keep)), { seed: sd, ptSession: p }); setupRun(); for (let d = 0; d < 8; d++) { fastForward(30 * 3600); packs += A.packs || 0; if (d < 7) nextDay(); }
+          priced = priced && M.pool.concat(M.lapsed).every(m => !m.pt || prices.includes(m.pt.price)); }
+        return { packs, priced }; };
+      const cheap = run(1200), dear = run(2600);
+      Object.assign(S, JSON.parse(JSON.stringify(keep))); setupRun(); openBooks('Pricing');
+      const body = document.getElementById('bkBody'), row8 = () => body.querySelector('[data-k="pack8"]').textContent;
+      const before = row8(); body.querySelector('button[data-f="ptSession"][data-d="1"]').click(); const staged = row8(), liveStill = S.ptSession === PT_BASE;
+      document.querySelector('#bkBody [data-k="publish"]').click(); nextDay(); const applied = S.ptSession === PT_BASE + 50; closeBooks();
+      const ok = cheap.priced && dear.priced && cheap.packs > dear.packs && before === nt$(8 * PT_BASE) && staged === nt$(8 * (PT_BASE + 50)) && liveStill && applied;
+      return { ok, detail: { cheap, dear, before, staged, liveStill, applied } }; }
+    finally { closeBooks(); Object.assign(S, keep); PUBLISH = null; }
+  },
+  monthlyPass() {   // owner 2026-11-20: an optional monthly pass next to the minute price; members pick what is cheaper for them; pass visits are free; pass-only is allowed
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      setupRun(); const exp0 = (() => { fastForward(30 * 3600); return { v: A.visitsExpected, passes: A.pnl.passes, any: M.pool.some(m => m.passUntil != null) }; })();
+      Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600);
+      const p1 = A.pnl, n1 = A.passN || 0, holders = M.pool.concat(M.lapsed).filter(m => m.passUntil > M.dayI).length, ptCash = p1.deferredChange + p1.ptEarned;
+      const adds = Math.abs(p1.takings - (p1.entry + p1.cards + p1.passes + ptCash + p1.rentals)) < 1, more = A.visitsExpected > exp0.v;
+      const bought = A.members.filter(a => a.pass === 'bought'), boughtFree = bought.length === n1 && bought.every(a => a.fee === 0);
+      nextDay(); fastForward(30 * 3600);
+      const held = A.members.filter(a => a.pass === 'held'), heldFree = held.length > 0 && held.every(a => a.fee === 0 && a.paid);
+      Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1500 }); setupRun(); fastForward(30 * 3600);
+      const paid = A.members.filter(a => a.paid && a.rec), only = paid.length > 0 && paid.every(a => a.pass) && (A.paidVisits || 0) === 0;
+      const ok = exp0.passes === 0 && !exp0.any && n1 > 0 && p1.passes === n1 * 600 && holders === n1 && adds && more && boughtFree && heldFree && only;
+      return { ok, detail: { off: exp0, n1, passes: p1.passes, holders, adds, more, boughtFree, held: held.length, heldFree, only } }; }
+    finally { Object.assign(S, keep); }
+  },
+  pricingMix() {   // the price list: pay-by-the-minute and the monthly pass each switch on and off, never both off; the pass shows who would take it; published for tomorrow
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      setupRun(); openBooks('Pricing'); const body = document.getElementById('bkBody'), q = (s) => body.querySelector(s);
+      const noShare = !q('[data-k="passShare"]'); q('button[data-t="perMinOn"]').click();
+      const forced = BOOKS.stage.monthlyOn === true && BOOKS.stage.perMinOn === false, share = q('[data-k="passShare"]') ? q('[data-k="passShare"]').textContent : '';
+      q('button[data-t="monthlyOn"]').click(); const swapped = BOOKS.stage.perMinOn === true && BOOKS.stage.monthlyOn === false;
+      q('button[data-t="monthlyOn"]').click(); q('button[data-f="monthlyPrice"][data-d="-1"]').click(); const stepped = BOOKS.stage.monthlyPrice === PASS.price - 50 && S.monthlyOn === false;
+      q('[data-k="publish"]').click(); nextDay(); const applied = S.monthlyOn === true && S.perMinOn === true && S.monthlyPrice === PASS.price - 50; closeBooks();
+      const ok = noShare && forced && /\d/.test(share) && swapped && stepped && applied;
+      return { ok, detail: { noShare, forced, share, swapped, stepped, applied } }; }
+    finally { closeBooks(); Object.assign(S, keep); PUBLISH = null; }
   },
   priceRaisesRevenue() {   // D3: a 10% rise earns more per day at first, with fewer visits
     const run = (k) => [1, 2, 3].map(sd => runDay({ seed: sd, priceOff: 1.2 * k, pricePeak: 1.5 * k })).reduce((t, r) => ({ fee: t.fee + r.fee, visits: t.visits + r.visits }), { fee: 0, visits: 0 });
