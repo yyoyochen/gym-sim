@@ -97,8 +97,18 @@ function peakShiftWeights(weights, dow, premium) {
   for (const i of [9, 10, 15]) w[i] = Math.max(0, w[i] + mv / 3);
   return w;
 }
-// base: the desk roster this floor needs (the sample gym's by default); the lean end sits at the same share of it (133 / 184)
-function staffAdj(staff, base = DEMAND_RESP.staffBase) { const d = DEMAND_RESP, lean = base * d.staffLean / d.staffBase; return d.leanAdj * Math.min(1, Math.max(0, (base - staff) / (base - lean))); }
+// rules round 2026-11-21: the desk has a job. Desk hours a week against what this floor needs (cover = hours / need): every 10% short costs 5% of
+// sign-ups and makes every member 5% more likely to leave; hours above the need help half as much, up to a quarter more (invented, tuned on the sweep)
+const DESK = { slope: 0.5, over: 0.5, max: 1.25 };
+function deskEffect(cover) { const c = Math.min(DESK.max, Math.max(0, cover)), g = c < 1 ? -DESK.slope * (1 - c) : DESK.slope * DESK.over * (c - 1); return { join: 1 + g, churn: 1 - g }; }
+// a clean hall: the receptionist keeps up with CLEAN.desk visits a day between check-ins, each cleaner with CLEAN.each more. Past that the hall gets
+// grubby: up to CLEAN.join fewer sign-ups and members up to CLEAN.churn more likely to leave, reached at CLEAN.span over the limit (invented, tuned on the sweep)
+const CLEAN = { desk: 220, each: 200, churn: 0.3, join: 0.15, span: 0.5 };   /* 220: the 115-ping sample gym (about 195 visits a day) runs clean on its receptionist alone */
+function cleanCap(cleaners) { return CLEAN.desk + CLEAN.each * Math.max(0, cleaners || 0); }
+function grubby(visitsDay, cleaners) { return Math.min(1, Math.max(0, (visitsDay / cleanCap(cleaners) - 1) / CLEAN.span)); }
+// opening buzz: for the first BUZZ.days days of a new gym its members come more often (up to 1 + BUZZ.up at the opening, fading in a straight line)
+const BUZZ = { up: 0.6, days: 60 };
+function buzzMult(daysOpen) { return 1 + BUZZ.up * Math.max(0, 1 - Math.max(0, daysOpen) / BUZZ.days); }
 function balkProb(waitMin) { return 1 - Math.exp(-Math.max(0, waitMin) / DEMAND_RESP.balkScale); }
 // new build: share of steady-state demand reached m months after opening (opens at 25%, time constant 6.4 months: P4.13, P4.16)
 // owner 2026-11-20 (research): 15% suits a gym with no pre-sale; with a pre-opening campaign 20-30% is defensible, so a built gym opens at 25%

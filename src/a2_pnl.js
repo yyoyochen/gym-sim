@@ -9,7 +9,7 @@ function dayFraction(t, open, close) { return Math.min(1, Math.max(0, (t - open)
 function fixedPerDay(c = COSTS) { return (c.area * c.rentRate + c.area * c.mgmtPerPing + c.elec + c.otherOpex + c.staff) / PT.daysPerMonth; }
 function dailyPnl(t, frac, c = COSTS) {
   const d = PT.daysPerMonth, r = {};
-  r.entry = t.entry; r.entryPeak = t.entryPeak || 0; r.entryOff = r.entry - r.entryPeak; r.cards = t.cards || 0; r.ptEarned = t.ptEarned != null ? t.ptEarned : t.ptSessions * c.ptPrice; r.rentals = t.rentals; r.addOns = c.addOns / d * frac; r.passes = t.passes || 0;   /* monthly passes: counted on the day they are sold */
+  r.entry = t.entry; r.entryPeak = t.entryPeak || 0; r.entryOff = r.entry - r.entryPeak; r.cards = t.cards || 0; r.ptEarned = t.ptEarned != null ? t.ptEarned : t.ptSessions * c.ptPrice; r.rentals = t.rentals; r.addOns = c.addOns / d * frac; r.passes = t.passes || 0; r.passCash = t.passCash != null ? t.passCash : r.passes;   /* rules round 2026-11-21: a monthly pass is earned a day at a time over its 30 days; the cash arrives the day it is sold */
   r.gross = r.entry + r.passes + r.cards + r.ptEarned + r.rentals + r.addOns;
   r.net = r.gross / (1 + c.vat); r.vat = r.gross - r.net;
   r.coach = r.ptEarned * (1 - c.gymShare / 100); r.mkt = r.net * c.mktPct / 100; r.card = r.net * c.cardPct / 100;
@@ -19,7 +19,7 @@ function dailyPnl(t, frac, c = COSTS) {
   r.occupancy = c.area * (c.rentRate + c.mgmtPerPing) / d * frac; r.elec = c.elec / d * frac; r.otherOpex = c.otherOpex / d * frac; r.staff = c.staff / d * frac;
   r.fixed = r.occupancy + r.elec + r.otherOpex + r.staff;
   r.ebitda = r.contribution - r.fixed;
-  r.cashIn = t.entry + r.passes + r.cards + t.ptCash + t.rentals + r.addOns; r.takings = t.entry + r.passes + r.cards + t.ptCash + t.rentals; r.deferredChange = t.ptCash - r.ptEarned;   // takings: cash through the till, estimated add-ons excluded
+  r.cashIn = t.entry + r.passCash + r.cards + t.ptCash + t.rentals + r.addOns; r.takings = t.entry + r.passCash + r.cards + t.ptCash + t.rentals; r.deferredChange = t.ptCash - r.ptEarned; r.passOwedChange = r.passCash - r.passes;   // takings: cash through the till, estimated add-ons excluded
   return r;
 }
 // field-wise sum of a P&L function over the remaining days of the month
@@ -83,8 +83,10 @@ function coachPay(n) { return Math.round(ROSTER.coach * Math.max(0, n) * (1 + RO
 // full-time; coaches follow the crowd at the weekly peak
 function defaultRoster(ping) {
   const hours = Math.round(120 * Math.pow(ping / 115, 0.75) / 10) * 10, deskFT = Math.min(6, Math.max(1, Math.round(hours / 60)));
-  return { deskFT, deskPTh: Math.max(0, hours - 40 * deskFT), coaches: Math.max(1, Math.round(2 * peakForPing(ping) / DEMAND.peak)), cleaners: 0 };
+  return { deskFT, deskPTh: Math.max(0, hours - 40 * deskFT), coaches: Math.max(1, Math.round(2 * peakForPing(ping) / DEMAND.peak)), cleaners: Math.max(0, Math.ceil((0.5 * 195 * ping / 115 - CLEAN.desk) / CLEAN.each)) };   /* rules round 2026-11-21: a cleaner once a half-full hall (the sample has about 195 visits a day) is more than the receptionist keeps clean: the large gym opens with one */
 }
+function deskHours(r) { return 40 * (r.deskFT || 0) + (r.deskPTh || 0); }
+function deskCover(r, ping) { return deskHours(r) / Math.max(1, deskHours(defaultRoster(ping))); }   /* rules round 2026-11-21: desk hours against what this floor needs */
 function deskBase(ping) { return rosterCost({ ...defaultRoster(ping), coaches: 0 }); }   /* what staffAdj compares the desk roster with */
 const COST_LINES = {
   premises: [['rent', 0], ['mgmt', 0], ['elec', 0], ['water', 2000]],   // rent and management split occupancy by rate; electricity is its own total

@@ -5,6 +5,10 @@ Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](
 ## [Unreleased]
 
 ### Changed
+- The desk has a job: desk hours below what the floor needs cost sign-ups and members, and hours above help half as much. The Staff tab and the receptionist say so with numbers.
+- A hall that outgrows its cleaning loses members. The receptionist keeps up with 220 visits a day and each cleaner with 200 more.
+- A monthly pass is cash the day it is sold and is earned a day at a time over its 30 days, so the day's result no longer jumps on sale days.
+- A new gym's members come more often in its first 60 days, so the hall is busier at the opening.
 - The money step opens with a loan sized to the gym (about six months of running costs); a short start is said plainly, in orange, with a one-tap way out.
 - The HUD has a Skip to closing button. Start over sits apart from the skip buttons. The model's dials are behind one Advanced disclosure.
 - Month card: comparisons are per day or per 30 days, each change lists only what it can cause, the break-even count says why it moved, and one line carries the result down to net profit. The Year view adds the same up.

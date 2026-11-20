@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadSrc } from './load.mjs';
 
 // balance round 2026-11-20: the pass is bought or refused, the roster follows the floor, a coach is paid a retainer and sells less when the gym has more coaches than it needs
-const B = loadSrc(['src/a1_params.js', 'src/a2_pnl.js'], ['PASS', 'wantsPass', 'joinPrice', 'blendedPrice', 'staffAdj', 'coachSell', 'ROSTER', 'rosterLines', 'rosterCost', 'defaultRoster', 'coachPay', 'deskBase', 'COSTS', 'COST_LINES']);
+const B = loadSrc(['src/a1_params.js', 'src/a2_pnl.js'], ['PASS', 'wantsPass', 'joinPrice', 'blendedPrice', 'deskEffect', 'deskHours', 'deskCover', 'coachSell', 'ROSTER', 'rosterLines', 'rosterCost', 'defaultRoster', 'coachPay', 'deskBase', 'COSTS', 'COST_LINES']);
 const pr = { off: 1.2, peak: 1.5, cap: 180, perMinOn: true, monthlyOn: true, monthly: 1000 };
 const share = (vpu, p) => Array.from({ length: 2000 }, (_, i) => B.wantsPass(vpu, i, p)).filter(Boolean).length / 2000;
 const plain = (x) => JSON.parse(JSON.stringify(x));
@@ -33,7 +33,7 @@ test('the price a newcomer weighs never rises above the minute price: who refuse
 
 test('the default roster follows the floor: the 115-ping sample keeps 2 full-time, 40 part-time hours and 2 coaches', () => {
   assert.deepEqual(plain(B.defaultRoster(115)), { deskFT: 2, deskPTh: 40, coaches: 2, cleaners: 0 });
-  assert.deepEqual(plain([80, 160, 320].map(B.defaultRoster)), [{ deskFT: 2, deskPTh: 10, coaches: 1, cleaners: 0 }, { deskFT: 3, deskPTh: 30, coaches: 3, cleaners: 0 }, { deskFT: 4, deskPTh: 100, coaches: 6, cleaners: 0 }]);
+  assert.deepEqual(plain([80, 160, 320].map(B.defaultRoster)), [{ deskFT: 2, deskPTh: 10, coaches: 1, cleaners: 0 }, { deskFT: 3, deskPTh: 30, coaches: 3, cleaners: 0 }, { deskFT: 4, deskPTh: 100, coaches: 6, cleaners: 1 }]);   // rules round 2026-11-21: the large gym opens with a cleaner
 });
 
 test('a coach is paid a retainer of $10,000 a month on the roster, with insurance and bonus on top like everyone else', () => {
@@ -50,11 +50,11 @@ test('a thin desk is judged against the desk the floor needs, not against the sa
   assert.equal(B.deskBase(115), 184000);
   for (const ping of [80, 160, 320]) {
     const base = B.deskBase(ping); assert.equal(base, B.rosterCost({ ...B.defaultRoster(ping), coaches: 0 }));
-    assert.equal(B.staffAdj(base, base), 0);
-    assert.ok(Math.abs(B.staffAdj(base * 133 / 184, base) - 0.3) < 1e-9);
-    assert.equal(B.staffAdj(base * 2, base), 0);
+    const r = B.defaultRoster(ping), half = { deskFT: 0, deskPTh: B.deskHours(r) / 2 };   // rules round 2026-11-21: desk hours against the hours this floor needs
+    assert.equal(B.deskCover(r, ping), 1); assert.equal(B.deskEffect(B.deskCover(r, ping)).churn, 1);
+    assert.ok(Math.abs(B.deskEffect(B.deskCover(half, ping)).join - 0.75) < 1e-9); assert.ok(Math.abs(B.deskEffect(B.deskCover(half, ping)).churn - 1.25) < 1e-9);
   }
-  assert.equal(B.staffAdj(184000), 0); assert.ok(Math.abs(B.staffAdj(133000) - 0.3) < 1e-9);   // the sample gym, as before
+  assert.equal(B.deskHours(B.defaultRoster(115)), 120);   // the sample gym, as before
 });
 
 test('coaches sell coaching in step with the crowd: half the coaches the gym needs sell half; twice as many sell only a quarter more', () => {

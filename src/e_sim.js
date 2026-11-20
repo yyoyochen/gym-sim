@@ -102,13 +102,16 @@ function ptPacksNow() { return ptPacks(S.ptSession); }
 function onPass(rec, day = M.dayI) { return rec.passUntil != null && rec.passUntil > day; }
 function passMember(rec, pr = priceList()) { return onPass(rec) || wantsPass(rec.vpu, rec.id, pr); }   /* comes like a pass holder: has one, or will buy one at the next visit */
 const PASS_LEAVE = 0.15;   /* balance 2026-11-20: a member who will not buy the pass in a pass-only gym stops coming and is gone within about a week */
+function passDayValue(m) { return (m.passPaid != null ? m.passPaid : S.monthlyPrice) / PASS.days; }
+function passHeldValue(day) { return M ? M.pool.concat(M.lapsed).reduce((t, m) => t + (onPass(m, day) ? passDayValue(m) : 0), 0) : 0; }   /* what the passes running on that morning earn that day */
+function passOwedValue() { return M ? M.pool.concat(M.lapsed).reduce((t, m) => t + (onPass(m) ? (m.passUntil - M.dayI - 1) * passDayValue(m) : 0), 0) : 0; }   /* pass days paid for and not yet earned, after today */
 function passOnly(pr = priceList()) { return pr.monthlyOn && !pr.perMinOn; }
 function chargeOut(a) {   // billed once, as the member walks out past the desk
   if (a.paid || !a.tDoor) return;
   a.paid = true; A.payQ = A.payQ || [];
   if (a.rec && onPass(a.rec)) { a.fee = 0; a.pass = 'held'; A.passVisits = (A.passVisits || 0) + 1; }   /* a pass holder walks out without paying */
   else if (a.rec && wantsPass(a.rec.vpu, a.rec.id, priceList())) {   /* buys (or renews) the monthly pass: cash today, 30 days of visits */
-    a.fee = 0; a.pass = 'bought'; a.rec.passUntil = M.dayI + PASS.days; A.passN = (A.passN || 0) + 1; A.passRev = (A.passRev || 0) + S.monthlyPrice; A.rev = (A.rev || 0) + S.monthlyPrice; A.passVisits = (A.passVisits || 0) + 1;
+    a.fee = 0; a.pass = 'bought'; a.rec.passUntil = M.dayI + PASS.days; a.rec.passPaid = S.monthlyPrice; A.passN = (A.passN || 0) + 1; A.passRev = (A.passRev || 0) + S.monthlyPrice; A.rev = (A.rev || 0) + S.monthlyPrice; A.passVisits = (A.passVisits || 0) + 1;
     A.payQ.push({ a, fee: S.monthlyPrice, pass: true });
   } else {
   a.fee = a.rec ? applyVoucher(a.rec, visitFee(a.tDoor, A.t)) : visitFee(a.tDoor, A.t);   /* Plan 9: a voucher comes off the fee */ A.feePeak = (A.feePeak || 0) + a.fee * visitFee.peakPart; A.paidVisits = (A.paidVisits || 0) + 1; A.blendSum = (A.blendSum || 0) + blendedPrice(S.priceOff, S.pricePeak);
@@ -313,7 +316,7 @@ function closeMonth() {
   const snapNow = settingSnap(), changes = BIZ.snap ? settingChanges(BIZ.snap, snapNow) : []; BIZ.snap = snapNow;
   BIZ.months.push({ name: M.cfg.month, year: BIZ.year, days: M.cal.length, pnl, members: M.pool.length, joined: M.joinedTotal, lapsed: M.lapsedTotal, returned: M.returnedTotal, visits: M.days.reduce((t, d) => t + (d.visits || 0), 0), changes, cashEnd: BIZ.cash,
     interest: lm.interest, principal: lm.principal, tax, loss, depYear: pnlCosts().depYear,   /* review I2: the depreciation rate this month was booked at */ cashIn: BIZ.mIn, cashOut: BIZ.mOut, ptDue: M.ptDue || 0 }); BIZ.mLoss = 0;
-  BIZ.mIn = 0; BIZ.mOut = 0;
+  BIZ.mIn = 0; BIZ.mOut = 0; BIZ.lastWeek = M.days.slice(-7).map(d => d.visits || 0);
 }
 // the next calendar month of the same business: same members (history rebased to the new month's day 0), balances, prices and settings;
 // its own calendar, season and typhoon draws, seeded from the seed and the month number so a business replays identically
@@ -390,15 +393,18 @@ function projectMonth() {
     const base = dayShape(day.dow), sh = peakShiftWeights(base, day.dow, S.pricePeak / S.priceOff - 1), sm = (r) => r.reduce((t, v) => t + v, 0);
     const f = dayFactor(day.dow, day.mult) * rain * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eExisting) * sm(sh) / sm(base), PRf = priceList(), anyP = PRf.monthlyOn || M.pool.some(m => m.passUntil != null), ev = M.pool.reduce((t, m) => t + ((anyP && passMember(m, PRf)) || !PRf.perMinOn ? 0 : Math.min(0.95, m.vpu / 30.4 * f)), 0);
     const j = M.cal.indexOf(day), due = anyP ? M.pool.filter(m => PRf.monthlyOn && wantsPass(m.vpu, m.id, PRf) && Math.max(M.dayI + 1, m.passUntil || 0) === j).length : 0;   /* passes that run out that day are renewed (9 in 10) */
-    return dailyPnl({ passes: due * 0.9 * S.monthlyPrice, entry: ev * feePerVisit, cards, ptSessions: 0, ptEarned: pt, ptCash: 0, rentals: rent }, 1, c);
+    const held = M.pool.reduce((t, m) => t + (onPass(m, j) ? passDayValue(m) : PRf.monthlyOn && wantsPass(m.vpu, m.id, PRf) ? 0.9 * S.monthlyPrice / PASS.days : 0), 0) + M.lapsed.reduce((t, m) => t + (onPass(m, j) ? passDayValue(m) : 0), 0);   /* a day of each pass still running, and of the ones renewed by then (9 in 10) */
+    return dailyPnl({ passes: held, passCash: due * 0.9 * S.monthlyPrice, entry: ev * feePerVisit * (M.cfg.build === 'new' ? buzzMult(M.cfg.monthsOpen * 30.4 + j) : 1), cards, ptSessions: 0, ptEarned: pt, ptCash: 0, rentals: rent }, 1, c);
   });
   const total = {}; for (const k of new Set([...Object.keys(mtd), ...Object.keys(rest)])) total[k] = (mtd[k] || 0) + (rest[k] || 0);
   return { mtd, rest, total };
 }
+function visitsLately() { const v = ((BIZ && BIZ.lastWeek) || []).concat(M ? M.days.map(d => d.visits || 0) : []).slice(-7); return v.length ? v.reduce((t, x) => t + x, 0) / v.length : 0; }   /* visits a day over the last seven booked days */
+function grubbyNow() { return grubby(visitsLately(), S.cleaners); }
 function lapseHazard(m, i) {   // today's chance this member lapses: tenure, visit frequency, bad visits in the last 30 days, staffing (P4.3, P4.11, P4.12, P4.15, D10)
   const v30 = i - m.joinedDay < 30 ? null : m.visits.filter(d => d > i - 30 && d <= i).length, bad = (m.bad || []).filter(d => d > i - 30 && d <= i).length;
   if (passOnly() && !passMember(m)) return PASS_LEAVE;   /* a pass-only gym: a member who will not buy the pass has stopped coming */
-  const hp = dailyRate(churnMonthly((i - m.joinedDay) / 30.4, v30, bad, staffAdj(S.staff - coachPay(S.coaches), deskBase(S.area))));   /* the desk roster against what this floor needs */
+  const hp = dailyRate(churnMonthly((i - m.joinedDay) / 30.4, v30, bad) * deskEffect(deskCover(S, S.area)).churn * (1 + CLEAN.churn * grubbyNow()));   /* rules round 2026-11-21: a thin desk and a grubby hall make every member likelier to leave */
   return m.protect && i < m.protect.until ? hp / 2 : hp;   /* Plan 9: a retention action that landed halves churn for a while */
 }
 // ================================================================ retention actions (Plan 9, spec R1–R4): the learner picks an action for a drifting member;
@@ -451,7 +457,7 @@ function endDay() {
   }
   M.lapsed = still;
   const gap = M.cfg.build === 'new' ? Math.max(0, M.steady * passMarket(prJ) - M.pool.length) / (RAMP.tau * 30.4) : 0;   /* a pass-only gym grows towards the people who would buy its pass */
-  const came = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(joinPrice(prJ), DEMAND_RESP.eNew));   // dearer prices, fewer joins (P3.12b)
+  const came = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(joinPrice(prJ), DEMAND_RESP.eNew) * deskEffect(deskCover(S, S.area)).join * (1 - CLEAN.join * grubbyNow()));   /* rules round 2026-11-21: nobody free at the desk, fewer sign-ups */   // dearer prices, fewer joins (P3.12b)
   out.joined = 0;
   for (let k = 0; k < came; k++) { const m = newMember(rng, i + 1, true); if (po && !wantsPass(m.vpu, m.id, prJ)) continue;   /* asked at the desk, would not buy the pass, did not join */ M.pool.push(m); out.joined++; }
   M.joinedTotal += out.joined; M.lapsedTotal += out.lapsed; M.returnedTotal += out.returned;
@@ -495,10 +501,10 @@ function setupDay(i) {
   A.hourWeights = weights;
   A.open = openHour(day.dow) * 3600;
   for (let t = T_START + 10 * 60; t < 24.7 * 3600; t += (BUS_GAP[cfg.setting] || 12) * 60) A.buses.push(t);
-  const PR = priceList(), anyPass = PR.monthlyOn || M.pool.some(m => m.passUntil != null);
+  const PR = priceList(), anyPass = PR.monthlyOn || M.pool.some(m => m.passUntil != null), buzz = A.buzz = cfg.build === 'new' ? buzzMult(cfg.monthsOpen * 30.4 + i) : 1;   /* rules round 2026-11-21: a new gym's first weeks are its busiest per member */
   for (const rec of (A.closed ? [] : M.pool)) {   // a typhoon day: closed, nobody comes
     if (!PR.perMinOn && PR.monthlyOn && !passMember(rec, PR)) continue;   /* pass-only: who will not buy the pass does not come */
-    const pv = Math.min(0.95, rec.vpu / 30.4 * (anyPass && passMember(rec, PR) ? f / priceMult * PASS.visitUp : f)); A.visitsExpected += pv;
+    const pv = Math.min(0.95, rec.vpu / 30.4 * buzz * (anyPass && passMember(rec, PR) ? f / priceMult * PASS.visitUp : f)); A.visitsExpected += pv;
     if (rng() >= pv) continue;
     let r = rng(), h = 23; for (let w = 0; w < weights.length; w++) { r -= weights[w]; if (r <= 0) { h = 7 + w; break; } }
     const arr = h * 3600 + rng() * 3600;
@@ -527,13 +533,14 @@ function setupDay(i) {
   A.zones = { cardio: new Float32Array(17 * 60).fill(NaN), machines: new Float32Array(17 * 60).fill(NaN), dumbbells: new Float32Array(17 * 60).fill(NaN), racks: new Float32Array(17 * 60).fill(NaN), platforms: new Float32Array(17 * 60).fill(NaN) };
   env.raining = cfg.weather === 'Rain';
   drawWhiteboard(0); drawPRBoard();
-  A.ptSessions = 0; A.ptEarnedToday = 0; A.ptPrices = []; A.deferred = owedValue(); A.pnlMin = -1; A.pnl = computePnl();
+  A.ptSessions = 0; A.ptEarnedToday = 0; A.ptPrices = []; A.deferred = owedValue(); A.passHeld = passHeldValue(i); A.pnlMin = -1; A.pnl = computePnl();
 }
 function updateLadderLess() {}
 function pnlCosts() { return { ...COSTS, area: S.area, rentRate: BUILT && BIZ && BIZ.monthIndex < BUILT.rentFreeMonths ? 0 : S.rentRate,   /* a built gym's first month is rent-free; management is still paid */ staff: S.staff, elec: BUILT ? COSTS.elec * S.area / 115 : COSTS.elec,   /* owner 2026-11-20: a built gym's power bill follows its floor */ addOns: A && A.closed ? 0 : COSTS.addOns }; }   // no add-on sales on a closed day
 function computePnl() {
-  const ptCash = A.ptRev || 0, rentals = A.rentRev || 0, passes = A.passRev || 0;
-  return dailyPnl({ passes, entry: (A.rev || 0) - ptCash - rentals - passes, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
+  const ptCash = A.ptRev || 0, rentals = A.rentRev || 0, passCash = A.passRev || 0, frac = dayFraction(A.t, A.open, T_CLOSE);
+  const passes = (A.passHeld || 0) * (A.closed ? 1 : frac) + passCash / PASS.days;   /* earned today: a day of every pass held this morning, and the first day of each pass sold today */
+  return dailyPnl({ passes, passCash, entry: (A.rev || 0) - ptCash - rentals - passCash, entryPeak: A.feePeak || 0, cards: A.cards || 0, ptSessions: A.ptSessions || 0, ptEarned: A.ptEarnedToday || 0, ptCash, rentals, retain: A.retain || 0, rearrange: A.rearrange || 0 }, dayFraction(A.t, A.open, T_CLOSE), pnlCosts());
 }
 
 // ================================================================ simulation step

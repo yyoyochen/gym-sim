@@ -556,7 +556,7 @@ const SELFTESTS = {
   scenario() {   // measurement only (not in the suite): one business played hands-off for some months. ?sc=<json> { size: S|M|L, seed, months, set: { settings }, counts: { category: multiplier } }
     const q = JSON.parse(new URLSearchParams(location.search).get('sc') || '{}'), p = PRESETS[q.size || 'M'], ping = p.w * p.d, counts = q.rawKit ? presetCounts(p.w, p.d) : presetKit(p.w, p.d), med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
     for (const k in (q.counts || {})) counts[k] = Math.max(0, Math.round(counts[k] * q.counts[k]));
-    Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: null, build: 'new', monthsOpen: 0, peak: peakForPing(ping), cap: capForPing(ping) }, defaultRoster(ping), q.seed ? { seed: q.seed } : {}, q.set || {}); S.staff = rosterCost(S);
+    Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: null, build: 'new', monthsOpen: 0, peak: peakForPing(ping), cap: capForPing(ping) }, defaultRoster(ping), { finLoan: ({ S: 2.5e6, M: 9e6, L: 21e6 })[q.size || 'M'] }   /* the loan the money step opens with for each size */, q.seed ? { seed: q.seed } : {}, q.set || {}); S.staff = rosterCost(S);
     setupRun(); const out = { size: q.size, ping, peakSet: S.peak, cap: S.cap, staff: S.staff, capex: Math.round(COSTS.capex), cash0: Math.round(BIZ.cash), pieces: S.layout ? S.layout.pieces.length : 0, stations: STATIONS.length, loanPay: Math.round(BIZ.payment), months: [] };
     for (let m = 0; m < (q.months || 12); m++) {
       const peaks = [], eve = []; let waits = 0, nw = 0, skipNone = 0, skipBusy = 0, lenSum = 0, lenN = 0, exPlan = 0;
@@ -630,13 +630,13 @@ const SELFTESTS = {
       setupRun(); const exp0 = (() => { fastForward(30 * 3600); return { v: A.visitsExpected, passes: A.pnl.passes, any: M.pool.some(m => m.passUntil != null) }; })();
       Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600);
       const p1 = A.pnl, n1 = A.passN || 0, holders = M.pool.concat(M.lapsed).filter(m => m.passUntil > M.dayI).length, ptCash = p1.deferredChange + p1.ptEarned;
-      const adds = Math.abs(p1.takings - (p1.entry + p1.cards + p1.passes + ptCash + p1.rentals)) < 1, more = A.visitsExpected > exp0.v;
+      const adds = Math.abs(p1.takings - (p1.entry + p1.cards + p1.passCash + ptCash + p1.rentals)) < 1, more = A.visitsExpected > exp0.v, day1 = p1.passCash === n1 * 600 && Math.abs(p1.passes - n1 * 20) < 1e-6;   /* rules round 2026-11-21: $600 in the till, $20 earned on the first of its 30 days */
       const bought = A.members.filter(a => a.pass === 'bought'), boughtFree = bought.length === n1 && bought.every(a => a.fee === 0);
-      nextDay(); fastForward(30 * 3600);
+      nextDay(); fastForward(30 * 3600); const day2 = Math.abs(A.pnl.passes - (n1 + (A.passN || 0)) * 20) < 1e-6 && A.pnl.passCash === (A.passN || 0) * 600;
       const held = A.members.filter(a => a.pass === 'held'), heldFree = held.length > 0 && held.every(a => a.fee === 0 && a.paid);
       Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1500 }); setupRun(); fastForward(30 * 3600);
       const paid = A.members.filter(a => a.paid && a.rec), only = paid.length > 0 && paid.every(a => a.pass) && (A.paidVisits || 0) === 0;
-      const ok = exp0.passes === 0 && !exp0.any && n1 > 0 && p1.passes === n1 * 600 && holders === n1 && adds && more && boughtFree && heldFree && only;
+      const ok = exp0.passes === 0 && !exp0.any && n1 > 0 && day1 && day2 && holders === n1 && adds && more && boughtFree && heldFree && only;
       return { ok, detail: { off: exp0, n1, passes: p1.passes, holders, adds, more, boughtFree, held: held.length, heldFree, only } }; }
     finally { Object.assign(S, keep); }
   },
@@ -656,9 +656,9 @@ const SELFTESTS = {
     try {
       const got = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], r = defaultRoster(p.w * p.d); return [r.deskFT, r.deskPTh, r.coaches, rosterCost(r)]; });
       const sample = defaultRoster(COSTS.area), lean = { ...S, deskFT: 1, deskPTh: 0 };
-      const adj = (ping) => staffAdj(rosterCost({ ...defaultRoster(ping), coaches: 0 }), deskBase(ping));
+      const cover = (ping) => deskCover(defaultRoster(ping), ping);   /* rules round 2026-11-21: the roster a floor opens with covers its desk exactly */
       const ok = JSON.stringify(got.map(g => g.slice(0, 3))) === '[[2,10,1],[3,30,3],[4,100,6]]' && got[0][3] < got[1][3] && got[1][3] < got[2][3] && sample.deskFT === 2 && sample.deskPTh === 40 && sample.coaches === 2
-        && adj(80) === 0 && adj(320) === 0 && staffAdj(rosterCost(lean) - coachPay(lean.coaches), deskBase(320)) > 0.29;
+        && cover(80) === 1 && cover(320) === 1 && deskEffect(deskCover(lean, 320)).churn > 1.2 && deskEffect(deskCover(lean, 320)).join < 0.8;
       return { ok, detail: { got } }; }
     finally { Object.assign(S, keep); }
   },
@@ -701,7 +701,7 @@ const SELFTESTS = {
   },
   staffRetention() {   // a lean roster raises members' churn hazard over a month (D10)
     const keep = JSON.parse(JSON.stringify(S)), haz = () => M.pool.reduce((t, m) => t + lapseHazard(m, M.dayI), 0);
-    try { S.seed = 5; S.staff = 184000; skimDays(30, true); const base = haz(); S.staff = 133000; const lean = haz();
+    try { S.seed = 5; skimDays(30, true); const base = haz(); S.deskFT = 1; S.deskPTh = 0; const lean = haz();   /* rules round 2026-11-21: desk hours, not the wage bill */
       return { ok: lean > base, detail: { base, lean } }; }
     finally { Object.assign(S, keep); }
   },
@@ -1642,10 +1642,11 @@ const SELFTESTS = {
   },
   staffEffectShown() {   // personas: "members who meet no staff drift away faster" had no number; the dead end "come later" goes
     const keep = S.staff;
-    try { setupRun(); S.staff = 133000; openBooks('Staff'); updateBooks(true); const t = document.getElementById('bkBody').textContent;
-      const x = Math.round(100 * (churnMonthly(0, null, 0, staffAdj(133000)) / churnMonthly(0, null, 0, 0) - 1));   /* review I4: the month-0 churn change, not the raw adjustment */
-      return { ok: x === 10 && t.includes(`${x}% more often`) && !/30% faster/.test(t) && !/come later/.test(t), detail: { x, t: t.slice(0, 600) } }; }
-    finally { S.staff = keep; closeBooks(); BOOKS.tab = 'Today'; }
+    const kr = { deskFT: S.deskFT, deskPTh: S.deskPTh };
+    try { setupRun(); S.deskFT = 1; S.deskPTh = 40; S.staff = rosterCost(S); openBooks('Staff'); updateBooks(true); const t = document.getElementById('bkBody').textContent;   /* rules round 2026-11-21: 80 of the sample's 120 desk hours */
+      const e = deskEffect(deskCover(S, S.area)), x = Math.round(100 * (1 - e.join)), y = Math.round(100 * (e.churn - 1));
+      return { ok: x === 17 && y === 17 && t.includes('80 of the 120 hours') && t.includes(`${x}% fewer sign-ups`) && t.includes(`${y}% more likely to leave`) && !/30% faster/.test(t) && !/come later/.test(t), detail: { x, y, t: t.slice(0, 600) } }; }
+    finally { Object.assign(S, kr); S.staff = keep; closeBooks(); BOOKS.tab = 'Today'; }
   },
   booksGoalLine() {   // frame 7: the goal line sits under the plain profit line in Books
     try { setupRun(); GOAL.key = 'members500'; BOOKS.period = 'today'; openBooks('Books'); const t = document.getElementById('bkBody').textContent;
@@ -2369,12 +2370,51 @@ const SELFTESTS = {
     const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, staff: S.staff }, was = LANG;
     try { setLang('en'); setupRun(); openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
       for (let i = 0; i < 8; i++) q('deskFT', -1).click(); for (let i = 0; i < 20; i++) q('deskPTh', -1).click(); updateBooks(true);
-      const min = rosterCost({ deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }), eff = Math.round(100 * (churnMonthly(0, null, 0, staffAdj(min, deskBase(S.area))) / churnMonthly(0, null, 0, 0) - 1));
+      const mr = { deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }, min = rosterCost(mr), eff = Math.round(100 * (deskEffect(deskCover(mr, S.area)).churn - 1));
       const t = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, cl = document.querySelector('#bkBody [data-k="cleanerEffect"]'), ct = cl ? cl.textContent : '';
       setLang('zh'); const z = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, zc = (document.querySelector('#bkBody [data-k="cleanerEffect"]') || {}).textContent || ''; setLang('en');
-      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month: ${eff}% more`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
+      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month: ${eff}% fewer sign-ups, members ${eff}% more likely to leave`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
       return { ok, detail: { deskFT: S.deskFT, pth: S.deskPTh, min, eff, t, ct, z, zc } }; }
     finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setLang(was); setupRun(); }
+  },
+  deskJob() {   // rules round 2026-11-21: the desk has a job. Hours below what the floor needs cost sign-ups and members; hours above help half as much
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, staff: S.staff };
+    try { const near = (a, b) => Math.abs(a - b) < 1e-9, e0 = deskEffect(1), e6 = deskEffect(0.6), e2 = deskEffect(2);
+      const pure = e0.join === 1 && e0.churn === 1 && near(e6.join, 0.8) && near(e6.churn, 1.2) && near(e2.join, 1.0625) && near(e2.churn, 0.9375);
+      setupRun(); const m = M.pool[0], full = lapseHazard(m, M.dayI), wk = () => { closeEarlySync('week'); return M.joinedTotal; }, j1 = wk();
+      S.deskFT = 1; S.deskPTh = 0; S.staff = rosterCost(S); setupRun(); const thin = lapseHazard(M.pool[0], M.dayI), cover = deskCover(S, S.area), j2 = wk();
+      const lines = receptionistLines().join(' ');
+      return { ok: pure && near(cover, 1 / 3) && thin > full * 1.15 && j2 < j1 && /needs 120/.test(lines), detail: { pure, cover, full, thin, j1, j2 } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  cleanHall() {   // rules round 2026-11-21: a hall that outgrows its cleaning loses members; the receptionist keeps up with 220 visits a day, each cleaner with 200 more
+    const keep = { cleaners: S.cleaners, staff: S.staff };
+    try { const pure = grubby(220, 0) === 0 && grubby(330, 0) === 1 && grubby(330, 1) === 0 && Math.abs(grubby(275, 0) - 0.5) < 1e-9 && cleanCap(2) === 620;
+      setupRun(); const m = M.pool[0], clean = lapseHazard(m, M.dayI), calm = grubbyNow() === 0; BIZ.lastWeek = [400, 400, 400, 400, 400, 400, 400];
+      const dirty = lapseHazard(m, M.dayI), said = receptionistLines().join(' '); openBooks('Staff'); updateBooks(true); const warn = document.querySelector('#bkBody [data-k="cleanerEffect"]').textContent;
+      S.cleaners = 1; S.staff = rosterCost(S); updateBooks(true); const fixed = lapseHazard(m, M.dayI), ok1 = document.querySelector('#bkBody [data-k="cleanerEffect"]').textContent;
+      const ok = pure && calm && dirty > clean * 1.25 && Math.abs(fixed - clean) < 1e-12 && /Staff tab/.test(said) && /15% fewer sign-ups/.test(warn) && /30% more likely to leave/.test(warn) && /keeps up/.test(ok1);
+      return { ok, detail: { pure, calm, clean, dirty, fixed, warn: warn.slice(0, 300), ok1: ok1.slice(0, 300) } }; }
+    finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setupRun(); }
+  },
+  openingBuzz() {   // rules round 2026-11-21: a new gym's members come more often in its first 60 days (1.6 times at the opening); an established gym is untouched
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const pure = buzzMult(0) === 1.6 && Math.abs(buzzMult(30) - 1.3) < 1e-9 && buzzMult(60) === 1 && buzzMult(400) === 1;
+      setupRun(); const est = A.buzz, v0 = A.visitsExpected / M.pool.length;
+      openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
+      const fresh = A.buzz, v1 = A.visitsExpected / M.pool.length;
+      return { ok: pure && est === 1 && fresh > 1.5 && v1 > v0 * 1.2, detail: { pure, est, fresh, v0, v1 } }; }
+    finally { openIntro(); buildPick('sample'); openGym(); goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); Object.assign(S, keep); setupRun(); }
+  },
+  passEarnedDaily() {   // rules round 2026-11-21: a monthly pass is cash the day it is sold and earned a day at a time over its 30 days, so the result no longer jumps on sale days
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600); const d = M.dayI, m = M.pool.find(x => x.passUntil === d + PASS.days), p = A.pnl;
+      let days = 1; for (let j = d + 1; j < d + 60; j++) if (onPass(m, j)) days++;   /* the day it was sold, then every morning it is still running */
+      const whole = days === 30 && Math.abs(days * passDayValue(m) - 600) < 1e-9, split = p.passCash > 0 && Math.abs(p.passOwedChange - (p.passCash - p.passes)) < 1e-9 && p.passes < p.passCash / 20;
+      const cash = Math.abs(p.cashIn - (p.entry + p.passCash + p.cards + p.deferredChange + p.ptEarned + p.rentals + p.addOns)) < 1e-6;
+      nextDay(); const carried = Math.abs(A.passHeld - passHeldValue(M.dayI)) < 1e-9 && A.passHeld > 0 && A.pnl.passCash === 0;
+      return { ok: !!m && whole && split && cash && carried, detail: { days, passes: p.passes, passCash: p.passCash, held: A.passHeld, whole, split, cash, carried } }; }
+    finally { Object.assign(S, keep); setupRun(); }
   },
   popsOnTop() {   // judge round 4: a closed day's pop draws above the books, the sheet and the day card; the card and any toast wait until it has played; skipped days raise no PR toasts
     try { setupRun(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; const toast = document.getElementById('toast'); toast.innerHTML = '';
