@@ -4,7 +4,7 @@
 // management and electricity), staff (P6.12), card and marketing (% of net sales, P8.6, P8.7), gym's share of PT (P5.4),
 // PT price per session (P3.8), add-ons not simulated (non-member entry, classes, InBody/vending: P2.9 + P5.8 + P5.9),
 // PT sessions already owed at the start of the day (P5.10), VAT inside prices (P11.1).
-const COSTS = { area: 115, rentRate: 1100, mgmtPerPing: 70, elec: 66000, otherOpex: 87100, staff: 184000, cardPct: 1, mktPct: 3, gymShare: 50, ptPrice: 1560, addOns: 46000, deferredStart: 300000, vat: 0.05, capex: 10.5e6, depYear: 1.3e6, tax: 0.2 };   // capex P9.6, depreciation P9.11, income tax P11.2
+const COSTS = { area: 115, rentRate: 1100, mgmtPerPing: 70, elec: 66000, otherOpex: 87100, staff: 209952, cardPct: 1, mktPct: 3, gymShare: 50, ptPrice: 1560, addOns: 46000, deferredStart: 300000, vat: 0.05, capex: 10.5e6, depYear: 1.3e6, tax: 0.2 };   // capex P9.6, depreciation P9.11, income tax P11.2
 function dayFraction(t, open, close) { return Math.min(1, Math.max(0, (t - open) / (close - open))); }
 function fixedPerDay(c = COSTS) { return (c.area * c.rentRate + c.area * c.mgmtPerPing + c.elec + c.otherOpex + c.staff) / PT.daysPerMonth; }
 function dailyPnl(t, frac, c = COSTS) {
@@ -48,8 +48,8 @@ function loanMonth(balance, ratePct, payment) {
 // ================================================================ monthly arithmetic from the parameter book (same model as the parameter map) and a sensitivity ranking
 // k-values are NT$ thousands per month; scale = PT, rentals and add-ons grow with people at the peak
 const MONTH_BASE = { peak: 35, stay: 70, off: 1.2, pk: 1.5, vpu: 6, churn: 6, ptS: 130, ptP: 1560, share: 50, rentals: 60, rentP: 250, otherRev: 46,
-  area: 115, rentRate: 1100, elec: 66, otherOpex: 87, staff: 184, cardPct: 1, mktPct: 3, scale: true };
-const MONTH_RANGES = { peak: [25, 45], off: [1.0, 1.5], otherOpex: [44, 150], otherRev: [11, 121], ptS: [80, 200], rentRate: [900, 1400], staff: [133, 200], area: [90, 150], elec: [36, 104], share: [40, 60] };
+  area: 115, rentRate: 1100, elec: 66, otherOpex: 87, staff: 210, cardPct: 1, mktPct: 3, scale: true };
+const MONTH_RANGES = { peak: [25, 45], off: [1.0, 1.5], otherOpex: [44, 150], otherRev: [11, 121], ptS: [80, 200], rentRate: [900, 1400], staff: [159, 226], area: [90, 150], elec: [36, 104], share: [40, 60] };
 function monthArithmetic(x) {
   const r = {}, d = PT.daysPerMonth;
   r.ph = 44.4 * x.peak; r.blend = 0.704 * x.off + 0.296 * x.pk; r.entry = r.ph * 60 * r.blend * d / 7;
@@ -72,22 +72,32 @@ function sensitivity(base, ranges) {
 // ================================================================ itemised fixed costs for the books (P6.3–P6.12, P7.8, P8.1–P8.5, P10.3–P10.6)
 // monthly base values per line; a period's group total is split by these shares, so the lines always sum to the simulated totals
 // owner 2026-11-15: the roster is people, not one cost: a manager, full-time desk staff, part-time desk hours a week; insurance, pension, bonus and leave cover scale with pay
-const ROSTER = { manager: 43000, deskFT: 32000, deskPTh: 870, cleaner: 30000, onTop: (27000 + 15200) / 141800 };   /* cleaner: just above Taiwan's 2026 minimum wage (NT$29,500 a month), owner 2026-11-16 */
-function rosterLines(r) { const pay = { manager: ROSTER.manager, deskFT: ROSTER.deskFT * r.deskFT, deskPT: ROSTER.deskPTh * r.deskPTh, cleaners: ROSTER.cleaner * (r.cleaners || 0) }, base = pay.manager + pay.deskFT + pay.deskPT + pay.cleaners;
+// balance 2026-11-20: an in-house coach is paid a retainer on the roster as well as the share of the PT they deliver, so a coach without clients costs money
+const ROSTER = { manager: 43000, deskFT: 32000, deskPTh: 870, cleaner: 30000, coach: 10000, onTop: (27000 + 15200) / 141800 };   /* cleaner: just above Taiwan's 2026 minimum wage (NT$29,500 a month), owner 2026-11-16 */
+function rosterLines(r) { const pay = { manager: ROSTER.manager, deskFT: ROSTER.deskFT * r.deskFT, deskPT: ROSTER.deskPTh * r.deskPTh, coaches: ROSTER.coach * (r.coaches || 0), cleaners: ROSTER.cleaner * (r.cleaners || 0) }, base = pay.manager + pay.deskFT + pay.deskPT + pay.coaches + pay.cleaners;
   return { ...pay, statutory: base * 27000 / 141800, bonusLeave: base * 15200 / 141800 }; }
 function rosterCost(r) { return Math.round(Object.values(rosterLines(r)).reduce((s, v) => s + v, 0)); }
+function coachPay(n) { return Math.round(ROSTER.coach * Math.max(0, n) * (1 + ROSTER.onTop)); }
+// balance 2026-11-20: the roster a new gym opens with follows its floor. The 115-ping sample needs 120 desk hours a week (2 full-time and 40 part-time
+// hours) and 2 coaches; desk hours grow with the floor to the power 0.75 (a bigger hall needs more hands, not in proportion), two thirds of them
+// full-time; coaches follow the crowd at the weekly peak
+function defaultRoster(ping) {
+  const hours = Math.round(120 * Math.pow(ping / 115, 0.75) / 10) * 10, deskFT = Math.min(6, Math.max(1, Math.round(hours / 60)));
+  return { deskFT, deskPTh: Math.max(0, hours - 40 * deskFT), coaches: Math.max(1, Math.round(2 * peakForPing(ping) / DEMAND.peak)), cleaners: 0 };
+}
+function deskBase(ping) { return rosterCost({ ...defaultRoster(ping), coaches: 0 }); }   /* what staffAdj compares the desk roster with */
 const COST_LINES = {
   premises: [['rent', 0], ['mgmt', 0], ['elec', 0], ['water', 2000]],   // rent and management split occupancy by rate; electricity is its own total
-  staff: [['manager', 43000], ['deskFT', 64000], ['deskPT', 34800], ['statutory', 27000], ['bonusLeave', 15200]],
+  staff: [['manager', 43000], ['deskFT', 64000], ['deskPT', 34800], ['coaches', 20000], ['statutory', 30808], ['bonusLeave', 17344]],   /* the sample roster with its 2 coaches' retainers */
   floor: [['cleaning', 20000], ['maintenance', 23000], ['itSecurity', 14000], ['supplies', 9000]],
   compliance: [['insurance', 5000], ['fire', 5800], ['music', 2700], ['bookkeeping', 5000], ['aed', 600]]
 };
-function itemiseFixed(p, c = COSTS) {
+function itemiseFixed(p, c = COSTS, staffLines = COST_LINES.staff) {   /* staffLines: the roster in force, so the staff lines follow the people hired */
   const sum = (rows) => rows.reduce((s, [, v]) => s + v, 0), water = COST_LINES.premises[3][1];
-  const other = water + sum(COST_LINES.floor) + sum(COST_LINES.compliance), staffBase = sum(COST_LINES.staff);
+  const other = water + sum(COST_LINES.floor) + sum(COST_LINES.compliance), staffBase = sum(staffLines) || 1;
   const occ = p.occupancy || 0, rr = c.rentRate + c.mgmtPerPing, oo = p.otherOpex || 0, st = p.staff || 0;
   const out = { premises: { rent: occ * c.rentRate / rr, mgmt: occ * c.mgmtPerPing / rr, elec: p.elec || 0, water: oo * water / other }, staff: {}, floor: {}, compliance: {} };
-  for (const [k, v] of COST_LINES.staff) out.staff[k] = st * v / staffBase;
+  for (const [k, v] of staffLines) out.staff[k] = st * v / staffBase;
   for (const g of ['floor', 'compliance']) for (const [k, v] of COST_LINES[g]) out[g][k] = oo * v / other;
   const tot = (o) => Object.values(o).reduce((s, v) => s + v, 0);
   out.totals = { premises: tot(out.premises), staff: tot(out.staff), floor: tot(out.floor), compliance: tot(out.compliance) };

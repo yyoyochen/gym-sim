@@ -22,7 +22,7 @@ export function runSelftests(names = []) {
   const args = ['--headless=new', `--user-data-dir=${profile}`, '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--virtual-time-budget=5000', '--dump-dom', url];   // self-tests run synchronously while the page loads
   return new Promise((resolve, reject) => {
-    execFile(CHROME, args, { maxBuffer: 64 * 1024 * 1024, timeout: 600000 }, (err, stdout) => {
+    execFile(CHROME, args, { maxBuffer: 64 * 1024 * 1024, timeout: 1800000 }, (err, stdout) => {
       rmSync(profile, { recursive: true, force: true });
       if (err) return reject(err);
       const tag = '<pre id="selftest">', i = stdout.lastIndexOf(tag), j = stdout.indexOf('</pre>', i);

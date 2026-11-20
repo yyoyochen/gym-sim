@@ -534,17 +534,18 @@ const SELFTESTS = {
     finally { setupRun(); }
   },
   scenario() {   // measurement only (not in the suite): one business played hands-off for some months. ?sc=<json> { size: S|M|L, seed, months, set: { settings }, counts: { category: multiplier } }
-    const q = JSON.parse(new URLSearchParams(location.search).get('sc') || '{}'), p = PRESETS[q.size || 'M'], ping = p.w * p.d, counts = presetCounts(p.w, p.d), med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
+    const q = JSON.parse(new URLSearchParams(location.search).get('sc') || '{}'), p = PRESETS[q.size || 'M'], ping = p.w * p.d, counts = q.rawKit ? presetCounts(p.w, p.d) : presetKit(p.w, p.d), med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
     for (const k in (q.counts || {})) counts[k] = Math.max(0, Math.round(counts[k] * q.counts[k]));
-    Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: null, build: 'new', monthsOpen: 0, peak: peakForPing(ping), cap: capForPing(ping) }, q.seed ? { seed: q.seed } : {}, q.set || {}); S.staff = rosterCost(S);
+    Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: null, build: 'new', monthsOpen: 0, peak: peakForPing(ping), cap: capForPing(ping) }, defaultRoster(ping), q.seed ? { seed: q.seed } : {}, q.set || {}); S.staff = rosterCost(S);
     setupRun(); const out = { size: q.size, ping, peakSet: S.peak, cap: S.cap, staff: S.staff, capex: Math.round(COSTS.capex), cash0: Math.round(BIZ.cash), pieces: S.layout ? S.layout.pieces.length : 0, stations: STATIONS.length, loanPay: Math.round(BIZ.payment), months: [] };
     for (let m = 0; m < (q.months || 12); m++) {
-      const peaks = [], eve = []; let waits = 0, nw = 0;
-      for (;;) { fastForward(30 * 3600); if (!A.done) endStuckDay(); const occ = Array.from(A.occ).filter(v => !isNaN(v)); peaks.push(occ.length ? Math.max(...occ) : 0); for (const w of A.waits || []) { waits += (typeof w === 'number' ? w : w.w || 0); nw++; } if (!nextDay()) break; }
+      const peaks = [], eve = []; let waits = 0, nw = 0, skipNone = 0, skipBusy = 0, lenSum = 0, lenN = 0, exPlan = 0;
+      for (;;) { fastForward(30 * 3600); if (!A.done) endStuckDay(); skipNone += A.skipNone || 0; skipBusy += A.skipBusy || 0; for (const v of A.visitLens || []) { lenSum += v; lenN++; } for (const a of A.members) if (a.rec && a.tDoor) exPlan += a.prog ? a.prog.length : 0; const occ = Array.from(A.occ).filter(v => !isNaN(v)); peaks.push(occ.length ? Math.max(...occ) : 0); for (const w of A.waits || []) { waits += (typeof w === 'number' ? w : w.w || 0); nw++; } if (!nextDay()) break; }
       const pt = M.pool.filter(x => x.pt).length, pass = M.pool.filter(x => x.passUntil != null && x.passUntil > M.dayI).length, balk = M.balkedTotal + (A.balked || 0), bad = M.badTotal + (A.bad || 0);
       nextMonth(); const r = BIZ.months[BIZ.months.length - 1], g = r.pnl, R = Math.round;
-      out.months.push({ mem: r.members, join: r.joined, lapse: r.lapsed, visits: r.visits, peakMax: Math.max(...peaks), peakMed: med(peaks), balk, bad, pt, pass, ebitda: R(g.ebitda), net: R(g.net), entry: R(g.entry), passes: R(g.passes || 0), ptEarned: R(g.ptEarned), rentals: R(g.rentals), coach: R(g.coach), fixed: R(g.fixed), staffC: R(g.staff), occ: R(g.occupancy), cash: R(r.cashEnd), tax: R(r.tax), interest: R(r.interest), principal: R(r.principal) });
+      out.months.push({ len: lenN ? Math.round(lenSum / lenN * 10) / 10 : 0, waitMin: Math.round(waits), waitN: nw, skipNone, skipBusy, exPlan, mem: r.members, join: r.joined, lapse: r.lapsed, visits: r.visits, peakMax: Math.max(...peaks), peakMed: med(peaks), balk, bad, pt, pass, ebitda: R(g.ebitda), net: R(g.net), entry: R(g.entry), passes: R(g.passes || 0), ptEarned: R(g.ptEarned), rentals: R(g.rentals), coach: R(g.coach), fixed: R(g.fixed), staffC: R(g.staff), occ: R(g.occupancy), cash: R(r.cashEnd), tax: R(r.tax), interest: R(r.interest), principal: R(r.principal) });
     }
+    out.kinds = STATIONS.reduce((o, s) => { o[s.type] = (o[s.type] || 0) + 1; return o; }, {}); out.asked = counts;
     out.cashOutAt = BIZ.cashOutAt ? BIZ.cashOutAt.mi : null;
     return { ok: true, detail: out };
   },
@@ -616,6 +617,28 @@ const SELFTESTS = {
       const paid = A.members.filter(a => a.paid && a.rec), only = paid.length > 0 && paid.every(a => a.pass) && (A.paidVisits || 0) === 0;
       const ok = exp0.passes === 0 && !exp0.any && n1 > 0 && p1.passes === n1 * 600 && holders === n1 && adds && more && boughtFree && heldFree && only;
       return { ok, detail: { off: exp0, n1, passes: p1.passes, holders, adds, more, boughtFree, held: held.length, heldFree, only } }; }
+    finally { Object.assign(S, keep); }
+  },
+  passOnlyLeaves() {   // balance 2026-11-20: in a pass-only gym a member who would not buy the pass stops coming and is gone within weeks; nobody is charged by the minute; newcomers who would not buy do not join
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1000 }); setupRun(); const pr = priceList(), n0 = M.pool.length, non0 = M.pool.filter(m => !passMember(m, pr)).length;
+      fastForward(30 * 3600); const came = A.members.filter(a => a.rec), allBuyers = came.length > 0 && came.every(a => passMember(a.rec, pr) || a.pass);
+      for (let d = 0; d < 21 && nextDay(); d++) fastForward(30 * 3600);
+      const non1 = M.pool.filter(m => !passMember(m, pr)).length, share = passMarket(pr);
+      const ok = non0 > n0 * 0.2 && non0 < n0 * 0.6 && allBuyers && (A.paidVisits || 0) === 0 && non1 <= non0 * 0.1 && share > 0.5 && share < 0.72;
+      return { ok, detail: { n0, non0, non1, came: came.length, allBuyers, share, pool: M.pool.length } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rosterFollowsFloor() {   // balance 2026-11-20: a new gym opens with the roster its floor needs; the sample keeps 2 full-time, 40 part-time hours and 2 coaches
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      const got = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], r = defaultRoster(p.w * p.d); return [r.deskFT, r.deskPTh, r.coaches, rosterCost(r)]; });
+      const sample = defaultRoster(COSTS.area), lean = { ...S, deskFT: 1, deskPTh: 0 };
+      const adj = (ping) => staffAdj(rosterCost({ ...defaultRoster(ping), coaches: 0 }), deskBase(ping));
+      const ok = JSON.stringify(got.map(g => g.slice(0, 3))) === '[[2,10,1],[3,30,3],[4,100,6]]' && got[0][3] < got[1][3] && got[1][3] < got[2][3] && sample.deskFT === 2 && sample.deskPTh === 40 && sample.coaches === 2
+        && adj(80) === 0 && adj(320) === 0 && staffAdj(rosterCost(lean) - coachPay(lean.coaches), deskBase(320)) > 0.29;
+      return { ok, detail: { got } }; }
     finally { Object.assign(S, keep); }
   },
   pricingMix() {   // the price list: pay-by-the-minute and the monthly pass each switch on and off, never both off; the pass shows who would take it; published for tomorrow
@@ -880,7 +903,7 @@ const SELFTESTS = {
       const sum = cells.reduce((t, c) => t - +c.querySelector('[data-v]').dataset.v, 0);   /* fixed lines are shown as negatives */
       const want = ['entryOff', 'entryPeak', 'cards', 'ptEarned', 'rentals', 'addOns', 'gross', 'vat', 'net', 'coach', 'mkt', 'card', 'contribution', 'fixed', 'ebitda', 'depEq', 'depFit', 'ebit', 'tax', 'netProfit', 'ptCash', 'deferred', 'ptDue'];
       const missing = want.filter(k => !document.querySelector(`#bkBody [data-k="${k}"]`));
-      return { ok: cells.length === 18 && Math.abs(sum - A.pnl.fixed) <= cells.length && !missing.length, detail: { lines: cells.length, sum, fixed: A.pnl.fixed, missing } }; }
+      return { ok: cells.length === 19 && Math.abs(sum - A.pnl.fixed) <= cells.length && !missing.length, detail: { lines: cells.length, sum, fixed: A.pnl.fixed, missing } }; }
     finally { closeBooks(); }
   },
   booksMonthView() {   // Plan 6: the month view shows the projected month and its payback and range
@@ -1379,11 +1402,11 @@ const SELFTESTS = {
     finally { if (BUILD.on) cancelBuild(); setupRun(); }
   },
   staffSteppers() {   // owner 2026-11-15: hire or let go desk staff and coaches; the roster cost follows; each coach carries up to 15 PT clients and more coaches sell more PT
-    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, staff: S.staff };
-    try { setupRun(); const base = rosterCost(S) === 184000 && S.staff === 184000, conv0 = ptConvert();
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, staff: S.staff };
+    try { Object.assign(S, defaultRoster(COSTS.area)); S.staff = rosterCost(S); setupRun(); const base = rosterCost(S) === 209952 && S.staff === 209952 && rosterCost({ ...S, coaches: 0 }) === 184000, conv0 = ptConvert();   /* balance 2026-11-20: the 2 coaches' retainers are on the roster */
       openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
-      q('coaches', 1).click(); const c3 = S.coaches === 3 && S.staff === 184000 && Math.abs(ptConvert() - conv0 * 1.5) < 1e-12 && ptCap() === 45;
-      q('deskFT', -1).click(); updateBooks(true); const t = document.getElementById('bkBody').textContent, ft = S.deskFT === 1 && S.staff === rosterCost(S) && S.staff < 184000 && /full-time \(1\)/.test(t);
+      q('coaches', 1).click(); const c3 = S.coaches === 3 && S.staff === 209952 + 12976 && Math.abs(ptConvert() - conv0 * Math.pow(1.5, 0.3)) < 1e-12 && ptCap() === 45;   /* a third coach costs a retainer and sells less than the first two */
+      q('deskFT', -1).click(); updateBooks(true); const t = document.getElementById('bkBody').textContent, ft = S.deskFT === 1 && S.staff === rosterCost(S) && S.staff < 209952 && /full-time \(1\)/.test(t);
       closeBooks(); S.coaches = 1; setupRun(); const inHouse = M.pool.filter(m => m.pt && !m.outside).length;
       S.coaches = 0; const none = ptCap() === 0 && ptConvert() === 0;
       return { ok: base && c3 && ft && inHouse <= 15 && none, detail: { base, c3, ft, staff: S.staff, inHouse, none } }; }
@@ -1506,11 +1529,11 @@ const SELFTESTS = {
     finally { setupRun(); }
   },
   cleanerEconomics() {   // owner 2026-11-16: a cleaner costs a wage on the roster; mess (a loaded bar to strip, dumbbells strewn about) counts against a visit, so a messy gym loses members
-    const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff };
-    try { setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;
+    const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff, deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches };
+    try { Object.assign(S, defaultRoster(COSTS.area)); S.staff = rosterCost(S); setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;
       openBooks('Staff'); const plus = document.querySelector('#bkBody [data-roster="cleaners"][data-d="1"]'); if (plus) plus.click(); const staffed = S.cleaners === 1 && S.staff === one; closeBooks();
       const day = (c) => { S.cleaners = c; S.rerack = 20; setupRun(); fastForward(30 * 3600); return A.badMess || 0; }, messy = day(0), tidy = day(3);
-      const ok = base === 184000 && one - base === Math.round(30000 * (1 + 42200 / 141800)) && staffed && !W.w_cleaners && messy > 0 && tidy < messy;
+      const ok = base === 209952 && one - base === Math.round(30000 * (1 + 42200 / 141800)) && staffed && !W.w_cleaners && messy > 0 && tidy < messy;
       return { ok, detail: { base, one, staffed, slider: !!W.w_cleaners, messy, tidy } }; }
     catch (e) { return { ok: false, detail: String(e) }; }
     finally { closeBooks(); Object.assign(S, keep); setupRun(); }
@@ -2041,7 +2064,7 @@ const SELFTESTS = {
       S.seed = 20261112; setupRun(); fastForward(30 * 3600); const proj = projectMonth().total.ebitda;
       while (nextDay()) fastForward(30 * 3600);
       const real = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda, visits = M.days.reduce((t, d) => t + d.visits, 0) + A.visits;
-      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 130600 };   // re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; mess (bars to strip, strewn dumbbells) counts against a visit
+      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 104989 };   // re-pinned 2026-11-20 (balance): members and visits unchanged; the 2 coaches' retainers take $25,611 off the month's 130,600. Before that, re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; mess (bars to strip, strewn dumbbells) counts against a visit
       const net = M.days.reduce((t, d) => t + d.pnl.net, 0) + A.pnl.net, projOk = Math.abs(proj - real) / net <= 0.08;   // EBITDA is a small difference of large numbers: judge the projection against net sales
       return { ok: projOk && JSON.stringify(got) === JSON.stringify(want), detail: { got, want, proj: Math.round(proj), real: Math.round(real), net: Math.round(net) } };
     } finally { Object.assign(S, keep); }

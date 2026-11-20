@@ -42,7 +42,7 @@ function buildPreview() {
 }
 function buildPick(k) {
   if (k === 'sample') { BUILD.w = BUILD.d = null; Object.assign(BUILD.want, SAMPLE_COUNTS); }
-  else { const p = PRESETS[k]; BUILD.w = p.w; BUILD.d = p.d; Object.assign(BUILD.want, presetCounts(p.w, p.d)); }
+  else { const p = PRESETS[k]; BUILD.w = p.w; BUILD.d = p.d; Object.assign(BUILD.want, presetKit(p.w, p.d, { turf: BUILD.turf })); }   /* equipment trace 2026-11-20: a preset asks only for what its hall holds */
   BUILD.layout = BUILD.w ? autoBuild(BUILD.w, BUILD.d, BUILD.want, { turf: BUILD.turf }) : null;
   buildPreview();
 }
@@ -89,7 +89,8 @@ function openGym() {
   const wasIntro = BUILD.intro;
   BUILD.snap.EQUIP.traverse(o => { if (o.geometry) o.geometry.dispose(); }); BUILD.snap = null;
   S.hallW = BUILD.w; S.hallD = BUILD.d; Object.assign(S, BUILD.counts); S.turf = BUILD.turf; S.layout = BUILD.w ? JSON.parse(JSON.stringify(BUILD.layout)) : null; S.sampleGrid = false;   /* a new build or a fresh take-over is no longer the converted sample */
-  if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; S.peak = peakForPing(BUILD.w * BUILD.d); S.cap = capForPing(BUILD.w * BUILD.d); } else { S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; }   /* owner 2026-11-20: a bigger floor draws and holds a bigger crowd */   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
+  if (BUILD.w) { S.build = 'new'; S.monthsOpen = 0; S.peak = peakForPing(BUILD.w * BUILD.d); S.cap = capForPing(BUILD.w * BUILD.d); } else { S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; }
+  Object.assign(S, defaultRoster(BUILD.w ? BUILD.w * BUILD.d : COSTS.area)); S.staff = rosterCost(S);   /* balance 2026-11-20: a new gym opens with the roster its floor needs */   /* owner 2026-11-20: a bigger floor draws and holds a bigger crowd */   /* owner 2026-11-15: a built gym starts from its pre-sale members and grows; taking over the sample stays established */ if (!BUILD.w) S.area = COSTS.area;
   closeBuildUI(); setupRun(); SAVE.live = true; persistSave(true);   /* owner 2026-11-15: a new gym replaces the saved one */ if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshGo(); if (typeof refreshPending === 'function') refreshPending();
   if (typeof onGymOpened === 'function') onGymOpened(wasIntro);
   return true;
@@ -118,7 +119,7 @@ function introHtml(c, btn) {
       <p class="note">${tx('Customise changes the size and the equipment.', '「自訂」可以改大小與器材。')}</p>
       <div class="row bfoot">${btn('data-istep="welcome"', tx('Back', '上一步'))}${btn('data-istep="custom"', tx('Customise', '自訂'))}${btn('data-istep="pay"', tx('Next: pay for it', '下一步：資金'), 'btn-go')}</div>`;
   }
-  const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayMonths(cash, monthlyRunCost(c.rentMonth, S.staff, pay));
+  const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayMonths(cash, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));   /* the roster this floor opens with */
   const runN = run < 10 ? run.toFixed(1) : Math.round(run);
   const runway = cash >= 0 ? (run < 6 ? `<p class="note warn" data-k="runway">${tx(`Only about ${runN} months of running costs. A new gym usually loses money for its first 6 to 9 months: borrow more, put in more of your own money, or pick a smaller gym.`, `只夠支付約 ${runN} 個月的營運成本。新健身房通常前 6 到 9 個月都在虧：多借一點、多放自有資金，或選小一點的場地。`)}</p>`
     : `<p class="note" data-k="runway">${tx(`About ${runN} months of running costs`, `約可支付 ${runN} 個月的營運成本`)}</p>`)
@@ -153,6 +154,9 @@ function renderBuild() {
     const kit = sample ? FIXED_KIT.reduce((t, [, v]) => t + v, 0) : kitOfLayout(), turf$ = sample ? 0 : BUILD.layout.pieces.filter(p => p.kind === 'turf').reduce((t, p) => t + KINDS.turf.price, 0), eq = BUILD_KEYS.reduce((t, [k]) => t + BUILD.counts[k] * EQUIP_PRICE[k], 0) + kit + turf$;
     const turfRow = sample ? '' : `<tr><td>${tx('Turf and sled lane', '草皮與雪橇道')}${BUILD.turf && !(BUILD.kit && BUILD.kit.turf) ? `<span class="bench">${tx('no room at this size', '這個大小放不下')}</span>` : ''}</td><td class="n">${btn('data-turf="1"', tx('In', '要'), BUILD.turf ? 'on' : '')} ${btn('data-turf="0"', tx('Out', '不要'), BUILD.turf ? '' : 'on')}</td><td class="n">${bnt(BUILD.kit && BUILD.kit.turf ? FIXED_KIT.find(([q]) => q === 'turf')[1] : 0)}</td></tr>`;
     body = `<table class="beq">${rows}${turfRow}<tr><td>${sample ? tx('Dumbbells, cable tower, turf and sled, pull-up, mats', '啞鈴、滑輪架、草皮與雪橇、引體向上架、軟墊') : tx('Dumbbells, cable tower, pull-up, mats', '啞鈴、滑輪架、引體向上架、軟墊')}</td><td></td><td class="n">${bnt(kit)}</td></tr><tr class="sum"><td>${tx('Equipment', '器材')}</td><td></td><td class="n">${bnt(eq)}</td></tr></table>
+      ${(() => { if (sample || !BUILD.layout) return ''; const g = kitGaps(BUILD.layout); if (!g.length) return '';   /* equipment trace 2026-11-20: say what members will miss */
+        const N = { cardio: ['cardio', '有氧器材'], machines: ['pin-loaded machines', '插銷式機台'], racks: ['racks', '深蹲架'], plats: ['lifting platforms', '舉重台'], benches: ['benches', '臥推椅'], plates: ['plate-loaded machines', '掛片式機台'], dumbbells: ['dumbbells', '啞鈴'], cable: ['a cable tower', '滑輪架'], pullup: ['a pull-up station', '引體向上架'], mat: ['stretch mats', '伸展墊'] };
+        return `<p class="note warn" data-k="kitGap">${tx(`This gym has no ${g.map(q => N[q][0]).join(', ')}. Members who planned to use them skip that part, leave sooner and pay less. Take something out to make room.`, `這間健身房沒有${g.map(q => N[q][1]).join('、')}。原本要用的會員會跳過那一段、提早離開，付的錢也變少。拿掉一些器材騰出空間吧。`)}</p>`; })()}
       <p class="note">${sample ? tx('The sample gym\'s equipment is fixed. Pick S, M, L or a custom size to choose counts.', '範例健身房的器材是固定的。選 S、M、L 或自訂大小即可調整數量。') : tx('Equipment is placed for you along the walls; when a zone is full, + stops.', '器材會自動沿牆擺放；區域滿了就不能再加。')}</p>`;
   } else {
     const capex = c ? c.capex : SAMPLE_CAPEX.capex, dep = c ? c.deposit : 0, cash = S.finOwn + S.finLoan - capex - dep, m$ = (v) => moneyK(v);

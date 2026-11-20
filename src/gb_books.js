@@ -196,7 +196,7 @@ function booksDep(period) {
 BOOK_RENDER.Books = {
   html() {
     if (BOOKS.period === 'year' && BIZ) return periodSeg('year') + yearHtml();
-    const per = BOOKS.period, arch = archOf(per), p = booksPeriod(per), c = pnlCosts(), net = p.net, it = itemiseFixed(p, c), d = booksDep(per);
+    const per = BOOKS.period, arch = archOf(per), p = booksPeriod(per), c = pnlCosts(), net = p.net, it = itemiseFixed(p, c, Object.entries(rosterLines(S)).filter(([, v]) => v > 0)), d = booksDep(per);
     // loan interest is booked when the month closes: the month view shows this month's, today and month-to-date show none yet (A2)
     const interest = arch ? arch.interest : per === 'month' && BIZ ? BIZ.balance * BIZ.rate / 1200 * M.cal.length / daysInMonth(BIZ.year, M.cfg.month) : 0;   /* a short first month pays its share */
     const loss = arch ? (arch.loss || 0) : (per === 'mtd' || per === 'month') && BIZ ? (BIZ.mLoss || 0) : 0;   /* Plan 12: a sale below its book value */
@@ -226,7 +226,7 @@ BOOK_RENDER.Books = {
       + bkRow('card', tx('Card and e-payment fees', '刷卡與電子支付手續費'), -p.card, net)
       + bkRow('contribution', tx('Contribution', '邊際貢獻'), p.contribution, net, 'sum');
     const FX = [['premises', tx('Premises', '場地'), [['rent', tx('Rent', '租金')], ['mgmt', tx('Management fee', '管理費')], ['elec', tx('Electricity', '電費')], ['water', tx('Water', '水費')]]],
-      ['staff', tx('Staff', '人事'), [['manager', tx('Store manager', '店長')], ['deskFT', tx('Desk staff, full-time (2)', '櫃檯正職（2 人）')], ['deskPT', tx('Desk staff, part-time', '櫃檯兼職')], ['statutory', tx('Labour and health insurance, pension', '勞健保與勞退')], ['bonusLeave', tx('Year-end bonus and leave cover', '年終與休假代班')]]],
+      ['staff', tx('Staff', '人事'), [['manager', tx('Store manager', '店長')], ['deskFT', tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`)], ['deskPT', tx('Desk staff, part-time', '櫃檯兼職')], ['coaches', tx(`Coaches' retainers (${S.coaches})`, `教練底薪（${S.coaches} 人）`)], ['cleaners', tx('Cleaners', '清潔人員')], ['statutory', tx('Labour and health insurance, pension', '勞健保與勞退')], ['bonusLeave', tx('Year-end bonus and leave cover', '年終與休假代班')]]],
       ['floor', tx('Running the floor', '場館營運'), [['cleaning', tx('Cleaning (outsourced)', '清潔（外包）')], ['maintenance', tx('Maintenance and repairs', '維修保養')], ['itSecurity', tx('Internet, software, security', '網路、軟體、保全')], ['supplies', tx('Supplies and pest control', '耗材與除蟲')]]],
       ['compliance', tx('Compliance and admin', '法規與行政'), [['insurance', tx('Public liability insurance', '公共意外責任險')], ['fire', tx('Fire and safety inspections', '消防與公安申報')], ['music', tx('Music licence', '音樂授權')], ['bookkeeping', tx('Bookkeeping', '記帳')], ['aed', tx('AED upkeep', 'AED 維護')]]]];
     rows += bkGroup(tx('Fixed costs', '固定成本'));
@@ -235,7 +235,7 @@ BOOK_RENDER.Books = {
       if (g === 'premises') note = tx(`Rent + management ${pctOf(occ, net)} of net sales; benchmark ${bp(...BENCH.occupancy)}`, `租金加管理費占銷售淨額 ${pctOf(occ, net)}；參考值 ${bp(...BENCH.occupancy)}`);
       if (g === 'staff') note = tx(`${pctOf(it.totals.staff, net)} of net sales (24% at base)`, `占銷售淨額 ${pctOf(it.totals.staff, net)}（基準 24%）`);
       rows += `<tr><td>${gl}${note ? `<span class="bench">${note}</span>` : ''}</td><td class="n">${ntn(-it.totals[g])}</td><td class="p">${pctOf(it.totals[g], net)}</td></tr>`;
-      for (const [k, l] of lines) rows += `<tr class="sub"><td>${l}</td><td class="n" data-k="fx_${k}">${ntn(-it[g][k])}</td><td class="p"></td></tr>`;
+      for (const [k, l] of lines) if (it[g][k] != null) rows += `<tr class="sub"><td>${l}</td><td class="n" data-k="fx_${k}">${ntn(-it[g][k])}</td><td class="p"></td></tr>`;
     }
     rows += bkRow('fixed', tx('Total fixed costs', '固定成本合計'), -p.fixed, net, 'sum')
       + bkGroup(tx('Profit', '獲利'))
@@ -340,8 +340,8 @@ BOOK_RENDER.Pricing = {
     const prS = { off: st.priceOff, peak: st.pricePeak, cap: st.priceCap, perMinOn: st.perMinOn, monthlyOn: st.monthlyOn, monthly: st.monthlyPrice }, pool = M ? M.pool : [];
     const takers = pool.filter(m => wantsPass(m.vpu, m.id, prS)).length, even = Math.ceil(st.monthlyPrice / Math.max(1, payPerUseMonth(1, st.priceOff, st.pricePeak, st.priceCap)));
     const passNote = !st.monthlyOn ? `<p class="note">${tx('Off: everyone pays by the minute.', '未開放：所有人都計時付費。')}</p>`
-      : `<p class="note" data-k="passShare">${st.perMinOn ? tx(`About ${takers} of your ${pool.length} members would take the pass: it pays off from ${even} visits a month. They stop paying by the minute and come more often.`, `你的 ${pool.length} 位會員中，約 ${takers} 位會改用月費：每月來 ${even} 次以上才划算。他們不再計時付費，也會更常來。`)
-        : tx(`Pass only: all ${pool.length} members must buy it. It pays off from ${even} visits a month, so occasional members leave faster and fewer people join.`, `只收月費：${pool.length} 位會員都要買。每月來 ${even} 次以上才划算，所以偶爾來的會員流失更快、新會員也更少。`)}</p>`;
+      : `<p class="note" data-k="passShare">${st.perMinOn ? tx(`About ${takers} of your ${pool.length} members would take the pass. By the minute it pays off from ${even} visits a month, but people expect to come more than they do, so some who come less buy it too. Pass holders stop paying by the minute and come more often.`, `你的 ${pool.length} 位會員中，約 ${takers} 位會改用月費。照計時算，每月來 ${even} 次以上才划算；但大家總以為自己會更常來，所以來得較少的人也會買。月費會員不再計時付費，也會更常來。`)
+        : tx(`Pass only: about ${takers} of your ${pool.length} members would buy it. The other ${pool.length - takers} stop coming within a week or so, and newcomers who would come too rarely do not join. By the minute it pays off from ${even} visits a month.`, `只收月費：你的 ${pool.length} 位會員中，約 ${takers} 位會買。其餘 ${pool.length - takers} 位大約一週內就不來了，來得太少的新客也不會加入。照計時算，每月來 ${even} 次以上才划算。`)}</p>`;
     const entry = `<table>${togRow('perMinOn', tx('Pay by the minute', '計時收費'))}${stepRow('priceOff', !st.perMinOn)}${stepRow('pricePeak', !st.perMinOn)}${stepRow('priceCap', !st.perMinOn)}
       ${togRow('monthlyOn', tx('Monthly pass (30 days, unlimited visits)', '月費（30 天不限次數）'))}${st.monthlyOn ? stepRow('monthlyPrice') : ''}</table>${passNote}`;
     const stPacks = ptPacks(st.ptSession), ptDelta = ptDemandMult(st.ptSession) / ptDemandMult(S.ptSession);
@@ -390,11 +390,12 @@ BOOK_RENDER.Staff = {
   update() {
     const box = document.getElementById('bkStaffLines'); if (!box) return;
     for (const [k, , , , , fmt] of BOOKS.rosterFmt || []) { const b = document.querySelector(`#bkBody [data-rv="${k}"]`); if (b) b.textContent = fmt(S[k]); }
-    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), cleaners: tx(`Cleaners (${S.cleaners})`, `清潔人員（${S.cleaners} 人）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
-    const h = `<table>${Object.keys(it).filter(k => k !== 'cleaners' || S.cleaners).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
-      <p class="note">${tx(`Coaches are paid ${100 - pnlCosts().gymShare}% of the PT they deliver, not from this roster. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients; more coaches sell more PT over the coming months.`, `教練由教練課分潤（${100 - pnlCosts().gymShare}%）支付，不在此人事成本內。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員；教練越多，之後幾個月賣出的教練課越多。`)}</p>
-      <p class="note${staffAdj(S.staff) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff), mx = more(DEMAND_RESP.staffLean);   /* review I4: the month-0 churn change the model actually applies */
-        return tx(`At this roster, members in their first month leave ${x}% more often than with the full roster (${money(DEMAND_RESP.staffBase)}); the most is ${mx}% more, at ${money(DEMAND_RESP.staffLean)}.`, `以目前人力，第一個月的新會員流失比完整人力（${money(DEMAND_RESP.staffBase)}）多 ${x}%；最多多 ${mx}%（${money(DEMAND_RESP.staffLean)}）。`); })()}</p>`;
+    const it = rosterLines(S), lab = { manager: tx('Store manager', '店長'), deskFT: tx(`Desk staff, full-time (${S.deskFT})`, `櫃檯正職（${S.deskFT} 人）`), deskPT: tx(`Desk staff, part-time (${S.deskPTh} h a week)`, `櫃檯兼職（每週 ${S.deskPTh} 小時）`), coaches: tx(`Coaches' retainers (${S.coaches})`, `教練底薪（${S.coaches} 人）`), cleaners: tx(`Cleaners (${S.cleaners})`, `清潔人員（${S.cleaners} 人）`), statutory: tx('Labour and health insurance, pension', '勞健保與勞退'), bonusLeave: tx('Year-end bonus and leave cover', '年終與休假代班') };
+    const h = `<table>${Object.keys(it).filter(k => (k !== 'cleaners' || S.cleaners) && (k !== 'coaches' || S.coaches)).map(k => `<tr><td>${lab[k]}</td><td class="n">${nt$(it[k])}</td></tr>`).join('')}<tr class="sum"><td>${tx('A month', '每月')}</td><td class="n">${nt$(S.staff)}</td></tr></table>
+      <p class="note">${(() => { const need = Math.max(1, Math.round(2 * S.peak / DEMAND.peak)), ret = money(ROSTER.coach), sh = 100 - pnlCosts().gymShare;   /* balance 2026-11-20: a coach costs a retainer; the crowd keeps only so many busy */
+        return tx(`Each coach is paid a ${ret} retainer here, plus ${sh}% of the PT they deliver. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients. A gym this busy keeps about ${need} coach${need === 1 ? '' : 'es'} in work: fewer sell less PT, more sell only a little extra.`, `每位教練在這裡領底薪 ${ret}，另加教練課 ${sh}% 的分潤。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員。這個人流大約養得起 ${need} 位教練：少了賣得少，多了也只多賣一點。`); })()}</p>
+      <p class="note${staffAdj(S.staff - coachPay(S.coaches), deskBase(S.area)) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const full = deskBase(S.area), lean = Math.round(full * DEMAND_RESP.staffLean / DEMAND_RESP.staffBase / 1000) * 1000, more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st, full)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff - coachPay(S.coaches)), mx = more(lean);   /* the desk roster (coaches aside) against what this floor needs */   /* review I4: the month-0 churn change the model actually applies */
+        return tx(`At this desk roster, members in their first month leave ${x}% more often than with the full desk for this floor (${money(full)} a month before coaches); the most is ${mx}% more, at ${money(lean)}.`, `以目前櫃檯人力，第一個月的新會員流失比這個坪數的完整櫃檯人力（不含教練每月 ${money(full)}）多 ${x}%；最多多 ${mx}%（${money(lean)}）。`); })()}</p>`;
     if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }
   }
 };

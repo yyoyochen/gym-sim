@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSrc } from './load.mjs';
 
-const P = loadSrc(['src/a1_params.js'], ['PT_BASE', 'ptPacks', 'ptDemandMult', 'PASS', 'payPerUseMonth', 'memberTaste', 'wantsPass', 'passChurnMult', 'joinPrice', 'blendedPrice', 'DEMAND_RESP']);
+const P = loadSrc(['src/a1_params.js'], ['PT_BASE', 'ptPacks', 'ptDemandMult', 'PASS', 'payPerUseMonth', 'memberTaste', 'wantsPass', 'passMarket', 'joinPrice', 'blendedPrice', 'DEMAND_RESP']);
 const base = { off: 1.2, peak: 1.5, cap: 180, perMinOn: true, monthlyOn: true, monthly: 1500 };
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
@@ -43,23 +43,25 @@ test('nobody is on a monthly pass while the pass is switched off', () => {
   assert.equal(P.wantsPass(30, 1, { ...base, monthlyOn: false }), false);
 });
 
-test('everybody is on the pass when pay-per-minute is switched off', () => {
-  assert.equal(P.wantsPass(1, 1, { ...base, perMinOn: false }), true);
+test('with pay-per-minute switched off, a member who comes once a month does not buy the pass and a daily one does', () => {
+  assert.equal(P.wantsPass(1, 1, { ...base, perMinOn: false }), false);
+  assert.equal(P.wantsPass(30, 1, { ...base, perMinOn: false }), true);
 });
 
 test('with both on, frequent members take the pass and occasional ones pay by the minute', () => {
   assert.equal(P.wantsPass(30, 1, base), true);     // 30 visits x $90 = $2,700 against $1,500
   assert.equal(P.wantsPass(3, 1, base), false);     // 3 visits x $90 = $270
   const share = (price) => Array.from({ length: 1000 }, (_, i) => P.wantsPass(12, i, { ...base, monthly: price })).filter(Boolean).length / 1000;
-  assert.ok(share(900) > share(1100) && share(1100) > share(1300), 'a cheaper pass wins more of the 12-visit members');
-  assert.ok(share(1080) > 0.3 && share(1080) < 0.7, 'at the break-even price about half of them switch');
+  assert.ok(share(1300) > share(1620) && share(1620) > share(1950), 'a cheaper pass wins more of the 12-visit members');
+  assert.ok(share(1620) > 0.3 && share(1620) < 0.7, 'at 1.5 times their month by the minute about half of them switch');
 });
 
-test('forced onto a pass that costs more than their visits were worth, members leave faster, at most twice as fast', () => {
-  assert.equal(P.passChurnMult(6, base), 1);                                  // pay-per-minute still offered
-  assert.equal(P.passChurnMult(30, { ...base, perMinOn: false }), 1);         // a good deal for a frequent member
-  const m = P.passChurnMult(3, { ...base, perMinOn: false }); assert.ok(m > 1 && m <= 2, String(m));
-  assert.equal(P.passChurnMult(0.5, { ...base, perMinOn: false, monthly: 5000 }), 2);
+test('the people a pass-only gym can win: everyone while the minute price is offered, fewer the dearer the pass', () => {
+  assert.equal(P.passMarket(base), 1); assert.equal(P.passMarket({ ...base, monthlyOn: false }), 1);
+  const s = (monthly) => P.passMarket({ ...base, perMinOn: false, monthly });
+  assert.ok(s(600) > s(1000) && s(1000) > s(1500) && s(1500) > 0);
+  assert.ok(s(1000) > 0.5 && s(1000) < 0.72, String(s(1000)));   // about three in five at $1,000
+  assert.ok(s(100) > 0.99);
 });
 
 test('the price a newcomer weighs: the minute price, or the pass when that is all there is', () => {
@@ -67,7 +69,7 @@ test('the price a newcomer weighs: the minute price, or the pass when that is al
   assert.ok(Math.abs(P.joinPrice({ ...base, monthlyOn: false }) - b) < 1e-9);
   assert.ok(Math.abs(P.joinPrice(base) - b) < 1e-9, 'a pass dearer than a typical month of visits changes nothing for newcomers');
   assert.ok(P.joinPrice({ ...base, monthly: 400 }) < b, 'a pass cheaper than a typical month of visits pulls people in');
-  assert.ok(P.joinPrice({ ...base, perMinOn: false }) > b, 'a pass-only gym at $1,500 is dearer for a 6-visit newcomer');
+  assert.ok(Math.abs(P.joinPrice({ ...base, perMinOn: false }) - b) < 1e-9, 'a dear pass-only gym turns newcomers away one by one, not through this price');
   assert.ok(Math.abs(P.joinPrice({ ...base, perMinOn: false, monthly: 540 }) - b) < 1e-9);
 });
 

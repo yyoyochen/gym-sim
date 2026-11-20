@@ -101,6 +101,8 @@ function priceList() { return { off: S.priceOff, peak: S.pricePeak, cap: S.price
 function ptPacksNow() { return ptPacks(S.ptSession); }
 function onPass(rec, day = M.dayI) { return rec.passUntil != null && rec.passUntil > day; }
 function passMember(rec, pr = priceList()) { return onPass(rec) || wantsPass(rec.vpu, rec.id, pr); }   /* comes like a pass holder: has one, or will buy one at the next visit */
+const PASS_LEAVE = 0.15;   /* balance 2026-11-20: a member who will not buy the pass in a pass-only gym stops coming and is gone within about a week */
+function passOnly(pr = priceList()) { return pr.monthlyOn && !pr.perMinOn; }
 function chargeOut(a) {   // billed once, as the member walks out past the desk
   if (a.paid || !a.tDoor) return;
   a.paid = true; A.payQ = A.payQ || [];
@@ -386,7 +388,7 @@ function projectMonth() {
   const rest = projectRest(M.cal.slice(M.dayI + 1), (day) => {
     if (day.closure) return dailyPnl({ entry: 0, cards: 0, ptSessions: 0, ptEarned: 0, ptCash: 0, rentals: 0 }, 1, { ...c, addOns: 0 });   // a known closure: fixed costs only
     const base = dayShape(day.dow), sh = peakShiftWeights(base, day.dow, S.pricePeak / S.priceOff - 1), sm = (r) => r.reduce((t, v) => t + v, 0);
-    const f = dayFactor(day.dow, day.mult) * rain * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eExisting) * sm(sh) / sm(base), PRf = priceList(), anyP = PRf.monthlyOn || M.pool.some(m => m.passUntil != null), ev = M.pool.reduce((t, m) => t + (anyP && passMember(m, PRf) ? 0 : Math.min(0.95, m.vpu / 30.4 * f)), 0);
+    const f = dayFactor(day.dow, day.mult) * rain * priceVisitMult(blendedPrice(S.priceOff, S.pricePeak), DEMAND_RESP.eExisting) * sm(sh) / sm(base), PRf = priceList(), anyP = PRf.monthlyOn || M.pool.some(m => m.passUntil != null), ev = M.pool.reduce((t, m) => t + ((anyP && passMember(m, PRf)) || !PRf.perMinOn ? 0 : Math.min(0.95, m.vpu / 30.4 * f)), 0);
     const j = M.cal.indexOf(day), due = anyP ? M.pool.filter(m => PRf.monthlyOn && wantsPass(m.vpu, m.id, PRf) && Math.max(M.dayI + 1, m.passUntil || 0) === j).length : 0;   /* passes that run out that day are renewed (9 in 10) */
     return dailyPnl({ passes: due * 0.9 * S.monthlyPrice, entry: ev * feePerVisit, cards, ptSessions: 0, ptEarned: pt, ptCash: 0, rentals: rent }, 1, c);
   });
@@ -395,8 +397,8 @@ function projectMonth() {
 }
 function lapseHazard(m, i) {   // today's chance this member lapses: tenure, visit frequency, bad visits in the last 30 days, staffing (P4.3, P4.11, P4.12, P4.15, D10)
   const v30 = i - m.joinedDay < 30 ? null : m.visits.filter(d => d > i - 30 && d <= i).length, bad = (m.bad || []).filter(d => d > i - 30 && d <= i).length;
-  const h = dailyRate(churnMonthly((i - m.joinedDay) / 30.4, v30, bad, staffAdj(S.staff)));
-  const hp = S.monthlyOn && !S.perMinOn ? Math.min(1, h * passChurnMult(m.vpu, priceList())) : h;   /* a pass-only gym loses its occasional members faster */
+  if (passOnly() && !passMember(m)) return PASS_LEAVE;   /* a pass-only gym: a member who will not buy the pass has stopped coming */
+  const hp = dailyRate(churnMonthly((i - m.joinedDay) / 30.4, v30, bad, staffAdj(S.staff - coachPay(S.coaches), deskBase(S.area))));   /* the desk roster against what this floor needs */
   return m.protect && i < m.protect.until ? hp / 2 : hp;   /* Plan 9: a retention action that landed halves churn for a while */
 }
 // ================================================================ retention actions (Plan 9, spec R1–R4): the learner picks an action for a drifting member;
@@ -437,7 +439,7 @@ function applyVoucher(m, fee) { const v = m.voucher; if (!v || v.left <= 0 || M.
 function poisson(rng, mean) { let k = 0, p = 1; const L = Math.exp(-mean); do { k++; p *= rng(); } while (p > L); return k - 1; }
 // between days: members lapse (tenure and visit frequency, P4.3, P4.12, P4.15), lapsed members return (P4.14), new members join (P4.4)
 function endDay() {
-  const i = M.dayI, rng = makeRng((M.seed ^ Math.imul(i + 1, 0x85EBCA6B) ^ 0x27D4EB2F) >>> 0), out = { joined: 0, lapsed: 0, returned: 0 };
+  const i = M.dayI, rng = makeRng((M.seed ^ Math.imul(i + 1, 0x85EBCA6B) ^ 0x27D4EB2F) >>> 0), out = { joined: 0, lapsed: 0, returned: 0 }, prJ = priceList(), po = passOnly(prJ);
   const stay = [];
   for (const m of M.pool) {
     if (rng() < lapseHazard(m, i)) { m.lapsedDay = i; M.lapsed.push(m); out.lapsed++; } else stay.push(m);
@@ -445,19 +447,20 @@ function endDay() {
   M.pool = stay;
   const still = [];
   for (const m of M.lapsed) {
-    if (m.lapsedDay < i && rng() < dailyRate(reactMonthly((i - m.lapsedDay) / 30.4))) { delete m.lapsedDay; M.pool.push(m); out.returned++; } else still.push(m);
+    if (m.lapsedDay < i && (!po || wantsPass(m.vpu, m.id, prJ)) && rng() < dailyRate(reactMonthly((i - m.lapsedDay) / 30.4))) {   /* nobody comes back to a pass they would not buy */ delete m.lapsedDay; M.pool.push(m); out.returned++; } else still.push(m);
   }
   M.lapsed = still;
-  const gap = M.cfg.build === 'new' ? Math.max(0, M.steady - M.pool.length) / (RAMP.tau * 30.4) : 0;
-  out.joined = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(joinPrice(priceList()), DEMAND_RESP.eNew));   // dearer prices, fewer joins (P3.12b)
-  for (let k = 0; k < out.joined; k++) M.pool.push(newMember(rng, i + 1, true));
+  const gap = M.cfg.build === 'new' ? Math.max(0, M.steady * passMarket(prJ) - M.pool.length) / (RAMP.tau * 30.4) : 0;   /* a pass-only gym grows towards the people who would buy its pass */
+  const came = poisson(rng, (CHURN.newPerMonth / 30.4 * M.cfg.peak / 35 * (M.cfg.shock === 'competitor' ? 0.9 : 1) + gap) * priceVisitMult(joinPrice(prJ), DEMAND_RESP.eNew));   // dearer prices, fewer joins (P3.12b)
+  out.joined = 0;
+  for (let k = 0; k < came; k++) { const m = newMember(rng, i + 1, true); if (po && !wantsPass(m.vpu, m.id, prJ)) continue;   /* asked at the desk, would not buy the pass, did not join */ M.pool.push(m); out.joined++; }
   M.joinedTotal += out.joined; M.lapsedTotal += out.lapsed; M.returnedTotal += out.returned;
   out.actives = M.pool.length;
   return out;
 }
 const PT_PER_COACH = 15;   /* owner 2026-11-15: an in-house coach carries about 15 clients */
 function ptCap(coaches = S.coaches) { return Math.max(0, coaches) * PT_PER_COACH; }
-function ptConvert() { return PT.convert * Math.max(0, S.coaches) / 2 * ptDemandMult(S.ptSession); }   /* 2 coaches = the researched rate */
+function ptConvert() { return PT.convert * coachSell(S.coaches, S.peak) * ptDemandMult(S.ptSession); }   /* 2 coaches at a 35-person peak = the researched rate; balance 2026-11-20: extra coaches sell less each */
 function ptRoom() { return !M || M.pool.reduce((n, m) => n + (m.pt && !m.outside && m.pt.left > 0 ? 1 : 0), 0) < ptCap(); }
 const CHANGE = { skip: 0.35, loo: 0.15, leaveAsIs: 0.7 };   /* owner 2026-11-15: share who skip the changing room, take a washroom break, and (having skipped) leave without changing */
 function lockerOf(a) { if (!a.locker) { const room = a.female ? LOCKERS_F : LOCKERS_M; a.locker = room[Math.floor(a.rng() * room.length)]; } return a.locker; }   /* their own washroom */
@@ -494,6 +497,7 @@ function setupDay(i) {
   for (let t = T_START + 10 * 60; t < 24.7 * 3600; t += (BUS_GAP[cfg.setting] || 12) * 60) A.buses.push(t);
   const PR = priceList(), anyPass = PR.monthlyOn || M.pool.some(m => m.passUntil != null);
   for (const rec of (A.closed ? [] : M.pool)) {   // a typhoon day: closed, nobody comes
+    if (!PR.perMinOn && PR.monthlyOn && !passMember(rec, PR)) continue;   /* pass-only: who will not buy the pass does not come */
     const pv = Math.min(0.95, rec.vpu / 30.4 * (anyPass && passMember(rec, PR) ? f / priceMult * PASS.visitUp : f)); A.visitsExpected += pv;
     if (rng() >= pv) continue;
     let r = rng(), h = 23; for (let w = 0; w < weights.length; w++) { r -= weights[w]; if (r <= 0) { h = 7 + w; break; } }
@@ -676,7 +680,9 @@ function chooseStation(a, e) {
   const s = (e.pref && nearestOf([e.pref], a, isFree)) || nearestOf(e.types, a, isFree);
   if (s) return claim(a, s, e);
   const q = nearestOf(e.types, a, null);
-  if (!q) { a.exI++; return startExercise(a); }
+  if (!q) {   /* equipment trace 2026-11-20: no such station in this gym. The member does the nearest thing the gym does have; only with no alternative is the exercise dropped */
+    for (const alt of e.alts) if (nearestOf(LIFTS[alt].types, a, null)) { const ex2 = makeEx(alt, a, a.rng, { n: e.sets.length || 3, reps: 8 }); a.prog[a.exI] = ex2; return chooseStation(a, ex2); }
+    A.skipNone = (A.skipNone || 0) + 1; a.exI++; return startExercise(a); }   /* no such station in this gym: the exercise is dropped (counted for the scenario probe) */
   q.queue.push(a); e.st = 'wait'; e.waitS = q; e.waitT = A.t; e.wiT = A.t; a.station = null;
   const sp = waitSpot(q, q.queue.length - 1); go(a, sp.x, sp.z);
 }
@@ -736,7 +742,7 @@ function updateExercise(a, dt) {
       if (t - e.waitT > S.patience * 60 * (L.kind === 'bar' ? 2 : 1)) {
         q.queue = q.queue.filter(x => x !== a); recordWait(e, a);
         for (const alt of e.alts) { const s2 = nearestOf(LIFTS[alt].types, a, isFree); if (s2) { const ex2 = makeEx(alt, a, a.rng, { n: Math.max(3, e.sets.length - 2), reps: 8, restMul: 0.8 }); a.prog[a.exI] = ex2; return claim(a, s2, ex2); } }
-        a.exI++; return startExercise(a);
+        A.skipBusy = (A.skipBusy || 0) + 1; a.exI++; return startExercise(a);   /* waited, nothing free, no alternative: dropped */
       }
       return;
     }
