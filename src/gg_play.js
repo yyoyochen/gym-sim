@@ -23,7 +23,7 @@ function dayCardHtml() {
 // shown whenever the day is over and nothing else has the player's attention; driven by the monitors' refresh, so it follows the game's state rather than one event
 function syncDayCard() {
   const c = document.getElementById('dayCard'), nc = document.getElementById('noteCard'), gc = document.getElementById('goalCard');
-  const show = !!A && !!M && A.done && !BUILD.on && !closing && !(nc && !nc.hidden) && !(gc && !gc.hidden);
+  const show = !!A && !!M && A.done && !BUILD.on && !closing && !(nc && !nc.hidden) && !(gc && !gc.hidden) && !BIG_POPS.length && !sumPopsOn();   /* judge round 4: the card waits for the closed days' pops */
   if (!show) { if (c) c.hidden = true; return; }
   const box = dayCardEl(), h = dayCardHtml(); if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }
   box.classList.toggle('over', innerWidth < 860 && !panel.classList.contains('closed'));   /* a phone with the sheet open: the card sits above the sheet */

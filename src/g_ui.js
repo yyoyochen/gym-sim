@@ -46,7 +46,12 @@ function updateHudBottom() { const h = document.getElementById('hud'); if (h) do
 function hintSeen() { document.body.classList.add('hinted'); try { localStorage.setItem('gymsim.hinted', '1'); } catch (e) {} updateHudBottom(); }   /* the gesture hint goes after the first touch of the scene */
 try { if (localStorage.getItem('gymsim.hinted')) document.body.classList.add('hinted'); } catch (e) {}
 canvas.addEventListener('pointerdown', hintSeen, { passive: true }); canvas.addEventListener('wheel', hintSeen, { passive: true });
-function showToast(text) { const d = document.createElement('div'); d.textContent = text; toastEl.appendChild(d); while (toastEl.children.length > 3) toastEl.firstChild.remove(); setTimeout(() => d.remove(), 3500); }
+// judge round 4: a closed day's or week's pops play first; toasts raised meanwhile wait for them (updatePays lets them out)
+const TOAST_Q = [];
+function sumPopsOn() { return typeof PAYS !== 'undefined' && PAYS.some(p => p.sum); }
+function flushToasts() { for (const t of TOAST_Q.splice(0)) showToast(t); }
+function syncToastTop() { const c = document.getElementById('card'), on = !!c && getComputedStyle(c).display !== 'none', v = on ? Math.round(c.getBoundingClientRect().height + 6) + 'px' : '0px'; if (toastEl.dataset.ch !== v) { toastEl.dataset.ch = v; toastEl.style.setProperty('--cardH', v); } }   /* judge round 4 */
+function showToast(text) { syncToastTop(); if (sumPopsOn()) { TOAST_Q.push(text); while (TOAST_Q.length > 3) TOAST_Q.shift(); return; } const d = document.createElement('div'); d.textContent = text; toastEl.appendChild(d); while (toastEl.children.length > 3) toastEl.firstChild.remove(); setTimeout(() => d.remove(), 3500); }
 // ================================================================ NetLogo-style panel
 const panel = document.getElementById('panel');
 let goOn = false;
@@ -113,6 +118,8 @@ function balanceMix(changed) {
   if (S.mix[others[0]] < 0) { S.mix[others[0]] = 0; }
   for (const k of keys) { const r = W['w_' + k]; if (r) { r.inp.value = S.mix[k]; r.out.textContent = S.mix[k] + ' %'; } }
 }
+const ADV = { open: null };   /* the Advanced disclosure: closed until the player opens it, remembered per browser where storage allows */
+function advOpen() { if (ADV.open == null) { ADV.open = false; try { ADV.open = localStorage.getItem('gymsim.adv') === '1'; } catch (e) {} } return ADV.open; }
 function buildPanel() {
   if (plotbar) plotbar.remove();   // rebuilt on a language switch
   panel.innerHTML = '<div id="sheetHandle"><i></i></div><div class="tabs" role="tablist"></div>';
@@ -120,7 +127,7 @@ function buildPanel() {
   const run = group('Run', 'Run', 'runGrp');
   const r1 = el('div', { class: 'row' });
   W.setup = el('button', { class: 'btn-setup' }, tr('Setup')); W.go = el('button', { class: 'btn-go' }, tr('Go')); W.step = el('button', {}, tr('Step'));
-  r1.append(W.setup, W.go, W.step); run.appendChild(r1);
+  r1.append(W.go); run.appendChild(r1);   /* judge round 4: Go alone on top; Start over sits apart at the foot of the group, +1 min under Advanced */
   // log scale: 1x .. 600x (a whole 17-hour day in under two minutes at the top end)
   const spd = { toV: (p) => { const v = Math.pow(600, p / 100); return v < 10 ? Math.round(v) : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 25) * 25; }, toPos: (v) => Math.round(100 * Math.log(Math.max(1, v)) / Math.log(600)) };
   slider(run, 'speed', 'Speed (gym seconds per real second)', 0, 100, 1, v => v + '×', false, undefined, spd);
@@ -129,27 +136,36 @@ function buildPanel() {
   for (const [k, lab] of [['day', tx('Day', '今天')], ['week', tx('Week', '本週')], ['month', tx('Month', '本月')]]) { const b = el('button', { 'data-close': k }, lab); b.addEventListener('click', () => closeEarly(k)); r4.appendChild(b); }
   run.appendChild(r4);
   run.appendChild(el('p', { class: 'note', id: 'runNote' }, ''));
+  { const r5 = el('div', { class: 'row startover' }); r5.appendChild(W.setup); run.appendChild(r5); }
   /* owner 2026-11-15: own money and the loan are set when the gym is built, not here */
   run.insertBefore(el('div', { id: 'dayLbl', class: 'daylbl' }, ''), run.children[1]);
   const mg = group('Monitors', null, 'monGrp'); mg.querySelector('.pend').remove();
   const mon = el('div', { class: 'mon' });
-  for (const [id, lab] of [['mClock', 'Clock'], ['mIn', 'Inside now'], ['mWait', 'Waiting now'], ['mAvg', 'Avg wait'], ['mQ', 'Longest queue'], ['mPR', 'PRs today'], ['mStray', 'Stray weights'], ['mVisits', 'Visits'], ['mRack', 'Rack queue']]) { const d = el('div', {}, `<span>${tr(lab)}</span><b id="${id}">–</b>`); mon.appendChild(d); }
+  const tile = (id, lab) => el('div', {}, `<span>${tr(lab)}</span><b id="${id}">–</b>`);
+  for (const [id, lab] of [['mClock', 'Clock'], ['mIn', 'Inside now'], ['mWait', 'Waiting now'], ['mAvg', 'Avg wait'], ['mPR', 'PRs today'], ['mVisits', 'Visits']]) mon.appendChild(tile(id, lab));
   mg.appendChild(mon);
-  const day = group('Day', 'Day');
+  // judge round 4: the model's dials (who the members are, how they behave, the door cap, the minute step, the queue and mess counters) sit behind one closed
+  // disclosure, remembered per browser; a casual player meets Run, the six counters and the charts
+  const adv = el('details', { class: 'grp adv', id: 'advBox' }); adv.dataset.tab = 'Run'; adv.appendChild(el('summary', {}, tx('Advanced', '進階選項'))); panel.appendChild(adv);
+  adv.open = advOpen(); adv.addEventListener('toggle', () => { ADV.open = adv.open; try { localStorage.setItem('gymsim.adv', adv.open ? '1' : '0'); } catch (e) {} });
+  adv.appendChild(el('p', { class: 'note', style: 'margin:0 0 6px' }, tx('The dials behind the simulation. The game plays fine without touching them.', '模擬背後的細部設定。不動它們也能正常玩。')));
+  { const r = el('div', { class: 'row' }); r.appendChild(W.step); adv.appendChild(r); const m2 = el('div', { class: 'mon', style: 'margin:6px 0' }); for (const [id, lab] of [['mQ', 'Longest queue'], ['mStray', 'Stray weights'], ['mRack', 'Rack queue']]) m2.appendChild(tile(id, lab)); adv.appendChild(m2); }
+  const inAdv = (g) => { delete g.dataset.tab; adv.appendChild(g); return g; };
+  const day = inAdv(group('Day', 'Day'));
   /* owner 2026-11-15: no month chooser: the month follows the calendar */
   slider(day, 'peak', 'People at the weekly peak', 15, 60, 1, v => v, true);
   slider(day, 'visit', 'Mean visit length', 30, 100, 1, v => v + MIN(), true);
   segmented(day, 'setting', 'Setting', ['Urban', 'Suburban', 'Rural']);
   segmented(day, 'weather', 'Weather', ['Clear', 'Rain', 'Heatwave']);   /* in-game buttons, not an OS dropdown */
   day.appendChild(el('p', { class: 'note' }, tr('Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.')));
-  const mem = group('Members', 'Members');
+  const mem = inAdv(group('Members', 'Members'));
   mem.appendChild(el('p', { class: 'note', style: 'margin:0 0 4px' }, tr('Archetype mix (sums to 100 %, applies from tomorrow)')));
   for (const [k, lab] of [['power', 'Powerlifter'], ['oly', 'Olympic lifter'], ['body', 'Bodybuilder'], ['beginner', 'Beginner']]) slider(mem, k, lab, 0, 100, 1, v => v + ' %', false, 'mix');   /* owner 2026-11-15: from the next morning, no Setup */
   slider(mem, 'patience', 'Patience before swapping', 0, 15, 0.5, v => v + MIN());
   slider(mem, 'workIn', 'Work-in willingness', 0, 100, 5, v => v + ' %');
   slider(mem, 'rest', 'Rest between sets', 1, 5, 0.25, v => v.toFixed(2).replace(/0$/, '') + MIN());
   slider(mem, 'rerack', 'Re-rack habit', 0, 100, 5, v => v + ' %');
-  const gym = group('Gym', 'Gym');
+  const gym = inAdv(group('Gym', 'Gym'));
   /* owner 2026-11-15: equipment is changed with Rearrange, not with sliders */
   /* owner 2026-11-16: cleaners are hired on the Staff tab, with a wage */
   slider(gym, 'cap', 'Capacity cap at the turnstile', 20, 80, 1, v => v);
@@ -168,7 +184,7 @@ function buildPanel() {
   placePlots();
   // tabs (phones)
   const tabs = panel.querySelector('.tabs');
-  for (const t of ['Run', 'Day', 'Members', 'Gym', 'Plots']) { const b = el('button', { role: 'tab' }, tr(t)); b.dataset.t = t; b.addEventListener('click', () => { showTab(t); panel.classList.remove('closed'); }); tabs.appendChild(b); }
+  for (const t of ['Run', 'Plots']) { const b = el('button', { role: 'tab' }, tr(t)); b.dataset.t = t; b.addEventListener('click', () => { showTab(t); panel.classList.remove('closed'); }); tabs.appendChild(b); }
   { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('P&L', '損益表')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
   panel.querySelector('#sheetHandle').addEventListener('click', () => { panel.classList.toggle('closed'); if (!panel.classList.contains('closed')) showTab(SHEET_TAB); });   /* judge 2026-11-20: the handle reopens the tab last used */
   showTab('Run');
@@ -212,6 +228,14 @@ function syncSetupWidgets() { lockBuiltSliders(); const m = W.w_month; if (m && 
 function setupFromPanel() { setupRun(); }
 let SHEET_TAB = 'Run';
 function showTab(t) { SHEET_TAB = t; panel.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); panel.querySelectorAll('.grp[data-tab]').forEach(g => g.classList.toggle('show', g.dataset.tab === t)); }
+// judge round 4: a quiet day ends in one tap from the HUD: the same close-early path as the Run sheet's Day button
+function syncSkipBtn() {
+  const b = document.getElementById('skipBtn'); if (!b) return;
+  if (!b.dataset.wired) { b.dataset.wired = '1'; b.addEventListener('click', (e) => { e.stopPropagation(); closeEarly('day'); }); }
+  const nc = document.getElementById('noteCard'), gc = document.getElementById('goalCard'), t = tx('Skip to closing ▸▸', '跳到打烊 ▸▸');
+  const show = !!A && !!M && !A.done && !closing && !BUILD.on && (typeof INTRO === 'undefined' || INTRO.phase === 'off' || INTRO.phase === 'done') && !(nc && !nc.hidden) && !(gc && !gc.hidden);
+  if (b.textContent !== t) b.textContent = t; if (b.hidden === show) { b.hidden = !show; updateHudBottom(); }
+}
 function refreshGo() { W.go.textContent = goOn ? tr('Pause') : A && A.done ? tr(monthComplete() ? 'New month' : 'Next day') : A && A.t < A.open ? tx('Start the day', '開始營業') : tr('Go'); W.go.classList.toggle('on', goOn); }
 function refreshPending() {
   if (!A) return;
@@ -265,7 +289,7 @@ function syncCosts() { if (!A || !A.pnl) return; const key = `${S.area}|${S.rent
 function setText(id, v) { const e = document.getElementById(id); if (e && e.textContent !== String(v)) e.textContent = v; }
 function updateMonitors() {
   if (!A) return;
-  syncCosts(); drawPriceBoard(); setText('dayLbl', dayLabel()); updateLiveLine(); if (typeof updateGoalLine === 'function') updateGoalLine(); updateBooks(); if (typeof syncDayCard === 'function') syncDayCard();
+  syncCosts(); drawPriceBoard(); setText('dayLbl', dayLabel()); updateLiveLine(); syncSkipBtn(); syncToastTop(); if (typeof updateGoalLine === 'function') updateGoalLine(); updateBooks(); if (typeof syncDayCard === 'function') syncDayCard();
   setText('mClock', hhmm(A.t)); setText('hudClock', `${hhmm(A.t)} · ${tx(`${A.inside} inside`, `館內 ${A.inside} 人`)}${A.closed ? (A.closedWhy === 'rearrange' ? tx(' · closed: rearranging', ' · 重新擺設休館') : A.closedWhy === 'closure' ? tx(' · closed', ' · 休館') : tx(' · closed: typhoon', ' · 颱風停班停課，休館')) : A.done ? tx(' · day complete', ' · 今日結束') : (A.t < A.open ? tx(` · opens ${hhmm(A.open)}`, ` · ${hhmm(A.open)} 開門`) : A.t > T_CLOSE ? tx(' · closed', ' · 已打烊') : '')}`);
   setText('mIn', A.inside);
   let waiting = A.outQ.length; for (const s of STATIONS) waiting += s.queue.length; setText('mWait', waiting);

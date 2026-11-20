@@ -356,7 +356,7 @@ function noteDayBest(t) { const prev = BIZ ? BIZ.bestDay : 0; if (BIZ) BIZ.bestD
 function closeTarget(kind) { const last = M.cal.length - 1; return kind === 'day' ? M.dayI : kind === 'week' ? Math.min(last, M.dayI + 6) : last; }
 function closeOneDay(out, target) {   // one step of a close: finish today, or move on to the next day; true while more is left
   if (A.done) { if (M.dayI >= target) return false; nextDay(); }
-  fastForward(30 * 3600); if (!A.done) endStuckDay();   // a member who never leaves cannot hang a close
+  SKIPPING = true; try { fastForward(30 * 3600); } finally { SKIPPING = false; } if (!A.done) endStuckDay();   // a member who never leaves cannot hang a close
   out.days++; out.takings += A.pnl.takings; out.earned = (out.earned || 0) + A.pnl.net; out.ebitda += A.pnl.ebitda; (out.list = out.list || []).push({ date: A.date, dow: A.dow, month: M.cfg.month, pnl: { ...A.pnl } });   /* owner 2026-11-15: every closed day is shown */
   if (A.payQ) A.payQ.length = 0;   /* no member pops for unwatched days */
   const best = noteDayBest(A.pnl.takings); if (out.kind !== 'month') BIG_POPS.push({ fee: Math.round(A.pnl.takings), earned: Math.round(A.pnl.net), ebitda: Math.round(A.pnl.ebitda), day: { dow: A.dow, date: A.date }, best, week: out.kind === 'week' });   /* judge 2026-11-20: the pop shows what the day earned (the figure its result is computed from) */   /* owner 2026-11-16: each closed day pops its takings */
@@ -890,7 +890,9 @@ function finishExercise(a, e) {
   if (L.kind === 'sled') s.sledX = s.sledX;
   release(a, s); a.exI++; startExercise(a);
 }
+let SKIPPING = false;   /* judge round 4 (display only): days closed early are not watched, so their PRs ring no bell and raise no toast */
 function onPR(a) {
+  if (SKIPPING) return;
   sfx('bell');
   const now = performance.now(); a.vis.cheer = now + 1800;
   for (const b of AGENTS) if (b.visible && b !== a && Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z) < 7) b.vis.clap = now + 1600;

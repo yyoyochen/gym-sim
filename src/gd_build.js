@@ -99,15 +99,21 @@ const bnt = (v) => moneyK(v);   /* inventory: K / M */
 // ---------------------------------------------------------------- first session (Plan 10): welcome, setup cost, money and debt; Customise opens the tabs
 function introStep(to) {   /* one way to change intro step (buttons and Escape): leaving Customise for the cost needs a plot that meets the rules */
   if (to === 'cost' && BUILD.intro && BUILD.w && !checkPlot(BUILD.w, BUILD.d).ok) { BUILD.tab = 'Plot'; renderBuild(); showToast(tx('This plot breaks a rule: see the list under 1 Plot.', '這塊場地不符合規則：請看「1 場地」下方的清單。')); return false; }
-  BUILD.step = to; if (to === 'custom') BUILD.tab = 'Plot'; renderBuild(); return true;
+  BUILD.step = to; if (to === 'custom') BUILD.tab = 'Plot'; if (to === 'pay' && BUILD.intro) finDefault();   /* a customised floor gets its own default loan, until the player touches the money */
+  renderBuild(); return true;
 }
 const SIZE_NOTE = { S: ['low rent, thin margins: the hard one', '租金低、利潤薄：最難'], M: ['the standard start', '標準起步'], L: ['big rent, big crowd: needs deep pockets', '租金高、人也多：口袋要夠深'] };   /* evaluation 2026-11-20: say what a size buys */
 function openIntro(cancellable) { openBuild(); BUILD.introCancel = !!cancellable; BUILD.intro = true; BUILD.step = 'welcome'; renderBuild(); }
+// judge round 4: the money step opens with a loan sized to the gym: the smallest loan (in the stepper's steps) that leaves six months of running costs on opening day
+const FIN_STEP = 5e5, FIN_MAX = 40e6;
+function runwayOf(c, own, loan) { return runwayMonths(own + loan - c.capex - c.deposit, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), loanPayment(loan, S.finRate, S.finYears))); }
+function loanForSix(c, own, from = 0) { for (let L = from; L <= FIN_MAX; L += FIN_STEP) if (runwayOf(c, own, L) >= 6) return L; return null; }
+function finDefault() { const c = buildCostNow(); if (!c || BUILD.finTouched) return; S.finOwn = FIN.own; const L = loanForSix(c, S.finOwn); S.finLoan = L == null ? FIN_MAX : L; }
 const PRESET_NAME = { S: ['Small', '小型'], M: ['Medium', '中型'], L: ['Large', '大型'] };
 function introHtml(c, btn) {
   const step = BUILD.step;
   if (step === 'welcome') {
-    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping}&nbsp;坪 · ${Math.round(ping * 3.3058)}&nbsp;m²</small><small data-k="sizeNote">${tx(`busy at about ${peakForPing(ping)} people`, `尖峰約 ${peakForPing(ping)} 人`)} · ${tx(...SIZE_NOTE[k])}</small>`); }).join('');
+    const pick = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], ping = p.w * p.d; return btn(`data-intro="${k}"`, `${tx(...PRESET_NAME[k])}<small>${ping}&nbsp;坪 · ${Math.round(ping * 3.3058)}&nbsp;m²</small><small data-k="sizeNote">${tx(`fits about ${capForPing(ping)} at once`, `同時約可容納 ${capForPing(ping)} 人`)} · ${tx(...SIZE_NOTE[k])}</small>`); }).join('');
     return `<h2 class="btitle">${tx('Open your first gym', '開你的第一間健身房')}</h2><p class="bwel">${tx('Pick a size for your gym in Taipei. A few members signed up before you open; you win the rest month by month. All money is in NT dollars.', '替你在台北的健身房選個大小。開幕前有少數會員預售報名，其餘要一個月一個月慢慢招募。所有金額都是新台幣。')}</p>
       <div class="bpick">${pick}</div>${BUILD.introCancel ? `<div class="row">${btn('data-bact="cancel"', tx('Cancel: back to my gym', '取消：回到我的健身房'))}</div>` : ''}`;
   }
@@ -119,14 +125,14 @@ function introHtml(c, btn) {
       <p class="note">${tx('Customise changes the size and the equipment.', '「自訂」可以改大小與器材。')}</p>
       <div class="row bfoot">${btn('data-istep="welcome"', tx('Back', '上一步'))}${btn('data-istep="custom"', tx('Customise', '自訂'))}${btn('data-istep="pay"', tx('Next: pay for it', '下一步：資金'), 'btn-go')}</div>`;
   }
-  const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayMonths(cash, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));   /* the roster this floor opens with */
+  const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayOf(c, S.finOwn, S.finLoan);   /* the roster this floor opens with */
   const runN = run < 10 ? run.toFixed(1) : Math.round(run);
-  // judge 2026-11-20: a thin start gets a one-tap way out: the loan that covers six months of running costs (its own payment included)
-  let six = null; if (run < 6) for (let L = S.finLoan + 5e5; L <= 20e6; L += 5e5) { if (runwayMonths(S.finOwn + L - setup, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), loanPayment(L, S.finRate, S.finYears))) >= 6) { six = L; break; } }
+  // judge 2026-11-20: a thin start gets a one-tap way out: the loan that covers six months of running costs (its own payment included); offered when cash is negative too
+  const six = run < 6 ? loanForSix(c, S.finOwn, S.finLoan + 5e5) : null;
   const sixBtn = six ? `<div class="row">${btn(`data-fin6="${six}"`, tx(`Borrow enough for 6 months (a ${bnt(six)} loan)`, `借到夠撐 6 個月（貸款 ${bnt(six)}）`))}</div>` : '';
   const runway = cash >= 0 ? (run < 6 ? `<p class="note warn" data-k="runway">${tx(`Only about ${runN} months of running costs. A new gym usually loses money for its first 6 to 9 months: borrow more, put in more of your own money, or pick a smaller gym.`, `只夠支付約 ${runN} 個月的營運成本。新健身房通常前 6 到 9 個月都在虧：多借一點、多放自有資金，或選小一點的場地。`)}</p>`
     : `<p class="note" data-k="runway">${tx(`About ${runN} months of running costs`, `約可支付 ${runN} 個月的營運成本`)}</p>`)
-    : `<p class="note warn" data-k="runway">${tx(`You start ${bnt(-cash)} overdrawn: trading has to pay it back.`, `開幕就透支 ${bnt(-cash)}：要靠營業還。`)}</p>`;
+    : `<p class="note warn short" data-k="runway">${tx(`You would open ${bnt(-cash)} short: the setup costs more than the money you have. Borrow more or put in more of your own.`, `開幕時會短少 ${bnt(-cash)}：開辦費用比你手上的錢多。多借一點，或多放自有資金。`)}</p>`;
   return `<h2 class="btitle">${tx('How will you pay for it?', '資金從哪裡來？')}</h2><p class="note">${head}</p>
     <div class="bstep"><span>${tx('Your own money', '自有資金')}</span>${btn('data-fin="finOwn,-1"', '−')}<b>${bnt(S.finOwn)}</b>${btn('data-fin="finOwn,1"', '+')}</div>
     <div class="bstep"><span>${tx(`Bank loan · ${S.finRate.toFixed(1)}%, ${S.finYears} years`, `銀行貸款 · ${S.finRate.toFixed(1)}%，${S.finYears} 年`)}</span>${btn('data-fin="finLoan,-1"', '−')}<b>${bnt(S.finLoan)}</b>${btn('data-fin="finLoan,1"', '+')}</div>
@@ -178,15 +184,15 @@ function renderBuild() {
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#build button'); if (!b || !BUILD.on) return;
   const d = b.dataset;
-  if (d.intro) { if (d.intro === 'take') { buildPick('sample'); openGym(); } else { buildPick(d.intro); BUILD.step = 'cost'; renderBuild(); } }
+  if (d.intro) { if (d.intro === 'take') { buildPick('sample'); openGym(); } else { buildPick(d.intro); BUILD.finTouched = false; finDefault(); BUILD.step = 'cost'; renderBuild(); } }
   else if (d.istep) introStep(d.istep);
   else if (d.btab) { BUILD.tab = d.btab; renderBuild(); }
   else if (d.pick) buildPick(d.pick);
   else if (d.size) { const [a, c] = d.size.split(',').map(Number); buildSize(a, c); }
   else if (d.turf) buildTurf(d.turf === '1');
   else if (d.count) { const [k, v] = d.count.split(','); buildCount(k, +v); }
-  else if (d.fin6) { S.finLoan = clamp(+d.fin6, 0, 20e6); renderBuild(); }
-  else if (d.fin) { const [k, v] = d.fin.split(','); S[k] = clamp(S[k] + v * 5e5, 0, 20e6); renderBuild(); }
+  else if (d.fin6) { S.finLoan = clamp(+d.fin6, 0, FIN_MAX); BUILD.finTouched = true; renderBuild(); }
+  else if (d.fin) { const [k, v] = d.fin.split(','); S[k] = clamp(S[k] + v * FIN_STEP, 0, FIN_MAX); BUILD.finTouched = true; renderBuild(); }
   else if (d.bact === 'cancel') cancelBuild();
   else if (d.bact === 'open') { if (!openGym()) showToast(tx('This plot breaks a rule: see the list under 1 Plot.', '這塊場地不符合規則：請看「1 場地」下方的清單。')); }
 });
@@ -209,7 +215,8 @@ function openRearrange() {
   BUILD.layout = JSON.parse(JSON.stringify(BUILD.orig)); BUILD.sel = null; buildPreview(); frameHall(BUILD_ZOOM()); return true;   /* judge 2026-11-20: Rearrange opens framed on the hall, not zoomed out */
 }
 const rOpen = () => BUILD.on && BUILD.mode === 'rearrange';   /* review C1: edits only while Rearrange is open, never on the live gym */
-function rearrangeAdd(kind) { if (!rOpen()) return; const p = addPiece(BUILD.layout, kind, BUILD.w, BUILD.d); if (!p) showToast(tx('No room for it: the floor is full.', '放不下了：場地已滿。')); else { BUILD.sel = p.id; showToast(tx(`Added: ${rname(kind)} · ${money(KINDS[kind].price)}`, `已新增：${rname(kind)} · ${money(KINDS[kind].price)}`)); } buildPreview(); }   /* the new piece is selected, so it shows where it went */
+function rearrangeAdd(kind) { if (!rOpen()) return; const p = addPiece(BUILD.layout, kind, BUILD.w, BUILD.d); if (!p) { const other = RGROUPS.flatMap(x => x[2]).some(k => k !== kind && k !== 'turf' && KINDS[k] && bestSpot(BUILD.layout, k, BUILD.w, BUILD.d)), nm = RNAME[kind] ? RNAME[kind][0].toLowerCase() : kind;   /* judge round 4: a full floor is said only when nothing fits */
+    showToast(other ? tx(`No room for ${/^[aeiou]/.test(nm) ? 'an' : 'a'} ${nm}; smaller kit still fits.`, `放不下${rname(kind)}；小一點的器材還放得下。`) : tx('No room for it: the floor is full.', '放不下了：場地已滿。')); } else { BUILD.sel = p.id; showToast(tx(`Added: ${rname(kind)} · ${money(KINDS[kind].price)}`, `已新增：${rname(kind)} · ${money(KINDS[kind].price)}`)); } buildPreview(); }   /* the new piece is selected, so it shows where it went */
 function rearrangeSell(id) { if (!rOpen()) return; BUILD.layout.pieces = BUILD.layout.pieces.filter(p => p.id !== id); BUILD.sel = null; buildPreview(); }
 function rearrangeDrop(id, sx, sz) { if (!rOpen()) return false; const p = dropPiece(BUILD.layout, id, sx, sz, BUILD.w, BUILD.d); if (!p) showToast(tx("It can't go there: no room for it and its clear floor.", '不能放那裡：放不下器材和它周圍的空間。')); buildPreview(); return !!p; }
 function pieceAt(sx, sz) { const hit = BUILD.layout.pieces.filter(p => { const f = footprint(p); return sx >= f.x0 && sx < f.x1 && sz >= f.z0 && sz < f.z1; }); return hit.find(p => p.kind !== 'turf') || hit[0] || null; }

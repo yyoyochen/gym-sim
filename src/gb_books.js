@@ -83,9 +83,9 @@ function receptionistLines() {
   return L;
 }
 function receptionistSay() {
-  let box = document.getElementById('recepSay'); if (!box) { box = el('div', { id: 'recepSay' }, '<b></b><p></p>'); document.body.appendChild(box); }
+  let box = document.getElementById('recepSay'); if (!box) { box = el('div', { id: 'recepSay' }, '<b></b><p></p><button data-recep="books"></button>'); document.body.appendChild(box); box.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); box.hidden = true; openBooks(); }); }   /* judge round 4: the desk still leads to the money once the hint is gone */
   const L = receptionistLines(), pool = L.filter(x => x !== RECEP.last), line = (pool.length ? pool : L)[Math.floor(Math.random() * (pool.length || L.length))];
-  RECEP.last = line; box.querySelector('b').textContent = tx('Receptionist', '櫃檯人員'); box.querySelector('p').textContent = line; box.hidden = false; RECEP.until = performance.now() + 8000;
+  RECEP.last = line; box.querySelector('b').textContent = tx('Receptionist', '櫃檯人員'); box.querySelector('p').textContent = line; box.querySelector('button').textContent = tx('Open the P&L ▸', '打開損益表 ▸'); box.hidden = false; RECEP.until = performance.now() + 8000;
 }
 function updateRecepSay(toScreen) {
   const box = document.getElementById('recepSay'); if (!box || box.hidden) return;
@@ -134,7 +134,8 @@ BOOK_RENDER.Today = {
     const closed = A.closed ? `<p class="note warn">${A.closedWhy === 'rearrange' ? (() => { const left = M.cal.slice(M.dayI + 1).filter(d => d.rearrange).length + (BIZ.closedLeft || 0); return tx(`Closed today for rearranging${left ? `: ${left} more day${left === 1 ? '' : 's'} after today` : '; it reopens tomorrow with the new layout'}. No sales, the fixed costs still run.`, `今日重新擺設休館${left ? `：之後還有 ${left} 天` : '，明天以新擺設開門'}。沒有營收，固定成本照付。`); })() : A.closedWhy === 'closure' ? tx('Closed today: no sales, the fixed costs still run.', '今日休館：沒有營收，固定成本照付。') : tx('Closed today for the typhoon: no sales, the fixed costs still run.', '颱風休館：沒有營收，固定成本照付。')}</p>` : '';
     // judge 2026-11-20: the stamp names the period that was closed (a month close is not "Day closed") and gives its result in plain words
     const bc = BOOKS.closed && BOOKS.closed.dayI === M.dayI && BOOKS.closed.days > 1 ? BOOKS.closed : null, res = (v) => `${v < 0 ? tx('lost', '虧') : tx('made', '賺')} ${nt$(Math.abs(v))} ${tx('after running costs', '（已扣營運成本）')}`;
-    const stamp = !A.done ? '' : bc && bc.kind === 'month' ? `<div class="stamp">${tx('Month closed', '本月結帳')} · ${res(bc.ebitda)}</div>` : bc ? `<div class="stamp">${tx(`${bc.days} days closed`, `結帳 ${bc.days} 天`)} · ${res(bc.ebitda)}</div>` : `<div class="stamp">${tx('Day closed', '本日結帳')} · ${res(p.ebitda)}</div>`;
+    const monthAll = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda;   /* judge round 4: a closed month is stamped with the whole month's result (the month card's figure), not only the days that were skipped */
+    const stamp = !A.done ? '' : bc && bc.kind === 'month' ? `<div class="stamp" data-k="monthStamp">${tx('Month closed', '本月結帳')} · ${res(monthAll)}</div>` : bc ? `<div class="stamp">${tx(`${bc.days} days closed`, `結帳 ${bc.days} 天`)} · ${res(bc.ebitda)}</div>` : `<div class="stamp">${tx('Day closed', '本日結帳')} · ${roundAbout(p.ebitda) === 0 ? tx('broke even', '打平') : `${p.ebitda < 0 ? tx('lost about', '虧約') : tx('made about', '賺約')} $${roundAbout(p.ebitda).toLocaleString('en-US')} ${tx('after running costs', '（已扣營運成本）')}`}</div>`;   /* judge round 4: the stamp and the verdict under it give the day's result as one figure, rounded the same way */
     const cl = BOOKS.closed && BOOKS.closed.dayI === M.dayI ? closedSummary(BOOKS.closed) + `<p class="note" style="color:var(--accent)">${tx(`Closed early: ${BOOKS.closed.days} day${BOOKS.closed.days === 1 ? '' : 's'} · earned ${nt$(BOOKS.closed.earned)} · after running costs ${nt$(BOOKS.closed.ebitda)}`, `提前結帳：${BOOKS.closed.days} 天 · 收入 ${nt$(BOOKS.closed.earned)} · 扣營運成本後 ${nt$(BOOKS.closed.ebitda)}`)}</p>` : '';
     const closeBtns = `<div class="row">${[['day', tx('Close the day', '結束今天')], ['week', tx('Close the week', '結束本週')], ['month', tx('Close the month', '結束本月')]].map(([k, l]) => `<button data-close="${k}">${l}</button>`).join('')}</div>`;
     const v = verdictText(A.pnl), vsec = bkSection(A.done ? tx('The day', '今天') : tx('The day so far', '今天到目前'), `<p class="verdict ${v.sign < 0 ? 'loss' : v.sign > 0 ? 'gain' : ''}">${tx(v.en, v.zh)}</p><p class="note">${tx('After rent, staff and running costs. The bank loan is on the Bank tab.', '已扣租金、人事與水電雜支；銀行貸款在「銀行」分頁。')}</p>`);   /* first-minute polish: the verdict first */
@@ -149,17 +150,23 @@ const monthLabel = (name, year) => zh() ? `${year} 年 ${MONTH_NAMES.indexOf(nam
 function periodSeg(per) { const on = archOf(per) ? 'year' : per; return `<div class="seg" role="group" style="grid-template-columns:repeat(4,1fr)">${PERIODS.map(([k, en, z]) => `<button data-p="${k}" class="${k === on ? 'on' : ''}" aria-pressed="${k === on}">${tx(en, z)}</button>`).join('')}</div>`; }
 // the year so far (A5): every closed month as booked, the current month projected, and year-to-date totals; tap a closed month for its P&L
 const cashM = (v) => moneyK(v);   /* the year view's cash column stays short so five columns fit a phone */
+// what sits between a closed month's result and its net profit, as the Year view books it: wear on equipment, loan interest, a loss on kit sold, income tax
+function monthBelow(m) { const c = pnlCosts(), dy = (m.depYear != null ? m.depYear : c.depYear) * m.days / daysInMonth(m.year, m.name), x = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: dy }, m.interest + (m.loss || 0));
+  return { dep: x.dep, interest: m.interest, loss: m.loss || 0, tax: x.tax, net: x.netProfit, loan: (m.interest || 0) + (m.principal || 0), principal: m.principal || 0 }; }
+const ym = (v) => (zh() ? moneyK(v) : money(v));
+const ynt = (v) => zh() ? `<span data-v="${Math.round(v || 0)}">${moneyK(v || 0)}</span>` : ntn(v);   /* judge round 4: in Chinese the Year table counts in 萬 like its Cash column and the cards */
 function yearHtml() {
   const c = pnlCosts(), rows = [], tot = { net: 0, ebitda: 0, np: 0 }, share = (days, y, name) => days / daysInMonth(y, name);   /* review I2: a short first month takes its share of depreciation */
+  const out = { dep: 0, interest: 0, tax: 0, principal: 0 }; for (const m of BIZ.months) { const x = monthBelow(m); out.dep += x.dep; out.interest += x.interest + x.loss; out.tax += x.tax; out.principal += x.principal; }
   BIZ.months.forEach((m, i) => { const np = belowEbitda(m.pnl.ebitda || 0, { ...c, depYear: (m.depYear != null ? m.depYear : c.depYear) * share(m.days, m.year, m.name) }, m.interest + (m.loss || 0)).netProfit; tot.net += m.pnl.net || 0; tot.ebitda += m.pnl.ebitda || 0; tot.np += np;
-    rows.push(`<tr data-k="yr" data-arch="${i}" style="cursor:pointer"><td style="color:var(--accent)">${monthLabel(m.name, m.year)} ›</td><td class="n">${ntn(m.pnl.net)}</td><td class="n">${ntn(m.pnl.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(m.cashEnd)}</td></tr>`); });
+    rows.push(`<tr data-k="yr" data-arch="${i}" style="cursor:pointer"><td style="color:var(--accent)">${monthLabel(m.name, m.year)} ›</td><td class="n">${ynt(m.pnl.net)}</td><td class="n">${ynt(m.pnl.ebitda)}</td><td class="n">${ynt(np)}</td><td class="n">${cashM(m.cashEnd)}</td></tr>`); });
   const pm = projectMonth().total, f = share(M.cal.length, BIZ.year, M.cfg.month), np = belowEbitda(pm.ebitda, { ...c, depYear: c.depYear * f }, BIZ.balance * BIZ.rate / 1200 * f + (BIZ.mLoss || 0)).netProfit; tot.net += pm.net; tot.ebitda += pm.ebitda; tot.np += np;
-  rows.push(`<tr data-k="yr" data-cur="1"><td>${monthLabel(M.cfg.month, BIZ.year)} <span class="tag">${tx('projected', '預估')}</span></td><td class="n">${ntn(pm.net)}</td><td class="n">${ntn(pm.ebitda)}</td><td class="n">${ntn(np)}</td><td class="n">${cashM(liveCash())}</td></tr>`);
+  rows.push(`<tr data-k="yr" data-cur="1"><td>${monthLabel(M.cfg.month, BIZ.year)} <span class="tag">${tx('projected', '預估')}</span></td><td class="n">${ynt(pm.net)}</td><td class="n">${ynt(pm.ebitda)}</td><td class="n">${ynt(np)}</td><td class="n">${cashM(liveCash())}</td></tr>`);
   const head = `<tr class="grp0"><td>${tx('Month', '月份')}</td><td class="n">${tx('Earned', '收入')}</td><td class="n">${tx('After costs', '扣成本後')}</td><td class="n">${tx('Net profit', '淨利')}</td><td class="n">${tx('Cash', '現金')}</td></tr>`;
   // judge 2026-11-20: "so far" is what has happened: closed months plus this month to date (the projection stays on its own row)
-  const md = projectMonth().mtd, fd = f * (M.dayI + 1) / M.cal.length, npd = belowEbitda(md.ebitda, { ...c, depYear: c.depYear * fd }, BIZ.mLoss || 0).netProfit; tot.net += md.net - pm.net; tot.ebitda += md.ebitda - pm.ebitda; tot.np += npd - np;
-  const total = `<tr class="sum"><td>${tx('So far (closed months + this month to date)', '累計（已結帳月份＋本月至今）')}</td><td class="n">${ntn(tot.net)}</td><td class="n" data-k="yrEbitda">${ntn(tot.ebitda)}</td><td class="n">${ntn(tot.np)}</td><td class="n"></td></tr>`;
-  return bkSection(tx('The business so far', '開業至今'), `<div class="yrwrap"><table class="yr">${head}${rows.join('')}${total}</table></div><p class="note">${tx('Earned is sales after sales tax; After costs is the result after rent, staff and running costs (EBITDA); Net profit also takes off wear on equipment, loan interest and tax. Closed months are as booked; tap one for its full P&L. Cash is the bank balance at each month end, and now.', '收入是扣營業稅後的銷售；「扣成本後」是扣掉租金、人事與營運成本的結果（EBITDA）；淨利再扣設備折舊、貸款利息與所得稅。已結帳月份依實際入帳；點一個月份看完整損益表。現金為每月底與目前的銀行餘額。')}</p>`, '$');
+  const md = projectMonth().mtd, fd = f * (M.dayI + 1) / M.cal.length, bd = belowEbitda(md.ebitda, { ...c, depYear: c.depYear * fd }, BIZ.mLoss || 0), npd = bd.netProfit; out.dep += bd.dep; out.interest += BIZ.mLoss || 0; out.tax += bd.tax; tot.net += md.net - pm.net; tot.ebitda += md.ebitda - pm.ebitda; tot.np += npd - np;
+  const total = `<tr class="sum"><td>${tx('So far (closed months + this month to date)', '累計（已結帳月份＋本月至今）')}</td><td class="n">${ynt(tot.net)}</td><td class="n" data-k="yrEbitda">${ynt(tot.ebitda)}</td><td class="n">${ynt(tot.np)}</td><td class="n"></td></tr>`;
+  return bkSection(tx('The business so far', '開業至今'), `<div class="yrwrap"><table class="yr">${head}${rows.join('')}${total}</table></div><p class="note" data-k="yrLeftOut">${tx(`So far: after costs ${ym(tot.ebitda)}, less wear on equipment ${ym(out.dep)}, loan interest ${ym(out.interest)} and income tax ${ym(out.tax)}, leaves a net profit of ${ym(tot.np)}. Paying back the loan itself (${ym(out.principal)} so far) takes cash out of the bank but is not a cost, so it is in the Cash column only.`, `累計：扣成本後 ${ym(tot.ebitda)}，再扣器材折舊 ${ym(out.dep)}、貸款利息 ${ym(out.interest)} 與所得稅 ${ym(out.tax)}，淨利是 ${ym(tot.np)}。償還貸款本金（累計 ${ym(out.principal)}）會讓銀行現金變少，但不算成本，所以只反映在「現金」欄。`)}</p><p class="note">${tx('Earned is sales after sales tax; After costs is the result after rent, staff and running costs, before loan and tax; Net profit also takes off wear on equipment, loan interest and tax. Closed months are as booked; tap one for its full P&L. Cash is the bank balance at each month end, and now.', '收入是扣營業稅後的銷售；「扣成本後」是扣掉租金、人事與營運成本、未計貸款與稅的結果；淨利再扣設備折舊、貸款利息與所得稅。已結帳月份依實際入帳；點一個月份看完整損益表。現金為每月底與目前的銀行餘額。')}</p>`, '$');
 }
 // owner 2026-11-15: what a close early ran: a week lists every day; a month lists the P&L by category over the closed days
 function closedSummary(cl) {
@@ -180,7 +187,7 @@ function closedSummary(cl) {
     + (p.retain ? row(tx('Retention actions', '留客行動'), -p.retain) : '') + (p.rearrange ? row(tx('Rearranging (movers)', '重新擺設（搬運）'), -p.rearrange) : '')
     + row(tx('Rent and management', '租金與管理費'), -(it.premises.rent + it.premises.mgmt)) + row(tx('Electricity and water', '水電'), -(it.premises.elec + it.premises.water))
     + row(tx('Staff', '人事'), -it.totals.staff) + row(tx('Floor upkeep and compliance', '場地維護與法規'), -(it.totals.floor + it.totals.compliance))
-    + row(tx('Result after running costs (EBITDA)', '扣營運成本後的結果（EBITDA）'), p.ebitda || 0, 'sum');
+    + row(tx('Result before loan and tax', '未計貸款與稅的結果'), p.ebitda || 0, 'sum');
   return bkSection(tx(`The ${cl.days} closed days by category`, `結帳的 ${cl.days} 天，分類合計`), `<table class="closed">${body}</table>`);
 }
 function booksPeriod(period) {
@@ -268,9 +275,9 @@ BOOK_RENDER.Books = {
       <tr><td>${tx('Instalments still due', '尚未收的分期款')}</td><td class="n" data-k="ptDue">${ntn((M && M.ptDue) || 0)}</td></tr></table>
       <p class="note">${tx('Packs over $5K not billed per session need half the unused balance covered by a performance guarantee. Cash from a pack is owed until the sessions are delivered.', '超過 $5,000 且非按次收費的方案，未使用餘額須有一半履約保證。方案收到的現金在上完課前都是欠學員的。')}</p>`;
     const sens = sensitivity({ ...MONTH_BASE, peak: S.peak, off: S.priceOff, pk: S.pricePeak, rentRate: S.rentRate, area: S.area, staff: S.staff / 1000 }, MONTH_RANGES).slice(0, 6);
-    const st = `<p class="note warn" data-k="sensNote">${tx('This table is not your gym today. It is a rough sum for a full, established gym of your size: the month\'s result after running costs if one thing sat at its low or its high value. Use it to see which things matter most.', '這張表不是你的健身房現在的狀況，而是同樣大小、客滿且經營穩定的健身房的粗估：某一項落在低值或高值時，一個月扣營運成本後的結果。用它看哪幾項影響最大。')}</p><table data-k="sens">
-      <tr class="grp0"><td></td><td class="n">${tr('Low')}</td><td class="n">${tr('High')}</td></tr>
-      ${sens.map(r => `<tr><td>${tr(SENS_LABEL[r.key] || r.key)}</td><td class="n">${ntn(r.lo)}</td><td class="n">${ntn(r.hi)}</td></tr>`).join('')}</table>`;
+    const st = `<p class="note warn" data-k="sensNote">${tx('This table is not your gym today. It is a rough sum for a full, established gym of your size: the month\'s result after running costs if one thing sat at the bad or the good end of its usual range. Use it to see which things matter most.', '這張表不是你的健身房現在的狀況，而是同樣大小、客滿且經營穩定的健身房的粗估：某一項落在常見範圍不利或有利的一端時，一個月扣營運成本後的結果。用它看哪幾項影響最大。')}</p><table data-k="sens">
+      <tr class="grp0"><td></td><td class="n">${tx('Bad case', '不利時')}</td><td class="n">${tx('Good case', '有利時')}</td></tr>
+      ${sens.map(r => `<tr><td>${tr(SENS_LABEL[r.key] || r.key)}</td><td class="n">${ntn(Math.min(r.lo, r.hi))}</td><td class="n">${ntn(Math.max(r.lo, r.hi))}</td></tr>`).join('')}</table>`;   /* judge round 4: a cost at its low value is the good case, so the columns are ordered by outcome, not by the input */
     // evaluation 2026-11-20: six plain lines first; the accountant's statement folds away under them
     const sRow = (k, l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="n" data-k="${k}">${ntn(v)}</td></tr>`, running = it.totals.floor + it.totals.compliance;
     const simple = bkSection(tx('In short', '簡單看'), `<table data-k="simple">${sRow('s_earned', tx('Money earned (after sales tax)', '賺進來的錢（已扣營業稅）'), net)}${sRow('s_coach', tx("Coaches' share, marketing, card fees", '教練分潤、行銷、刷卡手續費'), -(net - p.contribution))}
@@ -362,10 +369,10 @@ BOOK_RENDER.Pricing = {
     const worse = pv.heavyMonth > nowHeavy && pv.heavyMonth > BENCH.bigBoxMonthly;
     const warn = `<p class="note${worse ? ' warn' : ''}"${worse ? ' data-k="heavyWarn"' : ''}>${tx(`A heavy user (12 visits of 90 min) would pay ${nt$(pv.heavyMonth)} a month (now ${nt$(nowHeavy)}); a big-box membership is about ${nt$(BENCH.bigBoxMonthly)}.`, `常客（每月 12 次、每次 90 分）每月要付 ${nt$(pv.heavyMonth)}（目前 ${nt$(nowHeavy)}）；大型連鎖月費約 ${nt$(BENCH.bigBoxMonthly)}。`)}${worse ? tx(' Your heaviest users may switch.', '最常來的會員可能會轉去連鎖健身房。') : ''}</p>`;
     const preview = `<table><tr><td>${tx('Visits', '到訪人次')}</td><td class="n">${pc(pv.visits)}</td></tr><tr><td>${tx('Fee per visit (70 min)', '每次入場費（70 分）')}</td><td class="n">${pc(pv.feePerVisit)}</td></tr>
-      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('Worked out from the model\'s assumptions for existing members; new joiners react about twice as much.', '依參數表估算既有會員的反應；新會員的反應約是兩倍。')}</p>${warn}`;
+      <tr><td>${tx('Visit takings', '入場費收入')}</td><td class="n">${pc(pv.takings)}</td></tr></table><p class="note">${tx('An estimate for the members you already have; people thinking of joining react about twice as much.', '這是對現有會員的估計；還在考慮加入的人反應大約是兩倍。')}</p>${warn}`;
     const pub = PUBLISH ? `<p class="note" style="color:var(--accent)" data-k="published">${tx('Published: the new price list applies from tomorrow morning.', '已公告：新價目從明天早上開始。')}</p>` : '';
     const nextMonth = (st.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside) || S.allowOutside !== (M ? M.cfg.allowOutside : S.allowOutside)) ? `<p class="note warn" data-k="nextMonthNote">${tx('Who may rent the floor changes from next month.', '外部教練能否租場地，從下個月起生效。')}</p>` : '';
-    const actions = `<div class="row" style="margin-top:6px"><button data-k="publish" class="btn-go on">${tx('Publish new prices', '公告新價格')}</button><button data-k="reset">${tx('Undo changes', '取消變更')}</button></div>${pub}${nextMonth}`;
+    const actions = `<div class="row" style="margin-top:6px"><button data-k="publish" class="btn-go on">${tx('Publish new prices', '公告新價格')}</button><button data-k="reset">${tx('Undo my edits', '取消尚未公告的變更')}</button></div>${pub}${PUBLISH ? `<div class="row"><button data-k="withdraw">${BOOKS.withdrawArm && performance.now() < BOOKS.withdrawArm ? tx('Sure? Tap again to withdraw', '確定？再點一次撤回') : tx('Withdraw the published list', '撤回已公告的價目')}</button></div>` : ''}${nextMonth}`;   /* judge round 4: Undo no longer cancels a list that was already published without saying so */
     return bkSection(tx('Entry', '入場'), entry, tx('applies from tomorrow', '明天起生效')) + bkSection(tx('Coaching', '教練課'), coaching + actions)
       + bkSection(tx('What the minute prices do', '計時價格的影響'), preview);
   },
@@ -377,7 +384,8 @@ BOOK_RENDER.Pricing = {
       if (!st.perMinOn && !st.monthlyOn) st[k === 'perMinOn' ? 'monthlyOn' : 'perMinOn'] = true;   /* the gym always sells entry one way or the other */
       updateBooks(true); }));
     const pubB = body.querySelector('[data-k="publish"]'); if (pubB) pubB.addEventListener('click', () => { publishPrices(BOOKS.stage); showToast(tx('New prices from tomorrow morning', '新價格明天早上生效')); updateBooks(true); });
-    const rs = body.querySelector('[data-k="reset"]'); if (rs) rs.addEventListener('click', () => { PUBLISH = null; BOOKS.stage = null; updateBooks(true); });
+    const rs = body.querySelector('[data-k="reset"]'); if (rs) rs.addEventListener('click', () => { BOOKS.stage = null; BOOKS.withdrawArm = 0; updateBooks(true); });   /* back to the published list if there is one, else to the prices in force */
+    const wd = body.querySelector('[data-k="withdraw"]'); if (wd) wd.addEventListener('click', () => { if (BOOKS.withdrawArm && performance.now() < BOOKS.withdrawArm) { PUBLISH = null; BOOKS.stage = null; BOOKS.withdrawArm = 0; showToast(tx('Withdrawn: prices stay as they are', '已撤回：價格維持現狀')); } else BOOKS.withdrawArm = performance.now() + 5000; updateBooks(true); });
   }
 };
 // ---------------------------------------------------------------- Staff and Facility (minimal in phase 1): the existing levers, with context
@@ -385,7 +393,7 @@ function bkSliderGroup(body, title, note) { const g = el('section', { class: 'gr
 BOOK_RENDER.Staff = {
   build(body) {
     const g = bkSliderGroup(body, tx('Roster', '人力'), tx('applies at once', '立即生效'));   /* owner 2026-11-15: hire or let people go */
-    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 0, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v], ['cleaners', tx('Cleaners (otherwise the receptionist cleans)', '清潔人員（沒有時由櫃檯人員打掃）'), 0, 3, 1, (v) => v]];
+    const R = [['deskFT', tx('Desk staff, full-time', '櫃檯正職'), 1, 6, 1, (v) => v], ['deskPTh', tx('Desk staff, part-time hours a week', '櫃檯兼職每週時數'), 0, 160, 10, (v) => tx(`${v} h`, `${v} 小時`)], ['coaches', tx('In-house coaches', '駐館教練'), 0, 10, 1, (v) => v], ['cleaners', tx('Cleaners', '清潔人員'), 0, 3, 1, (v) => v]];   /* judge round 4: someone always sits at the desk, so full-time desk staff stop at 1; what cleaners do is said below */
     const t = el('table', {}, R.map(([k, lab]) => `<tr><td>${lab}</td><td><div class="step"><button data-roster="${k}" data-d="-1" aria-label="−">−</button><b data-rv="${k}"></b><button data-roster="${k}" data-d="1" aria-label="+">+</button></div></td></tr>`).join('')); g.appendChild(t);
     t.querySelectorAll('button[data-roster]').forEach(b => b.addEventListener('click', () => { const [k, , lo, hi, st] = R.find(r => r[0] === b.dataset.roster); S[k] = clamp(S[k] + st * +b.dataset.d, lo, hi); S.staff = rosterCost(S); if (A) A.pnl = computePnl(); updateBooks(true); }));
     g.dataset.fmt = '1'; BOOKS.rosterFmt = R;
@@ -402,7 +410,10 @@ BOOK_RENDER.Staff = {
       <p class="note">${(() => { const need = Math.max(1, Math.round(2 * S.peak / DEMAND.peak)), ret = money(ROSTER.coach), sh = 100 - pnlCosts().gymShare;   /* balance 2026-11-20: a coach costs a retainer; the crowd keeps only so many busy */
         return tx(`Each coach is paid a ${ret} retainer here, plus ${sh}% of the PT they deliver. ${S.coaches} coach${S.coaches === 1 ? '' : 'es'} can carry up to ${ptCap()} PT clients. A gym this busy keeps about ${need} coach${need === 1 ? '' : 'es'} in work: fewer sell less PT, more sell only a little extra.`, `每位教練在這裡領底薪 ${ret}，另加教練課 ${sh}% 的分潤。${S.coaches} 位教練最多可帶 ${ptCap()} 位學員。這個人流大約養得起 ${need} 位教練：少了賣得少，多了也只多賣一點。`); })()}</p>
       <p class="note${staffAdj(S.staff - coachPay(S.coaches), deskBase(S.area)) > 0 ? ' warn' : ''}" data-k="staffEffect">${(() => { const full = deskBase(S.area), lean = Math.round(full * DEMAND_RESP.staffLean / DEMAND_RESP.staffBase / 1000) * 1000, more = (st) => Math.round(100 * (churnMonthly(0, null, 0, staffAdj(st, full)) / churnMonthly(0, null, 0, 0) - 1)), x = more(S.staff - coachPay(S.coaches)), mx = more(lean);   /* the desk roster (coaches aside) against what this floor needs */   /* review I4: the month-0 churn change the model actually applies */
-        return tx(`At this desk roster, members in their first month leave ${x}% more often than with the full desk for this floor (${money(full)} a month before coaches); the most is ${mx}% more, at ${money(lean)}.`, `以目前櫃檯人力，第一個月的新會員流失比這個坪數的完整櫃檯人力（不含教練每月 ${money(full)}）多 ${x}%；最多多 ${mx}%（${money(lean)}）。`); })()}</p>`;
+        const min = rosterCost({ deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }), mn = more(min);   /* judge round 4: the smallest desk the steppers allow, with its true cost and the effect the model applies there */
+        return tx(`At this desk roster, members in their first month leave ${x}% more often than with the full desk for this floor (${money(full)} a month before coaches). The effect grows as the desk shrinks and stops at ${mx}% more, reached at ${money(lean)} a month. The smallest desk (the manager and one full-timer, no part-time hours) costs ${money(min)} a month: ${mn}% more.`, `以目前櫃檯人力，第一個月的新會員流失比這個坪數的完整櫃檯人力（不含教練每月 ${money(full)}）多 ${x}%。櫃檯人力越少影響越大，降到每月 ${money(lean)} 時達到上限，多 ${mx}%。最精簡的櫃檯（店長加一位正職、沒有兼職時數）每月 ${money(min)}：多 ${mn}%。`); })()}</p>
+      <p class="note" data-k="cleanerEffect">${(() => { const wage = money(rosterCost({ ...S, cleaners: (S.cleaners || 0) + 1 }) - rosterCost(S)), n = A && A.badMess || 0;   /* judge round 4: what the model does with cleaners, and when one pays off */
+        return tx(`A cleaner (${wage} a month each) strips bars left loaded and puts stray dumbbells back all day. A member who meets two such messes in one visit has a bad visit and is more likely to leave. With no cleaner the receptionist tidies only while the desk is quiet. The outsourced cleaning bill is paid either way. Visits spoiled by mess so far today: ${n}. A cleaner pays off only if that number is well above zero on most days.`, `每位清潔人員（每月 ${wage}）整天幫忙卸下沒歸位的槓片、把亂放的啞鈴放回去。會員一次來訪遇到兩次這種狀況，就算一次不愉快的來訪，也比較容易退會。沒有清潔人員時，櫃檯人員只在櫃檯沒事時整理。外包清潔費不管有沒有請人都要付。今天到目前為止因髒亂而不愉快的來訪：${n} 次。這個數字大多數日子都明顯高於零，請清潔人員才划算。`); })()}</p>`;
     if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }
   }
 };
@@ -412,7 +423,9 @@ BOOK_RENDER.Facility = {
     const g = bkSliderGroup(body, tx('Premises', '場地'), tx('applies at once', '立即生效'));
     if (S.hallW) g.appendChild(el('p', { class: 'note' }, tx(`Floor area is set by your build: ${S.hallW} × ${S.hallD} cells.`, `面積由你的設計決定：${S.hallW} × ${S.hallD} 格。`)));
     else slider(g, 'area', 'Floor area', 90, 150, 5, v => v + ' 坪');
-    slider(g, 'rentRate', 'Rent per 坪', 800, 2400, 50, v => money(v));
+    { const adv = el('details', { class: 'adv', id: 'bkAdv' }); adv.appendChild(el('summary', {}, tx('Advanced', '進階選項'))); adv.open = advOpen();   /* judge round 4: the rent dial is a what-if, kept with the other dials behind Advanced (one remembered state) */
+      adv.addEventListener('toggle', () => { ADV.open = adv.open; try { localStorage.setItem('gymsim.adv', adv.open ? '1' : '0'); } catch (e) {} const pa = document.getElementById('advBox'); if (pa) pa.open = adv.open; });
+      slider(adv, 'rentRate', 'Rent per 坪', 800, 2400, 50, v => money(v)); g.appendChild(adv); }
     g.appendChild(el('div', { id: 'bkFacLines' }));
   },
   update() {
@@ -420,7 +433,7 @@ BOOK_RENDER.Facility = {
     const m2 = S.area * 3.3058, rent = S.area * S.rentRate, mg = S.area * COSTS.mgmtPerPing;
     const fire = FIRE.map(([lim, en, z]) => `<tr><td>${tx(en, z)}<span class="bench" style="color:var(--muted)">${tx(`above ${lim} m²`, `超過 ${lim} m²`)}</span></td><td class="n">${m2 > lim ? tx('required', '必須') : '–'}</td></tr>`).join('');
     const h = `<table><tr><td>${tx('Floor', '面積')}</td><td class="n">${S.area} 坪 · ${Math.round(m2)} m²</td></tr><tr><td>${tx('Rent a month', '每月租金')}</td><td class="n">${nt$(rent)}</td></tr><tr><td>${tx('Management fee a month', '每月管理費')}</td><td class="n">${nt$(mg)}</td></tr></table>
-      <p class="note">${tx('Rent can go up when the lease is renewed: at a full, established gym of the sample size, 25% more rent takes about $32,000 a month off the result.', '續約時租金可能調漲：以範例大小、客滿且穩定的健身房來說，租金漲 25% 每月結果會少約 $32,000。')}</p>
+      <p class="note">${tx('Rent can go up when the lease is renewed: at a full, established gym of about 115 坪, 25% more rent takes about $32,000 a month off the result.', '續約時租金可能調漲：以 115 坪左右、客滿且穩定的健身房來說，租金漲 25% 每月結果會少約 $32,000。')}</p>
       <section class="grp" style="margin-top:8px"><h2><span>${tx('Fire code for this floor', '此面積的消防規定')}</span></h2><table>${fire}</table></section>`;
     if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; }
   }

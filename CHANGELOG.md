@@ -2,6 +2,21 @@
 
 Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). All money is in NT dollars.
 
+## [Unreleased]
+
+### Changed
+- The money step opens with a loan sized to the gym (about six months of running costs); a short start is said plainly, in orange, with a one-tap way out.
+- The HUD has a Skip to closing button. Start over sits apart from the skip buttons. The model's dials are behind one Advanced disclosure.
+- Month card: comparisons are per day or per 30 days, each change lists only what it can cause, the break-even count says why it moved, and one line carries the result down to net profit. The Year view adds the same up.
+- The desk always keeps one full-timer; the Staff tab gives the smallest desk's true cost and effect, and says what cleaners do.
+- Chinese: open cards follow a language switch, one word each for staff terms, the Year table counts in 萬.
+
+### Fixed
+- A closed month's stamp shows the whole month's result. A closed day's stamp and verdict give one figure.
+- Day and week pops draw above the books and the sheet; the day card and toasts wait for them. Skipped days raise no PR toasts.
+- Undo on the price list no longer cancels a list already published.
+- The large hall fits a phone's width at opening.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

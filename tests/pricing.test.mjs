@@ -173,3 +173,37 @@ test('members goal: the target follows the gym (55% of its steady membership, to
   assert.equal(R.goalStatus('members500', s([m(190, 11)], 361)).state, 'met');
   assert.equal(R.goalStatus('members500', { months: [m(400, 30), m(450, 31), m(480, 30)], poolNow: 480, monthIndex: 3 }).state, 'missed');   // no target given: 500, as before
 });
+
+test('month tip (judge round 4): months of different length compare per 30 days, each change lists only what it can cause, a rise is never credited to a cut, and the advice matches its lead', () => {
+  const pnl = (o) => ({ net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000, occupancy: 140000, staff: 80000, elec: 20000, otherOpex: 10000, coach: 5000, entry: 90000, passes: 0, ptEarned: 0, ...o });
+  const short = month({ days: 11, lapsed: 18, joined: 30, returned: 0, visits: 700, pnl: pnl({ staff: 30000 }) });
+  const long = month({ days: 31, lapsed: 51, joined: 60, returned: 0, visits: 2400, pnl: pnl({ staff: 60000, ptEarned: 18693, coach: 9000 }), changes: [{ k: 'deskFT', from: 2, to: 1 }, { k: 'coaches', from: 2, to: 1 }] });
+  const t = R.monthTip(long, short, { perMinOn: true, monthlyOn: false });
+  assert.match(t.en, /left at a rate of 49 per 30 days \(49 per 30 days the month before/); assert.doesNotMatch(t.en, /51 members left \(18 the month before\)/);
+  assert.match(t.en, /staff cost \$1,935 a day \(was \$2,727\)/);
+  assert.match(t.en, /Coaching earned \$603 a day \(was \$0\) despite having fewer coaches, not because of it/); assert.doesNotMatch(t.en, /After the coaching change/);
+  assert.doesNotMatch(t.en, /Visits \d+ a day/);                                                                   // a roster change does not claim the visits
+  assert.match(t.zh, /每 30 天 49 位/); assert.match(t.zh, /不是它造成的/);
+  const price = R.monthTip(month({ days: 30, lapsed: 25, joined: 60, returned: 0, visits: 2700, pnl: pnl({ entry: 99000 }), changes: [{ k: 'priceOff', from: 1.2, to: 1.4 }] }), month({ days: 30, lapsed: 20, joined: 70, returned: 0, visits: 3000, pnl: pnl({}) }), { perMinOn: true });
+  assert.match(price.en, /\$37 a visit \(was \$30\)/); assert.doesNotMatch(price.en, /staff cost|[Cc]oaching earned/);  // a price change: visits, money per visit, leavers
+  const pass = R.monthTip(month({ days: 30, pnl: pnl({ passes: 30000 }), changes: [{ k: 'monthlyOn', from: false, to: true }] }), month({ days: 30, pnl: pnl({}) }), { perMinOn: true, monthlyOn: true });
+  assert.match(pass.en, /^After the pass change/); assert.match(pass.en, /passes \$1,000 a day \(was \$0\)/);
+  const more = R.monthTip(month({ days: 30, lapsed: 10, pnl: pnl({ staff: 60000 }), changes: [{ k: 'deskPTh', from: 40, to: 0 }] }), month({ days: 30, lapsed: 30, pnl: pnl({}) }), {});
+  assert.match(more.en, /despite the smaller roster, 10 members left \(30 the month before\)/);
+  const lean = month({ pnl: pnl({ occupancy: 4000, staff: 80000 }), changes: [] });                                  // staff is the biggest cost and the desk is already at its floor: the pass is offered as its own sentence
+  const tip = R.monthTip(lean, null, { perMinOn: true, monthlyOn: false, deskFT: 1, deskPTh: 0 }).en;
+  assert.match(tip, /^Staff is your biggest cost\. One thing to try: a monthly pass/); assert.doesNotMatch(tip, /biggest cost: a monthly pass/);
+});
+test('month report (judge round 4): months left reads the average burn of the last three closed months; a break-even count that moves says why', () => {
+  const m = (o) => month({ days: 30.4, cashEnd: 1200000, ...o });
+  const a = m({ cashIn: 100000, cashOut: 400000 }), b = m({ cashIn: 100000, cashOut: 150000 }), c = m({ cashIn: 100000, cashOut: 200000 });
+  assert.equal(R.monthReport(c, b, null).runway, 12);                                   // alone: 1.2M / 100K
+  assert.equal(R.monthReport(c, b, null, [a, b, c]).runway, 8);                         // the three months' burn averages 150K
+  const P = (o) => ({ net: 300000, contribution: 250000, fixed: 250000, ebitda: 0, ...o });
+  const base = month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 4000, pnl: P({}) });
+  const rent = R.monthReport(month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 4000, pnl: P({ fixed: 300000, ebitda: -50000 }) }), base);
+  assert.equal(rent.beWhy.why, 'fixedUp'); assert.equal(rent.beWhy.from, 400); assert.equal(rent.beWhy.up, true);
+  const fewer = R.monthReport(month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 3200, pnl: P({ contribution: 200000, ebitda: -50000 }) }), base);
+  assert.equal(fewer.beWhy.why, 'visitsDown');
+  assert.equal(R.monthReport(month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 4000, pnl: P({ fixed: 255000, ebitda: -5000 }) }), base).beWhy, undefined);   // within 5%: nothing to explain
+});

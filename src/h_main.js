@@ -67,6 +67,8 @@ function applyLighting(t) {
 }
 // ================================================================ picking: tap a person to follow, or a station to inspect
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), gPlane = new THREE.Plane(new V3(0, 1, 0), 0), hitP = new V3(), _pv = new V3();
+// judge round 4: on a phone the view is tall and narrow, so fitting a large hall across the width needs the top of the frame (under the HUD) to reach past the board's far edge
+let VIEW_NARROW = null; const topM = () => ((VIEW_NARROW != null ? VIEW_NARROW : innerWidth < 860) ? 44 : 0);
 const ZMIN = 0.6, ZMAX = 10;   // furthest view is locked so the board always fills the screen
 const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downAt = null, panning = false, panLast = null;
 const _pr2 = new V3(), _pf2 = new V3();
@@ -232,7 +234,7 @@ function keepViewOnBoard() {
       const top = H2 - (view.yOff || 0) * 2 * H2, vis = (view.yOff || 0) > 0.01 ? 0.48 : 1;
       _vc.copy(_cr).multiplyScalar(sx * W2).addScaledVector(_cu, sy > 0 ? top : top - vis * 2 * H2);
       const k = -(view.target.y + _vc.y) / _cf.y; const ox = _vc.x + _cf.x * k, oz = _vc.z + _cf.z * k;
-      const m = sy < 0 ? 26 : 0; x0 = Math.max(x0, -Wb - m - ox); x1 = Math.min(x1, E + m - ox); z0 = Math.max(z0, -N - m - oz); z1 = Math.min(z1, S + m - oz);
+      const m = sy < 0 ? 26 : topM(); x0 = Math.max(x0, -Wb - m - ox); x1 = Math.min(x1, E + m - ox); z0 = Math.max(z0, -N - m - oz); z1 = Math.min(z1, S + m - oz);
     }
     return x0 <= x1 && z0 <= z1 ? [x0, x1, z0, z1] : null;
   };
@@ -293,7 +295,7 @@ function bigPopHtml(p) {   /* a closed day's or month's takings, labelled as tak
 function updatePays() {
   const now = performance.now();
   if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; sumNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
-  if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; return; }   /* no money pops over the builder's preview */
+  if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; flushToasts(); return; }   /* no money pops over the builder's preview */
   if (A && A.payQ && A.payQ.length) {
     const q = A.payQ.splice(0);
     // fast-forward can bill dozens at once: show the latest few floor fees, and every PT sale
@@ -320,9 +322,12 @@ function updatePays() {
     if (k < 0) continue;
     if (k >= 1) { dropPop(i); continue; }
     if (!p.rung) { p.rung = true; if (p.pt) sfx('jackpot'); else if (now - payDing > 120) { payDing = now; sfx('cash'); } }
-    placePop(p, gx, gy, ms);
+    if (p.sum && popCovered()) placePop(p, innerWidth / 2, innerHeight * 0.42, ms); else placePop(p, gx, gy, ms);   /* judge round 4: with the books or the phone's sheet over the gate, the period's pop plays mid-screen, above them */
   }
+  { const on = sumPopsOn(), t = document.getElementById('toast'); if (t && (t.style.visibility === 'hidden') !== on) t.style.visibility = on ? 'hidden' : ''; }   /* a toast already up steps aside while a period's pop plays */
+  if (TOAST_Q.length && !sumPopsOn()) flushToasts();
 }
+function popCovered() { return (typeof BOOKS !== 'undefined' && BOOKS.open) || (innerWidth < 860 && !panel.classList.contains('closed')); }
 const POP_WEEK_MS = 950;   /* judge 2026-11-20: a week's seven pops come one after another, each on its own */
 let sumNext = 0;
 function popDur(p) { return p.dur || (p.pt ? 2600 : 1300); }
@@ -344,7 +349,7 @@ function placePop(p, gx, gy, ms, vw = innerWidth) {
     p.el.style.filter = `brightness(${(1.1 + 0.25 * Math.sin(ms / 70)).toFixed(2)})`;   // gold glints
   }
   const w0 = p.el.offsetWidth || 1, h0 = p.el.offsetHeight || 1, sc = Math.min(punch * p.size, (vw - 16) / w0), half = w0 * sc / 2;
-  const cx = half * 2 >= vw - 12 ? vw / 2 : clamp(gx + x, half + 6, vw - half - 6), cy = Math.max(gy + y, h0 * sc + 4);
+  const cx = half * 2 >= vw - 12 ? vw / 2 : clamp(gx + x, half + 6, vw - half - 6), cy = Math.min(Math.max(gy + y, h0 * sc + 4), Math.max(h0 * sc + 4, innerHeight - 8));
   p.el.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px) translate(-50%, -100%) scale(${sc.toFixed(3)})`;
   p.el.style.opacity = k < 0.7 ? 1 : (1 - k) / 0.3;
 }
@@ -598,8 +603,9 @@ const SELFTESTS = {
   },
   runwayWarns() {   // evaluation 2026-11-20: under six months of running costs the money step says so in the warning colour; a comfortable start does not
     try { setupRun(); const at = (k) => { openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click(); const w = document.querySelector('#build [data-k="runway"]'), o = { warn: w.classList.contains('warn'), text: w.textContent }; cancelBuild(); return o; };
-      const s = at('S'), m = at('M');
-      return { ok: !s.warn && m.warn && /6/.test(m.text), detail: { s, m } }; }
+      const s = at('S'), m = at('M'); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); const at2 = () => { const w = document.querySelector('#build [data-k="runway"]'); return { warn: w.classList.contains('warn'), text: w.textContent }; };
+      S.finLoan = 7e6; renderBuild(); const thin = at2();   /* judge round 4: the default loan now fits the gym, so the thin start is one the player chose */
+      return { ok: !s.warn && !m.warn && thin.warn && /6/.test(thin.text), detail: { s, m, thin } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
   ptPriceAdjust() {   // owner 2026-11-20: the PT session price is on the price list; packs carry the price in force when sold; dearer sessions sell fewer packs
@@ -1353,7 +1359,7 @@ const SELFTESTS = {
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click();
       S.finOwn = 0; S.finLoan = 0; renderBuild(); const neg = document.getElementById('build').textContent;
       S.finOwn = 20e6; S.finLoan = 4e6; renderBuild(); const pos = document.getElementById('build').textContent, pay = money(Math.round(loanPayment(S.finLoan, S.finRate, S.finYears)));
-      const ok = BUILD.step === 'pay' && /overdrawn/.test(neg) && /How will you pay for it/.test(pos) && /months of running costs/.test(pos) && pos.includes(pay) && !/overdrawn/.test(pos) && !!document.querySelector('#build [data-bact="open"]');
+      const ok = BUILD.step === 'pay' && /You would open .* short/.test(neg) && /How will you pay for it/.test(pos) && /months of running costs/.test(pos) && pos.includes(pay) && !/You would open/.test(pos) && !!document.querySelector('#build [data-bact="open"]');
       return { ok, detail: { pay, neg: neg.slice(0, 300), pos: pos.slice(0, 400) } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
@@ -1398,7 +1404,7 @@ const SELFTESTS = {
     try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week', 0); const tw = document.getElementById('bkBody') ? document.getElementById('books').textContent : '', openW = BOOKS.open && BOOKS.tab === 'Today';
       const dayRows = document.querySelectorAll('#books table.closed tr.cday').length; closeBooks();
       const m = closeEarlySync('month'); finishClose(m, 'month', 0); const tm = document.getElementById('books').textContent, openM = BOOKS.open;
-      const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'EBITDA'].filter(k => !tm.includes(k));
+      const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'Result before loan and tax'].filter(k => !tm.includes(k));   /* judge round 4: EBITDA is named only on the verdict and the full P&L */
       const ok = w.list.length === w.days && w.days >= 1 && dayRows === w.days && openW && openM && !cats.length && m.list.length === m.days;
       return { ok, detail: { wDays: w.days, list: w.list.length, dayRows, openW, openM, missing: cats } }; }
     finally { closeBooks(); BOOKS.closed = null; setupRun(); }
@@ -2211,10 +2217,10 @@ const SELFTESTS = {
   },
   sheetTabsOpen() {   // phone sheet: a tab opens it, the handle is a real target and reopens the tab last used
     try { const tab = (t) => panel.querySelector(`.tabs button[data-t="${t}"]`), h = document.getElementById('sheetHandle'); panel.classList.add('closed');
-      tab('Gym').click(); const opened = !panel.classList.contains('closed') && tab('Gym').classList.contains('on');
+      tab('Plots').click(); const opened = !panel.classList.contains('closed') && tab('Plots').classList.contains('on');   /* judge round 4: the Day, Members and Gym tabs went behind Advanced; Charts is the other tab */
       h.click(); const shut = panel.classList.contains('closed'); h.click();
-      const back = !panel.classList.contains('closed') && tab('Gym').classList.contains('on') && getComputedStyle(panel.querySelector('.grp[data-tab="Gym"]')).display !== 'none';
-      const hr = h.getBoundingClientRect(), tr0 = tab('Members').getBoundingClientRect(), tall = innerWidth >= 860 || (hr.height >= 24 && hr.bottom <= tr0.top + 1);
+      const back = !panel.classList.contains('closed') && tab('Plots').classList.contains('on') && (innerWidth >= 860 || getComputedStyle(panel.querySelector('.grp[data-tab="Plots"]')).display !== 'none');
+      const hr = h.getBoundingClientRect(), tr0 = tab('Plots').getBoundingClientRect(), tall = innerWidth >= 860 || (hr.height >= 24 && hr.bottom <= tr0.top + 1);
       return { ok: opened && shut && back && tall, detail: { opened, shut, back, tall, h: hr.height, hb: hr.bottom, tabTop: tr0.top } }; }
     finally { showTab('Run'); panel.classList.toggle('closed', innerWidth < 860); }
   },
@@ -2279,8 +2285,10 @@ const SELFTESTS = {
       BOOKS.full = true; BOOKS.period = 'month'; for (const t of BOOK_TABS) { openBooks(t); updateBooks(true); all += ' ' + document.getElementById('books').textContent; }
       const sens = document.querySelector('#bkBody [data-k="sens"]'); BOOKS.tab = 'Books'; openBooks('Books'); updateBooks(true); const sec = document.querySelector('#bkBody [data-k="sens"]').closest('section').textContent, labelled = /full, established gym/.test(sec); closeBooks();
       const bad = (all.match(/below EBIT|parameter-book|base case|at base\b|履約保證|\bSetup\b|Behaviour sliders/g) || []);
-      const m = closeEarlySync('month'); finishClose(m, 'month', 0); const stamp = (document.querySelector('#bkBody .stamp') || {}).textContent || '', line = document.getElementById('bkBody').textContent;
-      const month = /Month closed/.test(stamp) && !/Day closed|EBITDA/.test(stamp) && stamp.includes(money(m.ebitda)) && !/takings/i.test(line.slice(0, 400));
+      closeEarlySync('week'); const m = closeEarlySync('month'); finishClose(m, 'month', 0); const stamp = (document.querySelector('#bkBody .stamp') || {}).textContent || '', line = document.getElementById('bkBody').textContent;
+      const whole = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda;   /* judge round 4: the stamp carries the whole month's result (the month card's figure), not only the days closed in the last tap */
+      nextMonth(); const card = BIZ.months[BIZ.months.length - 1].pnl.ebitda;
+      const month = /Month closed/.test(stamp) && !/Day closed|EBITDA/.test(stamp) && stamp.includes(money(Math.abs(whole))) && Math.round(whole) !== Math.round(m.ebitda) && Math.abs(card - whole) < 1 && !/takings/i.test(line.slice(0, 400));
       return { ok: setup === 'Start over' && !bad.length && labelled && month, detail: { setup, bad, labelled, month, stamp } }; }
     finally { setLang(was); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; setupRun(); refreshPending(); }
   },
@@ -2331,14 +2339,138 @@ const SELFTESTS = {
       return { ok: okEn && okZh, detail: { en, z } }; }
     finally { setLang(was); updateMonitors(); }
   },
-  borrowSix() {   // the money step offers one tap out of a thin start: borrow enough for six months; the defaults themselves are untouched
+  borrowSix() {   // the money step offers one tap out of a thin start: borrow enough for six months
     const keep = { own: S.finOwn, loan: S.finLoan };
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click();
-      const def = S.finOwn === FIN.own && S.finLoan === FIN.loan && FIN.own === 6e6 && FIN.loan === 6e6, w0 = document.querySelector('#build [data-k="runway"]').classList.contains('warn'), b = document.querySelector('#build [data-fin6]'), loan0 = S.finLoan;
+      S.finOwn = 6e6; S.finLoan = 6e6; renderBuild();   /* judge round 4: the default loan is sized to the gym, so the thin start is set by hand here */
+      const def = FIN.own === 6e6 && FIN.loan === 6e6, w0 = document.querySelector('#build [data-k="runway"]').classList.contains('warn'), b = document.querySelector('#build [data-fin6]'), loan0 = S.finLoan;
       if (b) b.click(); const w1 = document.querySelector('#build [data-k="runway"]'), c = buildCostNow(), pay = loanPayment(S.finLoan, S.finRate, S.finYears), run = runwayMonths(S.finOwn + S.finLoan - c.capex - c.deposit, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));
       const fixed = !!b && S.finLoan > loan0 && run >= 6 && run < 7 && !w1.classList.contains('warn') && !document.querySelector('#build [data-fin6]');
       return { ok: def && w0 && fixed, detail: { def, w0, btn: b ? b.textContent : null, loan: S.finLoan, run } }; }
     finally { if (BUILD.on) cancelBuild(); S.finOwn = keep.own; S.finLoan = keep.loan; }
+  },
+  loanFitsGym() {   // judge round 4: each size opens the money step with a loan that leaves about six months of cover; a short start says so plainly, in the warning colour, with the way out
+    const keep = { own: S.finOwn, loan: S.finLoan }, was = LANG;
+    try { setLang('en'); setupRun(); const out = {};
+      for (const k of ['S', 'M', 'L']) { openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click();
+        const c = buildCostNow(), run = runwayOf(c, S.finOwn, S.finLoan), w = document.querySelector('#build [data-k="runway"]');
+        out[k] = { loan: S.finLoan, run: Math.round(run * 10) / 10, cash: S.finOwn + S.finLoan - c.capex - c.deposit, warn: w.classList.contains('warn'), six: !!document.querySelector('#build [data-fin6]'), step: S.finLoan % 5e5 === 0 };
+        if (k === 'L') { S.finLoan = 6e6; renderBuild(); const w2 = document.querySelector('#build [data-k="runway"]');
+          const colour = getComputedStyle(w2).color, cls = w2.classList.contains('warn') && w2.classList.contains('short'), en = w2.textContent; setLang('zh'); const zhT = document.querySelector('#build [data-k="runway"]').textContent; setLang('en'); const b = document.querySelector('#build [data-fin6]');
+          out.short = { cls, en, zh: zhT, colour, btn: !!b, open: !!document.querySelector('#build [data-bact="open"]') };
+          if (b) { document.querySelector('#build [data-fin6]').click(); out.short.after = Math.round(runwayOf(c, S.finOwn, S.finLoan) * 10) / 10; } }
+        cancelBuild(); }
+      const fit = ['S', 'M', 'L'].every(k => out[k].run >= 6 && out[k].run < 7.2 && out[k].cash > 0 && !out[k].warn && !out[k].six && out[k].step);
+      const sh = out.short, short = sh.cls && /You would open \$[\d.,]+M? short/.test(sh.en) && /短少/.test(sh.zh) && sh.colour === 'rgb(224, 143, 90)' && sh.btn && sh.after >= 6 && sh.after < 7;
+      return { ok: fit && short, detail: out }; }
+    finally { if (BUILD.on) cancelBuild(); S.finOwn = keep.own; S.finLoan = keep.loan; setLang(was); }
+  },
+  deskFloor() {   // judge round 4: someone always sits at the desk, so full-time desk staff stop at 1; the text gives that roster's true cost and the effect the model applies there; cleaners say what they do
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, staff: S.staff }, was = LANG;
+    try { setLang('en'); setupRun(); openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
+      for (let i = 0; i < 8; i++) q('deskFT', -1).click(); for (let i = 0; i < 20; i++) q('deskPTh', -1).click(); updateBooks(true);
+      const min = rosterCost({ deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }), eff = Math.round(100 * (churnMonthly(0, null, 0, staffAdj(min, deskBase(S.area))) / churnMonthly(0, null, 0, 0) - 1));
+      const t = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, cl = document.querySelector('#bkBody [data-k="cleanerEffect"]'), ct = cl ? cl.textContent : '';
+      setLang('zh'); const z = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, zc = (document.querySelector('#bkBody [data-k="cleanerEffect"]') || {}).textContent || ''; setLang('en');
+      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month: ${eff}% more`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
+      return { ok, detail: { deskFT: S.deskFT, pth: S.deskPTh, min, eff, t, ct, z, zc } }; }
+    finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setLang(was); setupRun(); }
+  },
+  popsOnTop() {   // judge round 4: a closed day's pop draws above the books, the sheet and the day card; the card and any toast wait until it has played; skipped days raise no PR toasts
+    try { setupRun(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; const toast = document.getElementById('toast'); toast.innerHTML = '';
+      closeEarlySync('week'); const noPR = !/PR ·/.test(toast.textContent) && TOAST_Q.every(t => !/^PR ·/.test(t)); BIG_POPS.length = 1;
+      updateMonitors(); const c0 = document.getElementById('dayCard'), held0 = !c0 || c0.hidden;
+      openBooks('Today'); updatePays(); const pop = PAYS.find(p => p.sum), z = pop ? +getComputedStyle(pop.el).zIndex : 0, zb = +getComputedStyle(document.getElementById('books')).zIndex, zc = +getComputedStyle(dayCardEl()).zIndex, zn = +getComputedStyle(noteEl()).zIndex;
+      const r = pop ? pop.el.getBoundingClientRect() : null, mid = !!r && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+      closeBooks(); updateMonitors(); const held1 = document.getElementById('dayCard').hidden; showToast('held toast'); const waits = !/held toast/.test(toast.textContent);
+      for (const p of PAYS) p.el.remove(); PAYS.length = 0; updatePays(); updateMonitors(); const after = !document.getElementById('dayCard').hidden && /held toast/.test(toast.textContent) && !!document.querySelector('#dayCard button[data-day="next"]');
+      return { ok: noPR && held0 && !!pop && z > zb && z > zc && z > zn && mid && held1 && waits && after, detail: { noPR, held0, pop: !!pop, z, zb, zc, zn, mid, held1, waits, after } }; }
+    finally { closeBooks(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; TOAST_Q.length = 0; document.getElementById('toast').innerHTML = ''; setupRun(); updateMonitors(); }
+  },
+  skipOnHud() {   // judge round 4: once the opening is over the HUD carries a Skip to closing button (the Run sheet's close-early path); the sheet's three skip buttons are 40 px tall and Start over sits apart; a size says what it fits
+    const was = LANG;
+    try { setLang('en'); setupRun(); hideNote(); hideGoalCard(); document.body.classList.remove('introing'); closing = null; INTRO.phase = 'off'; updateMonitors(); const b = document.getElementById('skipBtn'), r = b.getBoundingClientRect(), shown = !b.hidden && r.height >= 40 && /Skip to closing/.test(b.textContent) && b.closest('#hud') !== null;
+      INTRO.phase = 'follow'; updateMonitors(); const hiddenIntro = b.hidden; INTRO.phase = 'done'; updateMonitors();
+      setLang('zh'); updateMonitors(); const zhT = b.textContent; setLang('en'); updateMonitors();
+      const skips = [...document.querySelectorAll('#runGrp button[data-close]')], tall = skips.length === 3 && skips.every(x => innerWidth >= 860 && !x.getBoundingClientRect().height ? true : x.getBoundingClientRect().height >= 40);
+      const apart = W.setup.parentNode !== W.go.parentNode && W.setup.parentNode !== skips[0].parentNode && (W.setup.getBoundingClientRect().top - skips[0].getBoundingClientRect().bottom >= 16 || !skips[0].getBoundingClientRect().height);
+      const d0 = M.dayI; b.click(); const viaClose = !!closing && closing.kind === 'day'; while (closing) { if (!closeOneDay(closing.out, closeTarget('day'))) { const o = closing.out; closing = null; finishClose(o, 'day', 0); } }
+      updateMonitors(); const done = A.done && M.dayI === d0 && b.hidden;
+      openIntro(); const note = document.querySelector('#build [data-k="sizeNote"]').textContent; cancelBuild();
+      return { ok: shown && hiddenIntro && /跳到打烊/.test(zhT) && tall && apart && viaClose && done && /fits about \d+ at once/.test(note) && !/busy at about/.test(note), detail: { shown, h: r.height, hiddenIntro, zhT, tall, apart, viaClose, done, note } }; }
+    finally { closing = null; if (BUILD.on) cancelBuild(); BIG_POPS.length = 0; BOOKS.closed = null; INTRO.phase = 'off'; setLang(was); setupRun(); updateMonitors(); }
+  },
+  advancedTucked() {   // judge round 4: the model's dials sit behind one closed Advanced disclosure (not "More"), remembered per browser; plain words replace the lab phrases; EBITDA is named only on the verdict and the full P&L
+    const was = LANG, keepTab = BOOKS.tab; let stored = null; try { stored = localStorage.getItem('gymsim.adv'); localStorage.removeItem('gymsim.adv'); } catch (e) {}
+    try { ADV.open = null; setLang('en'); const adv = document.getElementById('advBox'), sum = adv ? adv.querySelector('summary').textContent : '';
+      const closed = !!adv && !adv.open && sum === 'Advanced', inside = ['w_power', 'w_workIn', 'w_rerack', 'w_cap', 'w_patience', 'w_peak', 'mStray'].every(id => { const e = document.getElementById(id); return e && adv.contains(e); }) && adv.contains(W.step);
+      const outside = [...panel.querySelectorAll('.tabs button')].map(x => x.dataset.t).join(), noMore = !panel.querySelector('details.more') && !/\bMore\b/.test(panel.textContent);
+      adv.open = true; adv.dispatchEvent(new Event('toggle')); let saved = true; try { saved = localStorage.getItem('gymsim.adv') === '1'; } catch (e) {}
+      setLang('zh'); const adv2 = document.getElementById('advBox'), kept = adv2.open && adv2.querySelector('summary').textContent === '進階選項'; setLang('en');
+      openBooks('Facility'); const fa = document.getElementById('bkAdv'), rentIn = !!fa && fa.contains(document.getElementById('w_rentRate')) && fa.open; closeBooks();
+      document.getElementById('advBox').open = false; document.getElementById('advBox').dispatchEvent(new Event('toggle'));
+      let all = ''; BOOKS.full = false; BOOKS.period = 'today'; const bt = () => { const bk = document.getElementById('books'), d = bk.querySelector('details[data-k="full"]'); const v = bk.querySelector('[data-k="plain"]'); let t = bk.textContent; for (const e of [d, v]) if (e) t = t.replace(e.textContent, ''); return t; };   /* the verdict line and the full statement keep the accountant's word (owner) */
+      for (const lang of ['en', 'zh']) { setLang(lang); for (const t of BOOK_TABS) { openBooks(t); updateBooks(true); all += ' ' + bt(); } all += panel.textContent + document.getElementById('hud').textContent; }
+      closeBooks(); const m = closeEarlySync('week'); finishClose(m, 'week', 0); all += bt(); closeBooks();
+      const bad = all.match(/Worked out from the model|sample size|依參數表估算|以範例大小|EBITDA|EBIT\b/g) || [];
+      return { ok: closed && inside && outside === 'Run,Plots,Books' && noMore && saved && kept && rentIn && !bad.length, detail: { closed, sum, inside, outside, noMore, saved, kept, rentIn, bad, ctx: (all.match(/.{60}EBITDA.{30}/g) || []).slice(0, 3) } }; }
+    finally { closeBooks(); BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; ADV.open = null; try { if (stored == null) localStorage.removeItem('gymsim.adv'); else localStorage.setItem('gymsim.adv', stored); } catch (e) {} setLang(was); setupRun(); }
+  },
+  resultReconciled() {   // judge round 4: the day's stamp and verdict give one figure; the month card says what its result leaves out and lands on the Year view's net profit; the Year view adds the same up
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); fastForward(30 * 3600); BOOKS.closed = null; openBooks('Today'); updateBooks(true); const fig = '$' + roundAbout(A.pnl.ebitda).toLocaleString('en-US'), stamp = document.querySelector('#bkBody .stamp').textContent, verdict = document.querySelector('#bkBody .verdict').textContent;
+      const figs = (document.getElementById('bkBody').textContent.match(/(?:lost|made)(?: about)? \$[\d,]+/g) || []).map(x => x.replace(/.*\$/, '$')), one = stamp.includes(fig) && verdict.includes(fig) && new Set(figs).size === 1; closeBooks();
+      closeEarlySync('month'); nextMonth(); closeEarlySync('month'); nextMonth(); const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a);
+      const lo = (box.querySelector('[data-k="leftOut"]') || {}).textContent || '', x = monthBelow(b), card = /loan payment/.test(lo) && /income tax/.test(lo) && /wear on equipment/.test(lo) && lo.includes(money(x.net)) && lo.includes(money(b.interest + b.principal)) && /Made|Lost/.test(box.querySelector('.big').textContent);
+      BOOKS.period = 'year'; openBooks('Books'); updateBooks(true); const rows = [...document.querySelectorAll('#bkBody tr[data-arch]')], yrRow = rows[1] ? rows[1].textContent : '', same = yrRow.includes(money(x.net));
+      const yl = (document.querySelector('#bkBody [data-k="yrLeftOut"]') || {}).textContent || '', sumRow = document.querySelector('#bkBody table.yr tr.sum').textContent, year = /wear on equipment/.test(yl) && /loan interest/.test(yl) && /not a cost/.test(yl) && (yl.match(/−?\$\d[\d,]*\d/g) || []).filter(v => sumRow.includes(v)).length >= 2;
+      setLang('zh'); updateBooks(true); const zy = (document.querySelector('#bkBody [data-k="yrLeftOut"]') || {}).textContent || ''; box.innerHTML = monthCardHtml(b, a); const zc = (box.querySelector('[data-k="leftOut"]') || {}).textContent || '', zhOk = /折舊/.test(zy) && /貸款還款/.test(zc) && !/[a-z]{4,}/.test(zy + zc);
+      return { ok: one && card && same && year && zhOk, detail: { one, fig, stamp, verdict, figs, card, lo, same, yrRow, year, yl, zhOk } }; }
+    finally { setLang(was); closeBooks(); BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  smallTraps() {   // judge round 4: Undo keeps a published price list (withdrawing it takes two taps); the receptionist's bubble leads to the books; a piece that does not fit says so when smaller kit still does; the rearrange quote is opaque; a toast sits under an open member card on a phone
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, keepPub = PUBLISH, seen = BOOKS_SEEN;
+    try { setLang('en'); setupRun(); openBooks('Pricing'); const q = (s) => document.querySelector('#bkBody ' + s), p0 = S.priceOff;
+      q('button[data-f="priceOff"][data-d="1"]').click(); q('[data-k="publish"]').click(); const pub = PUBLISH && PUBLISH.priceOff;
+      q('button[data-f="priceOff"][data-d="1"]').click(); const edited = BOOKS.stage.priceOff; q('[data-k="reset"]').click();
+      const undo = !!PUBLISH && PUBLISH.priceOff === pub && BOOKS.stage.priceOff === pub && edited > pub && pub > p0 && !/Undo changes/.test(q('[data-k="reset"]').textContent);
+      q('[data-k="withdraw"]').click(); const armed = !!PUBLISH && /Sure/.test(q('[data-k="withdraw"]').textContent); q('[data-k="withdraw"]').click(); const withdrawn = PUBLISH === null && !q('[data-k="withdraw"]') && BOOKS.stage.priceOff === p0; closeBooks();
+      BOOKS_SEEN = true; onAgentPicked(A.desk); const say = document.getElementById('recepSay'), bubble = !say.hidden && !BOOKS.open, rb = say.querySelector('button[data-recep="books"]'), tappable = !!rb && getComputedStyle(rb).pointerEvents === 'auto' && /P&L/.test(rb.textContent);
+      rb.click(); const toBooks = BOOKS.open && say.hidden; closeBooks(); BOOKS_SEEN = false; onAgentPicked(A.desk); const hintPath = BOOKS.open; closeBooks();
+      { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); } setupRun(); openRearrange(); const toast = document.getElementById('toast'); let full = '', n = 0; toast.innerHTML = '';
+      while (n++ < 40) { toast.innerHTML = ''; rearrangeAdd('rack'); if (/No room/.test(toast.textContent)) { full = toast.textContent; break; } }
+      const smaller = RGROUPS.flatMap(x => x[2]).some(k => k !== 'rack' && k !== 'turf' && KINDS[k] && bestSpot(BUILD.layout, k, BUILD.w, BUILD.d)), said = smaller ? /No room for a power rack; smaller kit still fits/.test(full) : /the floor is full/.test(full);
+      setLang('zh'); toast.innerHTML = ''; rearrangeAdd('rack'); const zhSaid = smaller ? /小一點的器材還放得下/.test(toast.textContent) : /場地已滿/.test(toast.textContent); setLang('en');
+      const rq = document.querySelector('#build .rquote'), bg = getComputedStyle(rq).backgroundColor, opaque = /^rgb\(/.test(bg); cancelBuild();
+      const css = [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } }).map(r => r.cssText).join(' '), under = /#toast\s*\{[^}]*--cardH/.test(css);
+      Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); fastForward(10 * 3600 - A.t); const a = AGENTS.find(x => x.visible && x.kind === 'member'); let cardH = '';
+      if (a) { onAgentPicked(a); updateCard(); showToast('x'); cardH = toast.style.getPropertyValue('--cardH'); clearFollow(); updateCard(); showToast('y'); }
+      const moved = !a || (parseFloat(cardH) > 20 && toast.style.getPropertyValue('--cardH') === '0px');
+      return { ok: undo && armed && withdrawn && bubble && tappable && toBooks && hintPath && said && smaller && zhSaid && opaque && under && moved, detail: { undo, armed, withdrawn, bubble, tappable, toBooks, hintPath, said, smaller, full, zhSaid, opaque, bg, under, moved, cardH, n, fitsNow: BUILD.on ? 0 : RGROUPS.flatMap(x => x[2]).filter(k => KINDS[k]).join() } }; }
+    finally { if (BUILD.on) cancelBuild(); closeBooks(); BOOKS.tab = 'Today'; BOOKS.withdrawArm = 0; PUBLISH = keepPub; BOOKS_SEEN = seen; { const sy = document.getElementById('recepSay'); if (sy) sy.hidden = true; } clearFollow(); document.getElementById('toast').innerHTML = ''; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
+  },
+  zhFollows() {   // judge round 4: a card open during a language switch is written again; one Chinese word each for staff, full-time desk staff and turned away at the door; the Year table counts in 萬; Chinese strings use full-width punctuation
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, kg = GOAL.key, keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); GOAL.key = 'cash12'; showNote(() => [`<h2 class="ttl">${tx('Goal met', '目標達成')}</h2><p>${goalLabel(GOAL.key)}</p>`, [[tx('Keep playing', '繼續玩')]]]);
+      const c = document.getElementById('noteCard'), en1 = c.textContent; setLang('zh'); const z1 = c.textContent, noteOk = /Goal met/.test(en1) && /目標達成/.test(z1) && /繼續玩/.test(z1) && !/[A-Za-z]{4,}/.test(z1); hideNote(); setLang('en');
+      closeEarlySync('month'); nextMonth(); S.deskPTh = Math.max(0, S.deskPTh - 10); S.staff = rosterCost(S); closeEarlySync('month'); nextMonth(); showMonthCard(); const e2 = c.textContent; setLang('zh'); const z2 = c.textContent, cardOk = /closed/.test(e2) && /結帳/.test(z2) && !/[A-Za-z]{4,}/.test(z2.replace(/P&L/g, '')); hideNote();
+      fastForward(30 * 3600); updateMonitors(); const dc = document.getElementById('dayCard'); setLang('en'); const d1 = dc.textContent; setLang('zh'); const d2 = dc.textContent, dayOk = /Next day/.test(d1) && /下一天/.test(d2);
+      let all = z2 + d2; BOOKS.full = true; for (const t of BOOK_TABS) { BOOKS.period = t === 'Books' ? 'year' : 'today'; openBooks(t); updateBooks(true); all += ' ' + document.getElementById('books').innerText; }
+      const yr = document.querySelector('#bkBody table.yr'), tabs = [...document.querySelectorAll('#books .bktabs button')].map(x => x.textContent).join(); BOOKS.tab = 'Books'; BOOKS.period = 'year'; openBooks('Books'); updateBooks(true);
+      const yt = document.querySelector('#bkBody table.yr').textContent, wan = /萬/.test(yt) && !/\$\d{2,3},\d{3}/.test(yt); closeBooks();
+      const tip = monthTip({ ...BIZ.months[0], pnl: { ...BIZ.months[0].pnl, ebitda: -1 }, changes: [] }, null, { perMinOn: true, monthlyOn: true }), tz = tip ? tip.zh : '';
+      const terms = /員工/.test(tabs) && !/人員\b/.test(tabs) && !/全職櫃檯|門口離開/.test(all) && !/（人員）/.test(all + tz) && /櫃檯兼職時數/.test(z2) && tr('Turned away at the door') === '門口被擋下';
+      const half = (all + tz).match(/[\u4e00-\u9fff）」][,;(]|[(][\u4e00-\u9fff]|[\u4e00-\u9fff]\)|[\u4e00-\u9fff]: /g) || [];
+      return { ok: noteOk && cardOk && dayOk && wan && terms && !half.length, detail: { noteOk, z1, cardOk, z2: z2.slice(0, 500), dayOk, wan, yt: yt.slice(0, 200), terms, tabs, half: half.slice(0, 12) } }; }
+    finally { hideNote(); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; GOAL.key = kg; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); updateMonitors(); }
+  },
+  largeHallFits() {   // judge round 4: on a phone-shaped view the large hall is framed whole across the width: the board's limit no longer forces the zoom in past the fit
+    const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, zz: view.zoom, x: view.target.x, tz: view.target.z }, a0 = aspect, b0 = view.baseH, out = {};
+    try { const p = PRESETS.L, counts = presetCounts(p.w, p.d); Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: autoBuild(p.w, p.d, counts) }); setupRun(); aspect = 390 / 844; view.baseH = 75.27;   /* the view of a 390 × 844 phone */
+      for (const narrow of [true, false]) { VIEW_NARROW = narrow; frameHall(); const want = view.zoomT; view.zoom = view.zoomT; keepViewOnBoard(); const sp = hallSpan();
+        out[narrow ? 'phone' : 'wide'] = { want: +want.toFixed(3), got: +view.zoomT.toFixed(3), wFrac: +(sp.w / (view.baseH / view.zoomT * aspect)).toFixed(3), cx: +Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2).toFixed(2) }; }
+      return { ok: out.phone.wFrac <= 1.001 && out.phone.got <= out.phone.want * 1.005 && (VIEW_NARROW = true, topM()) > 26 && (VIEW_NARROW = false, topM()) === 0, detail: out }; }   /* the far edge gives way only on a narrow view; the forced zoom itself is checked on the phone screenshots (the camera axes do not move inside a synchronous test) */
+    finally { VIEW_NARROW = null; aspect = a0; view.baseH = b0; view.zoomT = v0.z; view.zoom = v0.zz; view.target.set(v0.x, 0, v0.tz); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setHall(); setupRun(); }
   },
   mixSumsTo100() { const m = Object.values(S.mix); return { ok: m.reduce((a, b) => a + b, 0) === 100 && m.every(Number.isInteger), detail: S.mix }; },
   resultsText() {

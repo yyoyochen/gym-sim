@@ -3,7 +3,7 @@
 let LANG = (() => { try { return localStorage.getItem('gymsim.lang') || 'en'; } catch (e) { return 'en'; } })();
 const ZH = {
   // panel groups and buttons
-  'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'P&L': '損益表', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
+  'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'P&L': '損益表', 'Pricing': '價格', 'Staff': '員工', 'Facility': '場地',
   'Run': '營運', 'Monitors': '現在', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
   'Setup': '重新開始', 'Go': '開始', 'Pause': '暫停', 'Step': '+1 分鐘', 'Go (new day)': '開始（新的一天）',
   'Sound off': '音效：關', 'Sound on': '音效：開', 'Copy results': '複製結果', 'Seed': '種子', 'Random seed': '隨機種子',
@@ -21,7 +21,7 @@ const ZH = {
   'Off-peak price per minute': '離峰每分鐘價格', 'Peak price per minute (Mon–Fri 18–22)': '尖峰每分鐘價格（週一至週五 18–22）',
   'Prices bill at once; members react from the next day.': '價格立即計費；會員從隔天開始反應。',
   'Rental price per 90 min': '每 90 分鐘場租', 'Allow outside coaches': '開放外部教練',
-  'Turned away at the door': '門口離開', 'Bad visits': '不佳到訪',
+  'Turned away at the door': '門口被擋下', 'Bad visits': '不佳到訪',
   'Depreciation': '折舊', 'Net profit': '淨利',
   'What moves profit most: monthly EBITDA with each input at its low or high value (parameter-book arithmetic, not simulated).': '影響獲利最大的因素：每項調到低或高值時的每月 EBITDA（參數書試算，非模擬）。',
   'Low': '低', 'High': '高', 'PT sessions a month': '每月教練課堂數', 'Gym keeps of PT': '館方教練課分潤',
@@ -30,7 +30,7 @@ const ZH = {
   'Month complete · press New month': '本月結束 · 按「新的一個月」',
   'P&L': '損益', 'Visit fees': '入場費', 'Member cards': '會員卡', 'PT earned (sessions delivered)': '教練課收入（已上課）', 'Floor rentals': '場租', 'Add-ons (estimated)': '其他收入（估計）',
   'Gross revenue': '總收入', 'VAT': '營業稅', 'Net sales': '銷售淨額', 'Coach payout': '教練拆帳', 'Marketing': '行銷', 'Card fees': '刷卡手續費',
-  'Rent and management': '租金與管理費', 'Electricity': '電費', 'Other fixed costs': '其他固定成本', 'Staff': '人事', 'EBITDA today': '今日 EBITDA',
+  'Rent and management': '租金與管理費', 'Electricity': '電費', 'Other fixed costs': '其他固定成本', 'Staff': '員工', 'EBITDA today': '今日 EBITDA',
   'Cash in today': '今日現金收入', 'Floor area': '坪數', 'Rent per 坪': '每坪租金', 'Staff cost per month': '每月人事成本', 'Prepaid PT owed ($)': '預收教練課未上課金額（元）', 'Instalments due': '待收分期款',
   'Costs accrue through opening hours; add-ons are estimated, not simulated.': '成本隨營業時間累計；其他收入為估計值，非模擬結果。', 'Mean visit length': '平均停留時間',
   'Setting': '環境', 'Urban': '都市', 'Suburban': '郊區', 'Rural': '鄉村',
@@ -104,11 +104,12 @@ function setLang(l) {
   const fb = document.getElementById('fallback'); if (fb) fb.textContent = tr('This diorama needs WebGL, which isn\'t available in this browser.');
   if (typeof buildPanel === 'function' && panel.childElementCount) {
     const open = !panel.classList.contains('closed'), tab = panel.querySelector('.tabs button.on'), tk = tab ? tab.dataset.t : 'Run', st = panel.scrollTop;
-    const more = panel.querySelector('details.more'), moreOpen = !!(more && more.open);
-    buildPanel(); placePlots(); { const m2 = panel.querySelector('details.more'); if (m2) m2.open = moreOpen; } refreshGo(); refreshPending(); showTab(tk); panel.classList.toggle('closed', !open); panel.scrollTop = st; lockBuiltSliders();
+    buildPanel(); placePlots(); refreshGo(); refreshPending(); showTab(tk); panel.classList.toggle('closed', !open); panel.scrollTop = st; lockBuiltSliders();
     if (typeof BUILD !== 'undefined' && BUILD.on) renderBuild();
     refreshSnd();
   }
   { const gc = document.getElementById('goalCard'); if (gc && !gc.hidden && typeof showGoalCard === 'function') showGoalCard(gc.dataset.mode === 'change'); }   /* the goal card follows the language */
   if (typeof BOOKS !== 'undefined' && BOOKS.open) renderBooks();   // the open binder follows the language too
+  // judge round 4: every open card follows the language: the notice card (month report, goal met, out of cash), the day-end card, the member card, the receptionist's bubble
+  if (typeof renoteLang === 'function') renoteLang(); if (typeof syncDayCard === 'function' && typeof A !== 'undefined' && A) syncDayCard(); if (typeof updateCard === 'function' && typeof A !== 'undefined' && A) updateCard(); { const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; } if (typeof updateLiveLine === 'function' && typeof A !== 'undefined' && A) { updateLiveLine(); if (typeof syncSkipBtn === 'function') syncSkipBtn(); }
 }
