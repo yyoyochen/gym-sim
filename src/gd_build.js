@@ -113,7 +113,7 @@ function introHtml(c, btn) {
   }
   const k = Object.keys(PRESETS).find(q => PRESETS[q].w === BUILD.w && PRESETS[q].d === BUILD.d), name = k ? tx(...PRESET_NAME[k]) : tx('Custom', '自訂'), head = `${name} · ${c.ping} 坪 · ${Math.round(c.ping * 3.3058)} m²`;
   if (step === 'cost') {
-    return `<h2 class="btitle">${head}</h2><table class="bcost"><tr><td>${tx('Rent a month', '每月租金')}</td><td class="n">${bnt(c.rentMonth)}</td></tr><tr><td>${tx('Fit-out', '裝修')}</td><td class="n">${bnt(c.fitOut)}</td></tr>
+    return `<h2 class="btitle">${head}</h2><table class="bcost"><tr><td>${tx('Rent a month', '每月租金')}<span class="unit" data-k="rentFree">${tx('first month rent-free', '第一個月免租')}</span></td><td class="n">${bnt(c.rentMonth)}</td></tr><tr><td>${tx('Fit-out', '裝修')}</td><td class="n">${bnt(c.fitOut)}</td></tr>
       <tr><td>${tx('Equipment', '器材')}</td><td class="n">${bnt(c.equipment)}</td></tr><tr><td>${tx(`Deposit (${DEPOSIT_MONTHS} months)`, `押金（${DEPOSIT_MONTHS} 個月）`)}</td><td class="n">${bnt(c.deposit)}</td></tr>
       <tr class="sum"><td>${tx('Setup cost', '開辦費用')}</td><td class="n">${bnt(c.capex + c.deposit)}</td></tr></table>
       <p class="note">${tx('Customise changes the size and the equipment.', '「自訂」可以改大小與器材。')}</p>
@@ -121,6 +121,9 @@ function introHtml(c, btn) {
   }
   const pay = loanPayment(S.finLoan, S.finRate, S.finYears), setup = c.capex + c.deposit, cash = S.finOwn + S.finLoan - setup, run = runwayMonths(cash, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));   /* the roster this floor opens with */
   const runN = run < 10 ? run.toFixed(1) : Math.round(run);
+  // judge 2026-11-20: a thin start gets a one-tap way out: the loan that covers six months of running costs (its own payment included)
+  let six = null; if (run < 6) for (let L = S.finLoan + 5e5; L <= 20e6; L += 5e5) { if (runwayMonths(S.finOwn + L - setup, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), loanPayment(L, S.finRate, S.finYears))) >= 6) { six = L; break; } }
+  const sixBtn = six ? `<div class="row">${btn(`data-fin6="${six}"`, tx(`Borrow enough for 6 months (a ${bnt(six)} loan)`, `借到夠撐 6 個月（貸款 ${bnt(six)}）`))}</div>` : '';
   const runway = cash >= 0 ? (run < 6 ? `<p class="note warn" data-k="runway">${tx(`Only about ${runN} months of running costs. A new gym usually loses money for its first 6 to 9 months: borrow more, put in more of your own money, or pick a smaller gym.`, `只夠支付約 ${runN} 個月的營運成本。新健身房通常前 6 到 9 個月都在虧：多借一點、多放自有資金，或選小一點的場地。`)}</p>`
     : `<p class="note" data-k="runway">${tx(`About ${runN} months of running costs`, `約可支付 ${runN} 個月的營運成本`)}</p>`)
     : `<p class="note warn" data-k="runway">${tx(`You start ${bnt(-cash)} overdrawn: trading has to pay it back.`, `開幕就透支 ${bnt(-cash)}：要靠營業還。`)}</p>`;
@@ -128,7 +131,7 @@ function introHtml(c, btn) {
     <div class="bstep"><span>${tx('Your own money', '自有資金')}</span>${btn('data-fin="finOwn,-1"', '−')}<b>${bnt(S.finOwn)}</b>${btn('data-fin="finOwn,1"', '+')}</div>
     <div class="bstep"><span>${tx(`Bank loan · ${S.finRate.toFixed(1)}%, ${S.finYears} years`, `銀行貸款 · ${S.finRate.toFixed(1)}%，${S.finYears} 年`)}</span>${btn('data-fin="finLoan,-1"', '−')}<b>${bnt(S.finLoan)}</b>${btn('data-fin="finLoan,1"', '+')}</div>
     <table class="bpay"><tr><td>${tx('Loan payment', '貸款還款')}</td><td class="n">${tx(`${money(Math.round(pay))} a month`, `每月 ${money(Math.round(pay))}`)}</td></tr><tr><td>${tx('Setup cost', '開辦費用')}</td><td class="n">${bnt(-setup)}</td></tr>
-    <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n${cash < 0 ? ' neg' : ''}">${bnt(cash)}</td></tr></table>${runway}
+    <tr class="sum"><td>${tx('Cash on opening day', '開幕日現金')}</td><td class="n${cash < 0 ? ' neg' : ''}">${bnt(cash)}</td></tr></table>${runway}${sixBtn}
     <div class="row bfoot">${btn('data-istep="cost"', tx('Back', '上一步'))}${btn('data-bact="open"', tx('Open this gym', '開這間健身房'), 'btn-go')}</div>`;
 }
 function renderBuild() {
@@ -182,6 +185,7 @@ document.addEventListener('click', (e) => {
   else if (d.size) { const [a, c] = d.size.split(',').map(Number); buildSize(a, c); }
   else if (d.turf) buildTurf(d.turf === '1');
   else if (d.count) { const [k, v] = d.count.split(','); buildCount(k, +v); }
+  else if (d.fin6) { S.finLoan = clamp(+d.fin6, 0, 20e6); renderBuild(); }
   else if (d.fin) { const [k, v] = d.fin.split(','); S[k] = clamp(S[k] + v * 5e5, 0, 20e6); renderBuild(); }
   else if (d.bact === 'cancel') cancelBuild();
   else if (d.bact === 'open') { if (!openGym()) showToast(tx('This plot breaks a rule: see the list under 1 Plot.', '這塊場地不符合規則：請看「1 場地」下方的清單。')); }
@@ -202,7 +206,7 @@ function openRearrange() {
   const sample = !S.hallW || !S.layout;   /* the sample gym is shown as grid pieces; it converts only if the player applies (Plan 12, owner option A) */
   openBuild(); BUILD.mode = 'rearrange'; BUILD.convert = sample;
   if (sample) { BUILD.w = SAMPLE_GRID.w; BUILD.d = SAMPLE_GRID.d; BUILD.orig = autoBuild(SAMPLE_GRID.w, SAMPLE_GRID.d, SAMPLE_COUNTS); } else BUILD.orig = JSON.parse(JSON.stringify(S.layout));
-  BUILD.layout = JSON.parse(JSON.stringify(BUILD.orig)); BUILD.sel = null; buildPreview(); return true;
+  BUILD.layout = JSON.parse(JSON.stringify(BUILD.orig)); BUILD.sel = null; buildPreview(); frameHall(BUILD_ZOOM()); return true;   /* judge 2026-11-20: Rearrange opens framed on the hall, not zoomed out */
 }
 const rOpen = () => BUILD.on && BUILD.mode === 'rearrange';   /* review C1: edits only while Rearrange is open, never on the live gym */
 function rearrangeAdd(kind) { if (!rOpen()) return; const p = addPiece(BUILD.layout, kind, BUILD.w, BUILD.d); if (!p) showToast(tx('No room for it: the floor is full.', '放不下了：場地已滿。')); else { BUILD.sel = p.id; showToast(tx(`Added: ${rname(kind)} · ${money(KINDS[kind].price)}`, `已新增：${rname(kind)} · ${money(KINDS[kind].price)}`)); } buildPreview(); }   /* the new piece is selected, so it shows where it went */

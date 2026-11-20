@@ -13,21 +13,28 @@ const CHANGE_NAMES = { priceOff: ['Off-peak minute', '離峰每分鐘', v => '$'
   ptSession: ['Coaching session', '教練課一堂', v => '$' + v.toLocaleString('en-US')], rentP: ['Floor rental', '場地租借', v => '$' + v], deskFT: ['Full-time desk staff', '全職櫃檯', v => v], deskPTh: ['Part-time desk hours', '兼職櫃檯時數', v => v],
   coaches: ['Coaches', '教練', v => v], cleaners: ['Cleaners', '清潔人員', v => v], pieces: ['Pieces of equipment', '器材數', v => v] };
 function monthCardHtml(rec, prev) {
-  const r = monthReport(rec, prev), lost = r.ebitda < 0, amt = money(Math.abs(r.ebitda)), short = rec.days < 28 ? tx(` (${rec.days} days)`, `（${rec.days} 天）`) : '';
-  const row = (l, v) => `<tr><td>${l}</td><td class="n">${v}</td></tr>`;
-  const vs = r.prev ? row(tx('Against last month', '和上個月比'), `<b class="${r.better ? 'gain' : 'loss'}">${r.better ? tx('better', '進步') : tx('worse', '退步')}</b>`) : '';
+  const idx = BIZ ? BIZ.months.indexOf(rec) : -1, cashStart = prev ? prev.cashEnd : BIZ && idx === 0 ? BIZ.openCash : null;
+  const r = monthReport(rec, prev, cashStart), lost = r.ebitda < 0, amt = money(Math.abs(r.ebitda)), short = rec.days < 28 ? tx(` (${rec.days} days)`, `（${rec.days} 天）`) : '';
+  const row = (l, v, k) => `<tr${k ? ` data-k="${k}"` : ''}><td>${l}</td><td class="n">${v}</td></tr>`, sg = (v) => (v > 0.5 ? '+' : '') + moneyK(v), res = (v) => (v < 0 ? tx('lost ', '虧 ') : tx('made ', '賺 ')) + money(Math.abs(v));
+  // judge 2026-11-20: months of different length are compared per day, and the row says so
+  const word = r.better ? tx('better', '進步') : tx('worse', '退步'), rentStarted = typeof BUILT !== 'undefined' && !!BUILT && idx > 0 && idx === BUILT.rentFreeMonths ? tx(`; rent started this month (${moneyK(S.area * S.rentRate)})`, `；這個月開始付租金（${moneyK(S.area * S.rentRate)}）`) : '';
+  const vs = !r.prev ? '' : r.sameLength ? row(tx('Against last month', '和上個月比'), `<b class="${r.better ? 'gain' : 'loss'}">${word}</b> <small>(${res(r.ebitda)}; ${tx('last month', '上個月')} ${res(r.prev.total)}${rentStarted})</small>`, 'vs')
+    : row(tx('Against last month', '和上個月比'), `<b class="${r.better ? 'gain' : 'loss'}">${word}${tx(' per day', '（以每天計）')}</b> <small>${tx(`${money(r.perDay)} a day against ${money(r.prev.perDay)} a day; last month had ${r.prev.days} days, this one ${r.days}`, `每天 ${money(r.perDay)}，上個月每天 ${money(r.prev.perDay)}；上個月 ${r.prev.days} 天，這個月 ${r.days} 天`)}${rentStarted}</small>`, 'vs');
   const cash = moneyK(r.cashEnd) + (r.cashEnd < 0 ? '' : r.runway ? tx(` · about ${r.runway} months left at this rate`, ` · 照這樣約可撐 ${r.runway} 個月`) : tx(' · growing', ' · 持續增加'));
-  const be = r.breakEven ? row(tx('Members needed to cover costs', '打平需要的會員數'), tx(`about ${r.breakEven} (you have ${r.members})`, `約 ${r.breakEven} 位（目前 ${r.members} 位）`)) : '';
+  // what moved the bank this month, so the cash change and the result (which leaves out the loan) can be read together
+  const c = r.cash, cashWhy = c ? `<tr data-k="cashWhy"><td colspan="2"><small>${tx(`Cash moved ${sg(c.change)} this month: the result above ${sg(c.result)}, loan payment ${sg(c.loan)}`, `本月現金變動 ${sg(c.change)}：上面的結果 ${sg(c.result)}、貸款還款 ${sg(c.loan)}`)}${Math.abs(c.tax) >= 0.5 ? tx(`, income tax ${sg(c.tax)}`, `、所得稅 ${sg(c.tax)}`) : ''}${Math.abs(c.other) >= 500 ? tx(`, coaching paid ahead and equipment ${sg(c.other)}`, `、預收教練課與器材 ${sg(c.other)}`) : ''}${tx('.', '。')}</small></td></tr>` : '';
+  // the first month of a built gym is rent-free: the break-even count would mislead, so the card says what rent starts next month instead
+  const rentFree = typeof BUILT !== 'undefined' && !!BUILT && idx >= 0 && idx < BUILT.rentFreeMonths, rentNext = S.area * S.rentRate;
+  const be = r.breakEven && !rentFree ? row(tx('Members needed to cover costs', '打平需要的會員數'), tx(`about ${r.breakEven} all month (you averaged ${r.avgMembers})`, `整個月平均約 ${r.breakEven} 位（你這個月平均 ${r.avgMembers} 位）`), 'breakEven') : '';
+  const rentNote = rentFree ? `<p class="note warn" data-k="rentNext">${tx(`Rent was free this month. From next month rent of ${moneyK(rentNext)} a month starts: about ${money(rentNext / 30.4)} more cost every day.`, `這個月免租。下個月起每月租金 ${moneyK(rentNext)}：每天的成本大約多 ${money(rentNext / 30.4)}。`)}</p>` : '';
   const ch = (rec.changes || []).map(c => { const n = CHANGE_NAMES[c.k]; return n ? `${tx(n[0], n[1])} ${n[2](c.from)} → ${n[2](c.to)}` : ''; }).filter(Boolean);
   const g = typeof goalNow === 'function' ? goalNow() : null;
-  const top = topCosts(rec.pnl)[0], LEVER = { rent: tx('Rent is fixed, so the answer is more members: a lower minute price or a monthly pass brings them in faster (Pricing).', '租金是固定的，所以要靠更多會員：降低每分鐘價格或開放月費，會員來得更快（價目）。'),
-    staff: tx('Staff is the biggest cost. Fewer desk hours save money at once, but new members leave a little faster (Staff).', '人事是最大的成本。減少櫃檯時數馬上省錢，但新會員會流失得快一點（人力）。'),
-    'running costs': tx('Running costs are the biggest cost and mostly fixed: you need more members, or coaching income on top (Pricing, Staff).', '營運成本最大、而且大多固定：需要更多會員，或增加教練課收入（價目、人力）。'),
-    'coach pay': tx('Coach pay is the biggest cost: it only goes out when coaching brings money in, so look at the fixed costs next.', '教練分潤最大：有教練課收入才會支出，所以接著看固定成本。') };
-  const tip = lost && top ? `<p class="note" data-k="tip"><b>${tx('What to try', '可以試試')}</b> ${LEVER[top[0]] || ''}</p>` : '';
+  // judge 2026-11-20: the tip reads the card's own "You changed" list: what each change did, then one thing not yet tried
+  const tipT = monthTip(rec, prev, { ...(BIZ && BIZ.snap ? BIZ.snap : typeof settingSnap === 'function' ? settingSnap() : {}), rentNext: rentFree ? rentNext : 0 });
+  const tip = tipT ? `<p class="note" data-k="tip"><b>${ch.length && prev ? tx('What your changes did', '你的調整帶來什麼') : tx('What to try', '可以試試')}</b> ${tx(tipT.en, tipT.zh)}</p>` : '';
   return `<h2 class="ttl">${tx(`${monthLabel(rec.name, rec.year)} closed${short}`, `${monthLabel(rec.name, rec.year)} 結帳${short}`)}</h2>
-    <p class="big ${lost ? 'loss' : 'gain'}">${lost ? tx(`Lost ${amt}`, `虧 ${amt}`) : tx(`Made ${amt}`, `賺 ${amt}`)}<small>${tx('after rent, staff and running costs', '已扣租金、人事與營運成本')}</small></p>
-    <table>${row(tx('Members', '會員'), `${r.startMembers} → <b>${r.members}</b> <small>(+${r.joined} ${tx('joined', '加入')}, −${r.lapsed} ${tx('left', '離開')})</small>`)}${be}${row(tx('Cash in the bank', '銀行現金'), cash)}${vs}</table>
+    <p class="big ${lost ? 'loss' : 'gain'}">${lost ? tx(`Lost ${amt}`, `虧 ${amt}`) : tx(`Made ${amt}`, `賺 ${amt}`)}<small>${tx('after rent, staff and running costs (the loan is separate)', '已扣租金、人事與營運成本（貸款另計）')}</small></p>
+    <table>${row(tx('Members', '會員'), `${r.startMembers} → <b>${r.members}</b> <small>(+${r.joined} ${tx('joined', '加入')}, −${r.lapsed} ${tx('left', '離開')})</small>`)}${be}${row(tx('Cash in the bank', '銀行現金'), cash)}${cashWhy}${vs}</table>${rentNote}
     <p class="note">${ch.length ? tx('You changed: ', '你這個月調整了：') + ch.join(tx('; ', '；')) : tx('You changed nothing this month: prices, staff and equipment are as they were.', '這個月你沒有調整任何東西：價格、人力和器材都沒變。')}</p>
     ${tip}${g ? `<p class="note">${goalLineText()}</p>` : ''}`;
 }

@@ -124,6 +124,10 @@ function money(v) {
 function moneyK(v) {
   if (v == null || !Number.isFinite(v)) return '$–';
   const a = Math.abs(v), s = v <= -0.5 ? '−' : '', r3 = (x) => x >= 100 ? Math.round(x) : x >= 10 ? Math.round(x * 10) / 10 : Math.round(x * 100) / 100;
+  if (typeof zh === 'function' && zh()) {   /* judge 2026-11-20: Chinese counts money in 萬 and 億, not K and M */
+    if (a < 9999.5) return s + '$' + Math.round(a).toLocaleString('en-US');
+    const w = r3(a / 1e4); return w < 10000 ? s + '$' + w.toLocaleString('en-US') + ' 萬' : s + '$' + r3(a / 1e8) + ' 億';
+  }
   if (a < 999.5) return s + '$' + Math.round(a);
   const k = r3(a / 1e3); if (k < 1000) return s + '$' + k + 'K';
   return s + '$' + r3(a / 1e6) + 'M';

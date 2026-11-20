@@ -79,7 +79,7 @@ test('the weekly peak and the door limit follow the floor area (research 2026-11
   assert.deepEqual([80, 115, 160, 320].map(B.capForPing), [42, 60, 83, 167]);
 });
 
-const R = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js'], ['monthReport', 'settingChanges', 'goalStatus', 'membersTarget']);
+const R = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js'], ['monthReport', 'monthTip', 'settingChanges', 'goalStatus', 'membersTarget']);
 const month = (o) => ({ name: 'Nov', year: 2026, days: 30.4, members: 220, joined: 60, lapsed: 30, returned: 10, visits: 1000, cashEnd: 1e6, cashIn: 100000, cashOut: 300000,
   pnl: { net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000 }, ...o });
 
@@ -102,6 +102,59 @@ test('month report: a short first month is scaled to a full month; no runway whe
 test('month report compares with the month before', () => {
   const r = R.monthReport(month({ members: 300, pnl: { net: 200000, contribution: 150000, fixed: 250000, ebitda: -100000 } }), month({}));
   assert.equal(r.prev.ebitda, -150000); assert.equal(r.prev.members, 220); assert.equal(r.better, true);
+});
+
+test('month report: months of different length are compared per day, and the report carries both figures', () => {
+  const first = month({ days: 11, pnl: { net: 30000, contribution: 20000, fixed: 110000, ebitda: -90000 } }), second = month({ days: 31, pnl: { net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000 } });
+  const r = R.monthReport(second, first);
+  assert.equal(r.better, true); assert.equal(r.sameLength, false);                      // a bigger loss in total, a smaller one per day
+  assert.equal(Math.round(r.perDay), -4839); assert.equal(Math.round(r.prev.perDay), -8182); assert.equal(r.prev.days, 11); assert.equal(r.prev.total, -90000);
+  assert.equal(R.monthReport(month({}), month({})).sameLength, true);
+});
+
+test('month report: the break-even count is read against the average membership and never contradicts the result', () => {
+  // 358 -> 408 members (average 383), a small loss: contribution per member puts break-even just above the average, below the month-end count
+  const lost = R.monthReport(month({ members: 408, joined: 70, returned: 0, lapsed: 20, pnl: { net: 300000, contribution: 248214, fixed: 250000, ebitda: -1786 } }), null);
+  assert.equal(lost.avgMembers, 383); assert.ok(lost.breakEven > lost.avgMembers, `${lost.breakEven} > ${lost.avgMembers}`);
+  const made = R.monthReport(month({ members: 408, joined: 70, returned: 0, lapsed: 20, pnl: { net: 300000, contribution: 250100, fixed: 250000, ebitda: 100 } }), null);
+  assert.ok(made.breakEven <= made.avgMembers, `${made.breakEven} <= ${made.avgMembers}`);
+  const flat = R.monthReport(month({ members: 200, joined: 30, returned: 0, lapsed: 30, pnl: { net: 250000, contribution: 249999.9, fixed: 250000, ebitda: -0.1 } }), null);
+  assert.equal(flat.breakEven, 201);                                                    // a hair short: one more than the average, never "200 needed, you averaged 200" on a loss
+});
+
+test('month report: the cash change reconciles with the result (loan payment, tax and the rest)', () => {
+  const m = month({ cashEnd: 835000, interest: 17500, principal: 64500, tax: 0, pnl: { net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000 } });
+  const r = R.monthReport(m, month({ cashEnd: 1100000 }));
+  assert.equal(r.cash.change, -265000); assert.equal(r.cash.result, -150000); assert.equal(r.cash.loan, -82000); assert.equal(r.cash.tax, 0); assert.equal(r.cash.other, -33000);
+  assert.equal(r.cash.result + r.cash.loan + r.cash.tax + r.cash.other, r.cash.change);
+  assert.equal(R.monthReport(m, null).cash, null);                                      // no starting balance known: no line
+  assert.equal(R.monthReport(m, null, 1000000).cash.change, -165000);                   // the first month starts from the opening cash
+});
+
+test('month tip: reads the changes, names what they did with the month\'s numbers, and never recommends what was just done or is already on', () => {
+  const pnl = (o) => ({ net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000, occupancy: 140000, staff: 80000, elec: 20000, otherOpex: 10000, coach: 5000, entry: 90000, passes: 0, ptEarned: 10000, ...o });
+  const before = month({ days: 30, lapsed: 20, joined: 70, returned: 0, visits: 3000, pnl: pnl({}) });
+  const passOnly = month({ days: 30, lapsed: 329, joined: 12, returned: 0, visits: 900, pnl: pnl({ entry: 0, passes: 60000 }), changes: [{ k: 'perMinOn', from: true, to: false }, { k: 'monthlyOn', from: false, to: true }] });
+  const t = R.monthTip(passOnly, before, { perMinOn: false, monthlyOn: true });
+  assert.match(t.en, /329 members left/); assert.match(t.en, /20 left/); assert.match(t.en, /Visits 30 a day \(was 100\)/); assert.match(t.en, /\$2,000 a day \(was \$3,000\)/);
+  assert.match(t.en, /cost you members/); assert.doesNotMatch(t.en, /monthly pass (next to|brings)|biggest cost/);   // a warning stands alone: no second piece of advice on top assert.match(t.zh, /329 位會員離開/);
+  const quiet = R.monthTip(month({ pnl: pnl({}), changes: [] }), before, { perMinOn: true, monthlyOn: true });
+  assert.match(quiet.en, /^Rent is your biggest cost/); assert.doesNotMatch(quiet.en, /monthly pass/);          // the pass is already on
+  assert.match(R.monthTip(month({ pnl: pnl({}), changes: [] }), before, { perMinOn: true, monthlyOn: false }).en, /a monthly pass next to the minute price/);
+  const coach = R.monthTip(month({ pnl: pnl({ ptEarned: 60000, coach: 30000 }), changes: [{ k: 'coaches', from: 2, to: 3 }] }), before, { perMinOn: true, monthlyOn: false });
+  assert.match(coach.en, /coaching earned \$1,974 a day \(was \$333\)/); assert.doesNotMatch(coach.en, /check that the coaches/);
+  assert.equal(R.monthTip(month({ pnl: pnl({ ebitda: 5000 }), changes: [] }), before, {}), null);              // a profit and no changes: nothing to say
+  assert.match(R.monthTip(passOnly, null, {}).en, /first month/);
+  const free = month({ pnl: pnl({ occupancy: 4000, staff: 80000 }), changes: [] });                                  // a rent-free first month: staff looks biggest until the rent that is about to start is counted
+  assert.match(R.monthTip(free, null, {}).en, /^Staff is your biggest cost/); assert.match(R.monthTip(free, null, { rentNext: 176000 }).en, /^Rent is your biggest cost/);
+});
+
+test('members goal: a gym that opens late in a month says its three months start next month, then counts 1, 2, 3', () => {
+  const m = (members, days) => ({ members, days, lapsed: 0 }), s = (months, poolNow, curDays) => ({ months, poolNow, monthIndex: months.length, target: 740, curDays });
+  assert.match(R.goalStatus('members500', s([], 338, 11)).text.en, /338 of 740 · the 3 months start next month/);
+  assert.match(R.goalStatus('members500', s([m(352, 11)], 360, 31)).text.en, /month 1 of 3/);
+  assert.match(R.goalStatus('members500', s([m(352, 11), m(380, 31)], 390, 31)).text.en, /month 2 of 3/);
+  assert.match(R.goalStatus('members500', s([], 338, 30)).text.en, /month 1 of 3/);
 });
 
 test('setting changes: only what moved, with before and after', () => {

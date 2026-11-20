@@ -213,7 +213,7 @@ function advanceRate() { return quietNow() ? Math.max(S.speed, QUIET.rate) : S.s
 function advance(real) {
   if (!playing()) return;
   simAcc += real * advanceRate(); let n = 0;
-  while (simAcc >= STEP && n < 1200) { simStep(); simAcc -= STEP; n++; if (A.done) { goOn = false; refreshGo(); showToast(tr(monthComplete() ? 'Month complete · press New month' : 'Day complete · press Next day')); break; } }
+  while (simAcc >= STEP && n < 1200) { simStep(); simAcc -= STEP; n++; if (A.done) { goOn = false; refreshGo(); if (typeof syncDayCard === 'function') syncDayCard(); break; } }   /* judge 2026-11-20: the day ends on a card with its own Next day button, not a toast that points at a hidden one */
 }
 // the furthest view never shows past the board: zoom in just enough, and keep the target where every screen corner lands on the board
 const _vc = new V3();
@@ -287,11 +287,12 @@ const PAYS = [], _payV = new V3();
 let payNext = 0, payDing = 0, payRun = null, payBiz = null;
 function bigPopHtml(p) {   /* a closed day's or month's takings, labelled as takings, with its result under it (first-minute polish: the till is not the headline win) */
   const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase(), r = p.ebitda != null ? verdictShort(p.ebitda) : null;
-  return `+$${p.fee.toLocaleString('en-US')}<small>${lab} · ${tx('TAKINGS', '收入')}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>${r ? `<small class="v ${p.ebitda < 0 && r !== '±$0' ? 'loss' : 'gain'}">${tx(`${r} AFTER COSTS`, `扣除成本後 ${r}`)}</small>` : ''}`;
+  const amt = p.earned != null ? p.earned : p.fee;   /* judge 2026-11-20: one income figure everywhere: what the period earned, the number its result is computed from */
+  return `+$${amt.toLocaleString('en-US')}<small>${lab} · ${tx('EARNED', '收入')}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>${r ? `<small class="v ${p.ebitda < 0 && r !== '±$0' ? 'loss' : 'gain'}">${tx(`${r} AFTER COSTS`, `扣除成本後 ${r}`)}</small>` : ''}`;
 }
 function updatePays() {
   const now = performance.now();
-  if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
+  if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; sumNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
   if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; return; }   /* no money pops over the builder's preview */
   if (A && A.payQ && A.payQ.length) {
     const q = A.payQ.splice(0);
@@ -309,30 +310,43 @@ function updatePays() {
       PAYS.push({ el, born: payNext, pt: !!p.pt, vx: side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });
     }
   }
-  for (const p of BIG_POPS.splice(0)) {   /* owner 2026-11-16: a closed day's or the month's takings: big, like a PT sale; glowing only for an all-time best */
-    const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
-    el.innerHTML = bigPopHtml(p); document.body.appendChild(el);
-    payNext = Math.max(now, payNext + 700); PAYS.push({ el, born: payNext, pt: true, vx: 0, size: p.month ? 2.8 : 2.2, rung: false });
-  }
+  for (const p of BIG_POPS.splice(0)) addBigPop(p, now);   /* owner 2026-11-16: a closed day's or the month's result: big, like a PT sale; glowing only for an all-time best */
+  { const nc = document.getElementById('noteCard'); if (nc && !nc.hidden) for (let i = PAYS.length - 1; i >= 0; i--) if (PAYS[i].sum) dropPop(i); }   /* a notice card (the month's report) is read without a pop across it */
   const r = canvas.getBoundingClientRect();
   _payV.set(DOOR.x, 2.6, HZ).project(cam);   // the gate: numbers burst from here, they don't follow the member
   const gx = r.left + (_payV.x + 1) / 2 * r.width, gy = r.top + (1 - _payV.y) / 2 * r.height;
   for (let i = PAYS.length - 1; i >= 0; i--) {
-    const p = PAYS[i], ms = now - p.born, k = ms / (p.pt ? 2600 : 1300);
+    const p = PAYS[i], ms = now - p.born, k = ms / popDur(p);
     if (k < 0) continue;
-    if (k >= 1) { p.el.remove(); PAYS.splice(i, 1); continue; }
+    if (k >= 1) { dropPop(i); continue; }
     if (!p.rung) { p.rung = true; if (p.pt) sfx('jackpot'); else if (now - payDing > 120) { payDing = now; sfx('cash'); } }
-    // RPG damage number: punch in big, settle, hop up on an arc, drift sideways, fade at the end
-    const s = ms / 1000, punch = ms < 90 ? 0.3 + ms / 90 * 1.4 : ms < 220 ? 1.7 - (ms - 90) / 130 * 0.7 : 1;
-    let y = -(150 * s - 170 * s * s) - 18 * s, x = p.vx * s;   // fast hop that slows near its peak, then sinks a little
-    if (p.pt) {   // the PT sale: a bigger, slower rise that hangs in the air and shakes like a level-up
-      y = -70 * (1 - Math.exp(-s * 3.2));
-      if (ms > 120 && ms < 900) { x += Math.sin(ms / 22) * 3 * (1 - ms / 900); y += Math.cos(ms / 17) * 2 * (1 - ms / 900); }
-      p.el.style.filter = `brightness(${(1.1 + 0.25 * Math.sin(ms / 70)).toFixed(2)})`;   // gold glints
-    }
-    p.el.style.transform = `translate(${gx + x}px, ${gy + y}px) translate(-50%, -100%) scale(${(punch * p.size).toFixed(3)})`;
-    p.el.style.opacity = k < 0.7 ? 1 : (1 - k) / 0.3;
+    placePop(p, gx, gy, ms);
   }
+}
+const POP_WEEK_MS = 950;   /* judge 2026-11-20: a week's seven pops come one after another, each on its own */
+let sumNext = 0;
+function popDur(p) { return p.dur || (p.pt ? 2600 : 1300); }
+function dropPop(i) { const p = PAYS[i]; if (p.el.parentNode) p.el.parentNode.removeChild(p.el); PAYS.splice(i, 1); }
+function addBigPop(p, now) {
+  const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
+  el.innerHTML = bigPopHtml(p); document.body.appendChild(el);
+  const P = { el, born: Math.max(now, sumNext), pt: true, sum: true, dur: p.week ? POP_WEEK_MS : 2600, vx: 0, size: p.month ? 2.8 : 2.2, rung: false };
+  sumNext = P.born + P.dur; PAYS.push(P); return P;
+}
+// where a pop sits `ms` after it was born; (gx, gy) is the gate on screen. Whatever its size and language it stays inside a screen `vw` wide (judge 2026-11-20: a minus sign was pushed off a phone)
+function placePop(p, gx, gy, ms, vw = innerWidth) {
+  // RPG damage number: punch in big, settle, hop up on an arc, drift sideways, fade at the end
+  const s = ms / 1000, punch = ms < 90 ? 0.3 + ms / 90 * 1.4 : ms < 220 ? 1.7 - (ms - 90) / 130 * 0.7 : 1, k = ms / popDur(p);
+  let y = -(150 * s - 170 * s * s) - 18 * s, x = p.vx * s;   // fast hop that slows near its peak, then sinks a little
+  if (p.pt) {   // the PT sale: a bigger, slower rise that hangs in the air and shakes like a level-up
+    y = -70 * (1 - Math.exp(-s * 3.2));
+    if (ms > 120 && ms < 900) { x += Math.sin(ms / 22) * 3 * (1 - ms / 900); y += Math.cos(ms / 17) * 2 * (1 - ms / 900); }
+    p.el.style.filter = `brightness(${(1.1 + 0.25 * Math.sin(ms / 70)).toFixed(2)})`;   // gold glints
+  }
+  const w0 = p.el.offsetWidth || 1, h0 = p.el.offsetHeight || 1, sc = Math.min(punch * p.size, (vw - 16) / w0), half = w0 * sc / 2;
+  const cx = half * 2 >= vw - 12 ? vw / 2 : clamp(gx + x, half + 6, vw - half - 6), cy = Math.max(gy + y, h0 * sc + 4);
+  p.el.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px) translate(-50%, -100%) scale(${sc.toFixed(3)})`;
+  p.el.style.opacity = k < 0.7 ? 1 : (1 - k) / 0.3;
 }
 const _lv = new V3(); function _lookOf(s) { return _lv.set(s.x, 1.2, s.z); }
 // ================================================================ boot
@@ -350,7 +364,7 @@ document.getElementById('langBtn').addEventListener('click', () => setLang(zh() 
 { const q = new URLSearchParams(location.search); if (!q.has('selftest') && !q.has('shot')) Object.assign(S, todayStart(new Date())); }   /* owner: the gym opens today; tests and screenshots keep 1 Jun 2027 */
 setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshPending();
 goOn = true; refreshGo();
-if (introWanted()) { goOn = false; refreshGo(); if (!resumeSaved()) openIntro(); }   /* a saved gym carries on; otherwise start by building (Plan 10) */
+if (introWanted()) { goOn = false; refreshGo(); if (!resumeSaved()) openIntro(); else frameHall(); }   /* a saved gym carries on; otherwise start by building (Plan 10) */
 if (window.innerWidth < 860) panel.classList.add('closed');
 if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('700 22px Silkscreen'), document.fonts.load('16px Digits', '0123456789')]).then(() => { drawPriceBoard(true); paintSign(); drawWhiteboard(A ? A.wb : 0); drawPRBoard(); }).catch(() => {});
 function fastForward(gymSeconds) { const n = Math.round(gymSeconds / STEP); for (let i = 0; i < n && !A.done; i++) simStep(); }
@@ -507,9 +521,10 @@ const SELFTESTS = {
       return { ok: kept && asks && wiped && fresh, detail: { kept, asks, wiped, fresh, text: W.setup.textContent } }; }
     finally { setupRun(); refreshPending(); }
   },
-  rearrangeKeepsZoom() {   // evaluation 2026-11-20: closing Rearrange gives the view back as it was
-    try { setupRun(); view.zoomT = 2.2; view.target.set(3, 0, 1); openRearrange(); const moved = view.zoomT < 2.2; cancelBuild();
-      return { ok: moved && view.zoomT === 2.2 && view.target.x === 3 && view.target.z === 1, detail: { moved, zoom: view.zoomT, x: view.target.x, z: view.target.z } }; }
+  rearrangeKeepsZoom() {   // evaluation 2026-11-20: closing Rearrange gives the view back as it was; judge 2026-11-20: opening it frames the hall (it never zooms out past the fit)
+    try { setupRun(); view.zoomT = 2.2; view.target.set(3, 0, 1); openRearrange(); const fit = Math.max(BUILD_ZOOM(), hallFitZoom()), framed = view.zoomT === fit && Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2) < 0.01; cancelBuild();
+      const back = view.zoomT === 2.2 && view.target.x === 3 && view.target.z === 1; view.zoomT = 0.65; openRearrange(); const inNotOut = view.zoomT > 0.65; cancelBuild();
+      return { ok: framed && back && inNotOut && view.zoomT === 0.65, detail: { framed, fit, back, inNotOut, zoom: view.zoomT, x: view.target.x, z: view.target.z } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
   quietHoursRunFast() {   // evaluation 2026-11-20: with nobody about and nobody due for ten minutes the clock runs fast; with people in, at the chosen speed
@@ -1056,7 +1071,7 @@ const SELFTESTS = {
     const keep = JSON.parse(JSON.stringify(S));
     try { skimDays(30, true); fastForward(30 * 3600); nextMonth(); skimDays(31); fastForward(30 * 3600); nextMonth(); fastForward(10 * 3600);
       BOOKS.period = 'year'; openBooks('Books'); const rows = document.querySelectorAll('#bkBody [data-k="yr"]').length, tot = (document.querySelector('#bkBody [data-k="yrEbitda"]') || {}).textContent;
-      const want = money(BIZ.months.reduce((t, m) => t + m.pnl.ebitda, 0) + projectMonth().total.ebitda); closeBooks();
+      const want = money(BIZ.months.reduce((t, m) => t + m.pnl.ebitda, 0) + projectMonth().mtd.ebitda); closeBooks();   /* judge 2026-11-20: so far = closed months + this month to date */
       return { ok: BIZ.months.length === 2 && rows === 3 && tot === want, detail: { months: BIZ.months.length, rows, tot, want } }; }
     finally { closeBooks(); BOOKS.period = 'today'; Object.assign(S, keep); }
   },
@@ -2158,6 +2173,172 @@ const SELFTESTS = {
       updateMonitors(); const after = bkNum(bkCell('Books', 'ebitda', 'today', true));
       return { ok: Math.abs((before - after) - 115 * 100 / 30.4) <= 1, detail: { before, after, want: 115 * 100 / 30.4 } };
     } finally { Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); }
+  },
+  // ---------------------------------------------------------------- judge round 3 (2026-11-20, phone, En + 中文): clarity and playability
+  popFits() {   // a closed day's pop fits a phone screen in both languages, keeps its minus sign, and shows the earned figure the result is computed from
+    const was = zh() ? 'zh' : 'en', res = {};
+    try { for (const lang of ['en', 'zh']) { setLang(lang);
+        const P = addBigPop({ fee: 1300000, earned: 1234567, ebitda: -987654, day: { dow: 'Sat', date: 21 } }, performance.now()), fit = [];
+        for (const [x, ms] of [[195, 0], [195, 100], [195, 400], [195, 2000], [385, 400], [4, 400]]) { placePop(P, x, 300, ms, 390); const r = P.el.getBoundingClientRect(); fit.push(r.width > 40 && r.left >= -0.5 && r.right <= 390.5); }
+        const t = P.el.textContent; res[lang] = { fit: fit.every(Boolean), figs: t.includes('+$1,234,567') && t.includes('−$988,000'), word: lang === 'en' ? /EARNED/.test(t) && !/TAKINGS/.test(t) : /收入/.test(t), t };
+        P.el.remove(); PAYS.splice(PAYS.indexOf(P), 1); }
+      return { ok: ['en', 'zh'].every(l => res[l].fit && res[l].figs && res[l].word), detail: res }; }
+    finally { setLang(was); for (const p of PAYS) p.el.remove(); PAYS.length = 0; }
+  },
+  popsOneAtATime() {   // closing a week shows each day's pop after the one before, never stacked; a notice card clears them
+    try { setupRun(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; closeEarlySync('week'); const n = BIG_POPS.length; updatePays();
+      const s = PAYS.filter(p => p.sum).sort((a, b) => a.born - b.born), apart = s.every((p, i) => !i || p.born >= s[i - 1].born + s[i - 1].dur - 1);
+      const span = s.length ? s[s.length - 1].born + s[s.length - 1].dur - s[0].born : 0;
+      showNote('<p>x</p>', [['ok']]); updatePays(); const cleared = PAYS.filter(p => p.sum).length === 0; hideNote();
+      return { ok: n >= 2 && s.length === n && apart && span <= 9000 && cleared, detail: { n, shown: s.length, apart, span, cleared } }; }
+    finally { hideNote(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
+  },
+  dayEndCard() {   // the day ends on a card: the result in one line, visits, a big Next day button; the next morning and the next card say who joined and left overnight
+    const was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); updateMonitors(); const c0 = document.getElementById('dayCard'), before = !c0 || c0.hidden;
+      fastForward(30 * 3600); updateMonitors(); const c = document.getElementById('dayCard'), up = !!c && !c.hidden, t1 = c ? c.textContent : '';
+      const has = t1.includes('$' + roundAbout(A.pnl.ebitda).toLocaleString('en-US')) && /lost|made|broke even/i.test(t1) && t1.includes(money(A.pnl.net)) && t1.includes(`${A.checkins} visits`);
+      const btn = c && c.querySelector('button[data-day="next"]'), big = !!btn && btn.getBoundingClientRect().height >= 44 && /Next day/.test(btn.textContent);
+      const r = c.getBoundingClientRect(), onScreen = r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+      document.getElementById('toast').innerHTML = ''; btn.click(); updateMonitors(); const moved = M.dayI === 1 && c.hidden, rec = M.days[0], inN = rec.joined + rec.returned, morning = document.getElementById('toast').textContent;
+      const told = morning.includes(`+${inN}`) && morning.includes(`−${rec.lapsed}`);
+      goOn = false; fastForward(30 * 3600); updateMonitors(); const t2 = c.textContent, overnight = !c.hidden && t2.includes(`+${inN}`) && t2.includes(`−${rec.lapsed}`) && t2.includes(String(M.pool.length));
+      setLang('zh'); updateMonitors(); const tz = c.textContent, zhOk = /下一天/.test(tz) && !/Next day|visits/.test(tz);
+      setLang('en'); closeEarlySync('month'); updateMonitors(); const last = /New month/.test(c.querySelector('button[data-day="next"]').textContent);
+      openBuild(); updateMonitors(); const offBuild = c.hidden; cancelBuild();
+      return { ok: before && up && has && big && onScreen && moved && told && overnight && zhOk && last && offBuild, detail: { before, up, has, big, onScreen, moved, told, overnight, zhOk, last, offBuild, t1: t1.slice(0, 200), morning, t2: t2.slice(0, 200), tz: tz.slice(0, 120) } }; }
+    finally { goOn = false; if (BUILD.on) cancelBuild(); setLang(was); setupRun(); refreshGo(); updateMonitors(); }
+  },
+  sheetTabsOpen() {   // phone sheet: a tab opens it, the handle is a real target and reopens the tab last used
+    try { const tab = (t) => panel.querySelector(`.tabs button[data-t="${t}"]`), h = document.getElementById('sheetHandle'); panel.classList.add('closed');
+      tab('Gym').click(); const opened = !panel.classList.contains('closed') && tab('Gym').classList.contains('on');
+      h.click(); const shut = panel.classList.contains('closed'); h.click();
+      const back = !panel.classList.contains('closed') && tab('Gym').classList.contains('on') && getComputedStyle(panel.querySelector('.grp[data-tab="Gym"]')).display !== 'none';
+      const hr = h.getBoundingClientRect(), tr0 = tab('Members').getBoundingClientRect(), tall = innerWidth >= 860 || (hr.height >= 24 && hr.bottom <= tr0.top + 1);
+      return { ok: opened && shut && back && tall, detail: { opened, shut, back, tall, h: hr.height, hb: hr.bottom, tabTop: tr0.top } }; }
+    finally { showTab('Run'); panel.classList.toggle('closed', innerWidth < 860); }
+  },
+  oneIncomeFigure() {   // one income figure on the HUD, the day's pop and the day-end card (earned, what the result is computed from); the desk's cash is labelled as paid at the desk, with the reason it differs
+    const was = zh() ? 'zh' : 'en', res = {};
+    try { runDay({}); const earned = money(A.pnl.net), pop = { fee: Math.round(A.pnl.takings), earned: Math.round(A.pnl.net), ebitda: Math.round(A.pnl.ebitda), day: { dow: A.dow, date: A.date } };
+      for (const lang of ['en', 'zh']) { setLang(lang); updateMonitors(); const hud = document.querySelector('#liveLine small').textContent, popT = bigPopHtml(pop).replace(/<[^>]+>/g, ' '), card = document.getElementById('dayCard').textContent;
+        openBooks('Today'); const desk = document.getElementById('bkBody').textContent; closeBooks();
+        res[lang] = { hud: hud.includes(earned), pop: popT.includes('+' + earned), card: card.includes(earned), deskFig: desk.includes(money(A.pnl.takings)),
+          desk: lang === 'en' ? /Paid at the desk today/.test(desk) && /paid up front/.test(desk) && !/Cash taken/.test(desk) : /今日櫃檯實收/.test(desk) && /預先付款|先付/.test(desk) && !/今日收現/.test(desk),
+          sameWord: lang === 'en' ? /earned/i.test(hud) && /EARNED/.test(popT) && /earned/i.test(card) : /收入/.test(hud) && /收入/.test(popT) && /收入/.test(card) }; }
+      setLang('en'); setupRun(); BIG_POPS.length = 0; const w = closeEarlySync('day'), pushed = BIG_POPS[0] && BIG_POPS[0].earned === Math.round(A.pnl.net) && Math.abs(w.earned - A.pnl.net) < 1e-6;
+      const ok = ['en', 'zh'].every(l => Object.values(res[l]).every(Boolean)) && pushed;
+      return { ok, detail: { res, pushed, differ: Math.round(A.pnl.net) !== Math.round(A.pnl.takings) } }; }
+    finally { setLang(was); closeBooks(); BIG_POPS.length = 0; setupRun(); updateMonitors(); }
+  },
+  monthCardFair() {   // the month card compares months of different length per day and says so, never shows a break-even count that contradicts the result, and reconciles the cash change with the result
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); Object.assign(S, { year: 2026, month: 'Nov', startDay: 20 }); setupRun(); closeEarlySync('month'); nextMonth(); closeEarlySync('month'); nextMonth();
+      const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a); const t = box.textContent, r = monthReport(b, a, a.cashEnd);
+      const vs = (box.querySelector('[data-k="vs"]') || {}).textContent || '', perDay = /a day/.test(vs) && vs.includes(`${a.days} days`) && vs.includes(money(Math.round(b.pnl.ebitda / b.days))) && (r.better ? /better/ : /worse/).test(vs);
+      const be = (box.querySelector('[data-k="breakEven"]') || {}).textContent || '', nums = (be.match(/\d+/g) || []).map(Number), fair = !be || (nums.length >= 2 && (b.pnl.ebitda < 0 ? nums[0] > nums[1] : nums[0] <= nums[1]) && /averaged/.test(be));
+      const cw = (box.querySelector('[data-k="cashWhy"]') || {}).textContent || '', loan = b.interest + b.principal, rec = cw.includes(moneyK(b.cashEnd - a.cashEnd)) && cw.includes(moneyK(-loan)) && /loan/.test(cw) && Math.abs(r.cash.change - (r.cash.result + r.cash.loan + r.cash.tax + r.cash.other)) < 1;
+      box.innerHTML = monthCardHtml(a, null); const first = box.textContent, noVs = !box.querySelector('[data-k="vs"]');
+      setLang('zh'); box.innerHTML = monthCardHtml(b, a); const z = box.textContent, zhOk = /每天/.test(z) && !/a day|loan payment|averaged/.test(z);
+      return { ok: perDay && fair && rec && noVs && zhOk, detail: { perDay, vs, fair, be, rec, cw, noVs, zhOk, days: [a.days, b.days], eb: [Math.round(a.pnl.ebitda), Math.round(b.pnl.ebitda)] } }; }
+    finally { setLang(was); hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  rentFreeSaid() {   // the first month's free rent is said where it matters: the cost screen, the statement's rent line, and the first month's card (with the rent that starts next month)
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); const cost = document.getElementById('build').textContent, onCost = /first month rent-free/i.test(cost);
+      document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click(); INTRO.phase = 'off'; goOn = false; const rent = S.area * S.rentRate;
+      fastForward(12 * 3600 - A.t); BOOKS.period = 'today'; BOOKS.full = true; openBooks('Books'); updateBooks(true); const row = document.querySelector('#bkBody [data-k="fx_rent"]').closest('tr').textContent, onRow = /rent-free/.test(row) && row.includes(moneyK(rent)); closeBooks();
+      closeEarlySync('month'); nextMonth(); const box = document.createElement('div'); box.innerHTML = monthCardHtml(BIZ.months[0], null); const nt = (box.querySelector('[data-k="rentNext"]') || {}).textContent || '', onCard = /rent/i.test(nt) && nt.includes(moneyK(rent)) && !box.querySelector('[data-k="breakEven"]');
+      updateMonitors(); fastForward(12 * 3600 - A.t); BOOKS.period = 'today'; openBooks('Books'); updateBooks(true); const row2 = document.querySelector('#bkBody [data-k="fx_rent"]').closest('tr').textContent, later = !/rent-free/.test(row2); closeBooks();
+      closeEarlySync('month'); nextMonth(); box.innerHTML = monthCardHtml(BIZ.months[1], BIZ.months[0]); const gone = !box.querySelector('[data-k="rentNext"]');
+      setLang('zh'); box.innerHTML = monthCardHtml(BIZ.months[0], null); const zhOk = /免租/.test(box.textContent);
+      return { ok: onCost && onRow && onCard && later && gone && zhOk, detail: { onCost, onRow, row, onCard, nt, later, gone, zhOk } }; }
+    finally { setLang(was); closeBooks(); BOOKS.full = false; BOOKS.tab = 'Today'; goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); if (BUILD.on) cancelBuild(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
+  },
+  tipReadsChanges() {   // the month card's tip names what each change did this month, with numbers, and never recommends what the player already did
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); closeEarlySync('month'); nextMonth(); Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1500 }); applyPublished(); closeEarlySync('month'); nextMonth();
+      const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a); const tip = (box.querySelector('[data-k="tip"]') || {}).textContent || '';
+      const names = b.changes.some(c => c.k === 'perMinOn') && tip.includes(String(b.lapsed)) && tip.includes(String(a.lapsed)) && /left/.test(tip), noRepeat = !/monthly pass brings|a monthly pass/.test(tip.replace(/After[^.]*\./, ''));
+      Object.assign(S, { perMinOn: true, monthlyOn: true, monthlyPrice: 1500 }); const quiet = monthTip({ ...a, changes: [] }, null, { ...settingSnap(), monthlyOn: true }), q = quiet ? quiet.en : '', noPass = !/monthly pass brings|or a monthly pass/.test(q);
+      setLang('zh'); box.innerHTML = monthCardHtml(b, a); const z = (box.querySelector('[data-k="tip"]') || {}).textContent || '', zhOk = z.includes(String(b.lapsed)) && !/[a-z]{4,}/.test(z);
+      return { ok: names && noRepeat && noPass && zhOk, detail: { names, noRepeat, noPass, zhOk, tip, q, z, changes: b.changes, lapsed: [a.lapsed, b.lapsed] } }; }
+    finally { setLang(was); hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  goalMonthCount() {   // the members goal says when its three months start if the gym opened late in a month, so "month 1 of 3" is not shown for two months running
+    const keep = JSON.parse(JSON.stringify(S)), kg = GOAL.key;
+    try { Object.assign(S, { year: 2026, month: 'Nov', startDay: 20, build: 'new', monthsOpen: 0 }); setupRun(); GOAL.key = 'members500'; const t0 = goalNow().text.en;
+      closeEarlySync('month'); nextMonth(); const t1 = goalNow().text.en;
+      Object.assign(S, { year: 2026, month: 'Nov', startDay: 1, build: 'new', monthsOpen: 0 }); setupRun(); GOAL.key = 'members500'; const t2 = goalNow().text.en;
+      return { ok: !/month 1 of 3/.test(t0) && /start/.test(t0) && /month 1 of 3/.test(t1) && /month 1 of 3/.test(t2), detail: { t0, t1, t2 } }; }
+    finally { GOAL.key = kg; Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  plainWords() {   // player-facing English has no developer phrases; Setup is called Start over; a month close is stamped as a month, in plain words; the sensitivity table says which gym it describes
+    const was = zh() ? 'zh' : 'en', keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); refreshPending(); const setup = W.setup.textContent, run = document.getElementById('runGrp').textContent; let all = panel.innerText;
+      BOOKS.full = true; BOOKS.period = 'month'; for (const t of BOOK_TABS) { openBooks(t); updateBooks(true); all += ' ' + document.getElementById('books').textContent; }
+      const sens = document.querySelector('#bkBody [data-k="sens"]'); BOOKS.tab = 'Books'; openBooks('Books'); updateBooks(true); const sec = document.querySelector('#bkBody [data-k="sens"]').closest('section').textContent, labelled = /full, established gym/.test(sec); closeBooks();
+      const bad = (all.match(/below EBIT|parameter-book|base case|at base\b|履約保證|\bSetup\b|Behaviour sliders/g) || []);
+      const m = closeEarlySync('month'); finishClose(m, 'month', 0); const stamp = (document.querySelector('#bkBody .stamp') || {}).textContent || '', line = document.getElementById('bkBody').textContent;
+      const month = /Month closed/.test(stamp) && !/Day closed|EBITDA/.test(stamp) && stamp.includes(money(m.ebitda)) && !/takings/i.test(line.slice(0, 400));
+      return { ok: setup === 'Start over' && !bad.length && labelled && month, detail: { setup, bad, labelled, month, stamp } }; }
+    finally { setLang(was); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; setupRun(); refreshPending(); }
+  },
+  zhReads() {   // Chinese mode: money in 萬 where English uses K / M, natural labels on the panel, and Chinese display names (the member data keeps its own)
+    const was = zh() ? 'zh' : 'en';
+    try { setupRun(); setLang('en'); const en = [moneyK(6.6e6), moneyK(187000)].join();
+      setLang('zh'); const m = [moneyK(6.6e6), moneyK(187000), moneyK(1.25e8), moneyK(9500), moneyK(-4218800), moneyK(850), moneyK(10470000)], wantM = ['$660 萬', '$18.7 萬', '$1.25 億', '$9,500', '−$422 萬', '$850', '$1,047 萬'];
+      const pt = panel.innerText, dev = (pt.match(/執行|單步|設定|行為類滑桿/g) || []);
+      const n1 = trName('Maya C.'), n2 = trName('Maya D.'), n3 = trName('Teo C.'), c1 = trName('Coach Mara'), cjk = (s) => /^[一-鿿]{2,4}$/.test(s);
+      const names = cjk(n1) && cjk(n2) && cjk(n3) && n1 !== n2 && n1 !== n3 && n1 === trName('Maya C.') && /^[一-鿿]{1,3} ?教練$/.test(c1) && /^[A-Z][a-z]+ [A-Z]\.$/.test(M.pool[0].name);
+      BOOKS.tab = 'Members'; openBooks('Members'); const mem = [...document.querySelectorAll('#bkBody tr[data-k="risk"] td:first-child')].map(td => td.firstChild.textContent), listed = mem.length > 0 && mem.every(cjk); closeBooks();
+      setLang('en'); const back = trName('Maya C.') === 'Maya C.';
+      return { ok: en === '$6.6M,$187K' && m.join() === wantM.join() && !dev.length && names && listed && back, detail: { en, m, dev, n1, n2, n3, c1, mem: mem.slice(0, 3), back } }; }
+    finally { setLang(was); closeBooks(); BOOKS.tab = 'Today'; }
+  },
+  yearFitsPhone() {   // the Year view fits a phone (nothing cut off) and its So far row is closed months plus this month to date, not the projection
+    const keep = JSON.parse(JSON.stringify(S)), b = document.getElementById('books');
+    try { setupRun(); closeEarlySync('month'); nextMonth(); fastForward(15 * 3600 - A.t); BOOKS.period = 'year'; openBooks('Books'); b.style.width = '390px'; b.style.right = 'auto'; updateBooks(true);
+      const lim = b.getBoundingClientRect().right - 8, cells = [...document.querySelectorAll('#bkBody table.yr td')], overT = cells.filter(td => td.getBoundingClientRect().right > lim + 0.5 || td.scrollWidth > td.clientWidth + 1).map(td => td.textContent), over = overT.length;
+      const wrap = document.querySelector('#bkBody table.yr').parentNode, noScroll = wrap.scrollWidth <= wrap.clientWidth + 1;
+      const tot = document.querySelector('#bkBody [data-k="yrEbitda"]').textContent, want = money(BIZ.months[0].pnl.ebitda + projectMonth().mtd.ebitda), proj = money(BIZ.months[0].pnl.ebitda + projectMonth().total.ebitda);
+      const tag = getComputedStyle(document.querySelector('#bkBody .tag')).whiteSpace === 'nowrap';
+      return { ok: innerWidth < 860 && cells.length >= 15 && !over && noScroll && tot === want && want !== proj && tag, detail: { w: innerWidth, cells: cells.length, over, overT, noScroll, tot, want, proj, tag } }; }
+    finally { b.style.width = ''; b.style.right = ''; closeBooks(); BOOKS.period = 'today'; BOOKS.tab = 'Today'; Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  phoneLayoutBits() {   // the title clears the toolbar at phone width; a Gone home card does not outlive the day; with a pass on, the desk says pass holders do not pay at the desk
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); const h1 = document.querySelector('#hud h1').getBoundingClientRect(), vb = document.getElementById('viewbar').getBoundingClientRect(), title = innerWidth >= 860 || h1.width + vb.width + 24 <= 390;
+      fastForward(9 * 3600 - A.t); const a = AGENTS.find(q => q.visible && q.kind === 'member'); onAgentPicked(a); a.state = 'gone'; a.visible = false; updateCard(); const card = document.getElementById('card'), shown = card.style.display !== 'none' && /Gone home/.test(card.textContent);
+      fastForward(30 * 3600); nextDay(); updateMonitors(); updateCard(); const cleared = card.style.display === 'none' && !followA;
+      Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600); openBooks('Today'); const t = document.getElementById('bkBody').textContent, pass = A.passVisits > 0 && !/the two meet at closing/.test(t) && /do not pay at the desk/.test(t) && t.includes(`${A.passVisits}`); closeBooks();
+      Object.assign(S, { monthlyOn: false }); setupRun(); fastForward(30 * 3600); openBooks('Today'); const t2 = document.getElementById('bkBody').textContent, plain = !/the two meet at closing/.test(t2) && /pays by the minute on the way out/.test(t2); closeBooks();
+      return { ok: title && shown && cleared && pass && plain, detail: { title, h1: h1.width, vb: vb.width, shown, cleared, pass, plain } }; }
+    finally { setLang(was); clearFollow(); closeBooks(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  hallFramed() {   // the camera frames the hall: a small gym is shown bigger than a medium one, and the hall fills most of the view's width or height
+    const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, x: view.target.x, zz: view.target.z }, out = {};
+    try { for (const [k, w, d] of [['S', 10, 8], ['M', 16, 10]]) { const counts = presetCounts(w, d); Object.assign(S, counts, { hallW: w, hallD: d, layout: autoBuild(w, d, counts) }); setupRun(); frameHall();
+        const sp = hallSpan(), H = view.baseH / view.zoomT, Wv = H * aspect, band = innerWidth < 860 ? 0.62 : 0.8; out[k] = { zoom: +view.zoomT.toFixed(3), wFrac: +(sp.w / Wv).toFixed(3), hFrac: +(sp.h / (H * band)).toFixed(3), cx: Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2) < 0.01 }; }
+      const fills = (o) => o.cx && o.wFrac <= 1.001 && o.hFrac <= 1.001 && Math.max(o.wFrac, o.hFrac) >= 0.85;
+      return { ok: fills(out.S) && fills(out.M) && out.S.zoom > out.M.zoom * 1.2, detail: out }; }
+    finally { view.zoomT = v0.z; view.target.set(v0.x, 0, v0.zz); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setHall(); setupRun(); }
+  },
+  hudCash() {   // cash sits on the HUD, compact, in both languages
+    const was = zh() ? 'zh' : 'en';
+    try { setupRun(); fastForward(10 * 3600 - A.t); setLang('en'); updateMonitors(); const en = document.getElementById('liveLine').textContent, okEn = en.includes('Cash ' + moneyK(liveCash()));
+      setLang('zh'); updateMonitors(); const z = document.getElementById('liveLine').textContent, okZh = z.includes('現金 ' + moneyK(liveCash())) && /萬/.test(z);
+      return { ok: okEn && okZh, detail: { en, z } }; }
+    finally { setLang(was); updateMonitors(); }
+  },
+  borrowSix() {   // the money step offers one tap out of a thin start: borrow enough for six months; the defaults themselves are untouched
+    const keep = { own: S.finOwn, loan: S.finLoan };
+    try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click();
+      const def = S.finOwn === FIN.own && S.finLoan === FIN.loan && FIN.own === 6e6 && FIN.loan === 6e6, w0 = document.querySelector('#build [data-k="runway"]').classList.contains('warn'), b = document.querySelector('#build [data-fin6]'), loan0 = S.finLoan;
+      if (b) b.click(); const w1 = document.querySelector('#build [data-k="runway"]'), c = buildCostNow(), pay = loanPayment(S.finLoan, S.finRate, S.finYears), run = runwayMonths(S.finOwn + S.finLoan - c.capex - c.deposit, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));
+      const fixed = !!b && S.finLoan > loan0 && run >= 6 && run < 7 && !w1.classList.contains('warn') && !document.querySelector('#build [data-fin6]');
+      return { ok: def && w0 && fixed, detail: { def, w0, btn: b ? b.textContent : null, loan: S.finLoan, run } }; }
+    finally { if (BUILD.on) cancelBuild(); S.finOwn = keep.own; S.finLoan = keep.loan; }
   },
   mixSumsTo100() { const m = Object.values(S.mix); return { ok: m.reduce((a, b) => a + b, 0) === 100 && m.every(Number.isInteger), detail: S.mix }; },
   resultsText() {

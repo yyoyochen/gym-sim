@@ -170,14 +170,14 @@ function buildPanel() {
   const tabs = panel.querySelector('.tabs');
   for (const t of ['Run', 'Day', 'Members', 'Gym', 'Plots']) { const b = el('button', { role: 'tab' }, tr(t)); b.dataset.t = t; b.addEventListener('click', () => { showTab(t); panel.classList.remove('closed'); }); tabs.appendChild(b); }
   { const bk = el('button', { 'data-t': 'Books', class: 'bkTab' }, tx('P&L', '損益表')); bk.addEventListener('click', () => openBooks()); tabs.appendChild(bk); }   /* phones: the books without finding the desk (Plan 10) */
-  panel.querySelector('#sheetHandle').addEventListener('click', () => panel.classList.toggle('closed'));
+  panel.querySelector('#sheetHandle').addEventListener('click', () => { panel.classList.toggle('closed'); if (!panel.classList.contains('closed')) showTab(SHEET_TAB); });   /* judge 2026-11-20: the handle reopens the tab last used */
   showTab('Run');
   // wiring
   W.setup.addEventListener('click', () => { if (closing) return;
     const played = !!M && !!BIZ && (M.dayI > 0 || BIZ.monthIndex > 0), armed = W.setup.dataset.armed && performance.now() < +W.setup.dataset.armed;
-    if (played && !armed) { W.setup.dataset.armed = performance.now() + 5000; W.setup.textContent = tx('Start over?', '重新開始？'); W.setup.classList.add('need'); setTimeout(() => { if (W.setup.dataset.armed && performance.now() >= +W.setup.dataset.armed) { delete W.setup.dataset.armed; refreshPending(); } }, 5100); showToast(tx('Setup restarts the business from day one. Tap again to confirm.', '「設定」會讓整間健身房從第一天重來。再點一次確認。')); return; }
-    delete W.setup.dataset.armed; goOn = false; setupFromPanel(); refreshGo(); refreshPending(); clearFollow(); showToast(tx(`Setup · seed ${S.seed}`, `設定 · 種子 ${S.seed}`)); });
-  W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) { syncSetupWidgets(); refreshPending(); showMonthCard(); return; } refreshPending(); } goOn = !goOn; refreshGo(); });   /* evaluation 2026-11-20: a new month opens on last month's report */   // Next day; after the last day the business carries into the next month (D9)
+    if (played && !armed) { W.setup.dataset.armed = performance.now() + 5000; W.setup.textContent = tx('Sure? Tap again', '確定？再點一次'); W.setup.classList.add('need'); setTimeout(() => { if (W.setup.dataset.armed && performance.now() >= +W.setup.dataset.armed) { delete W.setup.dataset.armed; refreshPending(); } }, 5100); showToast(tx('Start over wipes this business and opens again from day one. Tap again to confirm.', '「重新開始」會清掉這間健身房，從第一天重來。再點一次確認。')); return; }
+    delete W.setup.dataset.armed; goOn = false; setupFromPanel(); refreshGo(); refreshPending(); clearFollow(); showToast(tx('Started over: a new business from day one', '已重新開始：從第一天開一間新的')); });
+  W.go.addEventListener('click', () => { if (closing) return; if (A && A.done) { if (!nextDay() && nextMonth()) { syncSetupWidgets(); refreshPending(); showMonthCard(); return; } refreshPending(); if (typeof morningNews === 'function') morningNews(); } goOn = !goOn; refreshGo(); });   /* evaluation 2026-11-20: a new month opens on last month's report */   // Next day; after the last day the business carries into the next month (D9)
   W.step.addEventListener('click', () => { if (closing || !A || A.done) return; for (let i = 0; i < 60 / STEP; i++) simStep(); });
   { const sb = document.getElementById('spdBtn'); if (sb && !sb.dataset.wired) { sb.dataset.wired = '1'; sb.addEventListener('click', () => { nextSpeed(); showToast(tx(`Speed ${S.speed}×`, `速度 ${S.speed}×`)); }); } syncSpeed(); }
   { const bh = document.getElementById('booksHint'); if (bh && !bh.dataset.wired) { bh.dataset.wired = '1'; bh.addEventListener('click', () => openBooks()); } }   /* the hint is a button too */
@@ -196,12 +196,12 @@ function closeEarly(kind) {
   };
   setTimeout(step, 0);
 }
-function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
+function finishClose(out, kind, delay = Math.max(1800, kind === 'week' ? sumNext - performance.now() + 400 : 0)) {   /* a week's pops come one at a time (sumNext: when the last one ends); the P&L opens after it */   /* owner 2026-11-15: a week or month close opens the P&L on its summary: every day for a week, the P&L by category for the month */
   BOOKS.closed = { ...out, kind, dayI: M.dayI }; refreshGo(); refreshPending(); persistSave(true);
   if (A && A.payQ) A.payQ.length = 0;
   if (kind === 'month' && out.days) {   /* owner 2026-11-16: one pop of the month's takings; it glows only for a new all-time best month */
     const tot = M.days.reduce((t, d) => t + d.pnl.takings, 0) + A.pnl.takings, prev = Math.max(0, ...BIZ.months.map(m => (m.pnl && m.pnl.takings) || 0));
-    BIG_POPS.push({ fee: Math.round(tot), ebitda: Math.round(M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda), month: M.cfg.month, best: prev > 0 && tot > prev }); }
+    BIG_POPS.push({ fee: Math.round(tot), earned: Math.round(M.days.reduce((t, d) => t + d.pnl.net, 0) + A.pnl.net), ebitda: Math.round(M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda), month: M.cfg.month, best: prev > 0 && tot > prev }); }
   if (kind !== 'day' && out.days) { if (delay) setTimeout(() => { if (!BOOKS.open && !closing) openBooks('Today'); }, delay); else openBooks('Today'); }   /* after the pop has had its moment */
   else if (BOOKS.open) updateBooks(true);
 }
@@ -210,7 +210,8 @@ function finishClose(out, kind, delay = 1800) {   /* owner 2026-11-15: a week or
 function lockBuiltSliders() { for (const k of ['racks', 'plats', 'benches']) { const r = W['w_' + k]; if (r && r.inp) { r.inp.disabled = !!S.hallW; r.inp.value = S[k]; r.out.textContent = r.fmt(S[k]); r.w.title = S.hallW ? tx('Set by your build: use Build a gym', '由你的設計決定：請用「設計健身房」') : ''; } } }
 function syncSetupWidgets() { lockBuiltSliders(); const m = W.w_month; if (m && m.sel) m.sel.value = S.month; const o = W.w_monthsOpen; if (o && o.inp) { o.inp.value = S.monthsOpen; o.out.textContent = o.fmt(S.monthsOpen); } }
 function setupFromPanel() { setupRun(); }
-function showTab(t) { panel.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); panel.querySelectorAll('.grp[data-tab]').forEach(g => g.classList.toggle('show', g.dataset.tab === t)); }
+let SHEET_TAB = 'Run';
+function showTab(t) { SHEET_TAB = t; panel.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); panel.querySelectorAll('.grp[data-tab]').forEach(g => g.classList.toggle('show', g.dataset.tab === t)); }
 function refreshGo() { W.go.textContent = goOn ? tr('Pause') : A && A.done ? tr(monthComplete() ? 'New month' : 'Next day') : A && A.t < A.open ? tx('Start the day', '開始營業') : tr('Go'); W.go.classList.toggle('on', goOn); }
 function refreshPending() {
   if (!A) return;
@@ -264,7 +265,7 @@ function syncCosts() { if (!A || !A.pnl) return; const key = `${S.area}|${S.rent
 function setText(id, v) { const e = document.getElementById(id); if (e && e.textContent !== String(v)) e.textContent = v; }
 function updateMonitors() {
   if (!A) return;
-  syncCosts(); drawPriceBoard(); setText('dayLbl', dayLabel()); updateLiveLine(); if (typeof updateGoalLine === 'function') updateGoalLine(); updateBooks();
+  syncCosts(); drawPriceBoard(); setText('dayLbl', dayLabel()); updateLiveLine(); if (typeof updateGoalLine === 'function') updateGoalLine(); updateBooks(); if (typeof syncDayCard === 'function') syncDayCard();
   setText('mClock', hhmm(A.t)); setText('hudClock', `${hhmm(A.t)} · ${tx(`${A.inside} inside`, `館內 ${A.inside} 人`)}${A.closed ? (A.closedWhy === 'rearrange' ? tx(' · closed: rearranging', ' · 重新擺設休館') : A.closedWhy === 'closure' ? tx(' · closed', ' · 休館') : tx(' · closed: typhoon', ' · 颱風停班停課，休館')) : A.done ? tx(' · day complete', ' · 今日結束') : (A.t < A.open ? tx(` · opens ${hhmm(A.open)}`, ` · ${hhmm(A.open)} 開門`) : A.t > T_CLOSE ? tx(' · closed', ' · 已打烊') : '')}`);
   setText('mIn', A.inside);
   let waiting = A.outQ.length; for (const s of STATIONS) waiting += s.queue.length; setText('mWait', waiting);
@@ -323,6 +324,7 @@ function clearFollow() { followA = null; focusS = null; view.follow = null; card
 function updateCard() {
   if (followA) {
     const a = followA;
+    if (!a.visible && a.state === 'gone' && (!A || (A.members.indexOf(a) < 0 && AGENTS.indexOf(a) < 0) || (a.goneAt = a.goneAt || performance.now()) < performance.now() - 6000)) { clearFollow(); return; }   /* judge 2026-11-20: a Gone home card goes after a moment and never outlives the day */
     if (!a.visible && a.state === 'gone') { cardEl.innerHTML = `<h3><span>${trName(a.name)}</span><button id="cardX">×</button></h3><div class="now">${tr('Gone home')}</div>`; }
     else {
       const e = a.kind === 'member' && a.state === 'ex' ? a.prog[a.exI] : null;
@@ -334,7 +336,7 @@ function updateCard() {
         now = (zh() ? { wait: `等待${ln} · ${Math.round((A.t - e.waitT) / 60)}/${S.patience} 分`, walk: `走向${ln}`, setup: `裝槓片 · ${ln}`, spotwait: '等待保護者', set: `${ln} · 第 ${sn} 組${kg}${rp ? ` · 第 ${rp} 下` : ''}`, rest: `休息中 · 下一組：${ln} 第 ${sn} 組${e.shared ? '（輪流使用）' : ''}`, cardio: `${ln} · 剩 ${Math.max(0, Math.ceil((e.endT - A.t) / 60))} 分`, mat: '伸展中', finish: '卸下槓片' }
           : { wait: `Waiting for ${ln} · ${Math.round((A.t - e.waitT) / 60)}/${S.patience} min`, walk: `Walking to ${ln}`, setup: `Loading · ${ln}`, spotwait: 'Waiting for a spotter', set: `${ln} · set ${sn}${kg}${rp ? ` · rep ${rp}` : ''}`, rest: `Resting · ${ln} set ${sn} next${e.shared ? ' (working in)' : ''}`, cardio: `${ln} · ${Math.max(0, Math.ceil((e.endT - A.t) / 60))} min left`, mat: 'Stretching', finish: 'Stripping the bar' })[e.st] || ln;
       }
-      if (a.kind !== 'member') now = a.kind === 'cleaner' ? tr(a.task ? ({ strip: 'Stripping a loaded bar', db: 'Returning stray dumbbells', wipe: 'Wiping down equipment' })[a.task.kind] : 'On patrol') : a.kind === 'staff' ? tr('Front desk') : a.kind === 'pcoach' ? (a.outside ? tx(`Coaching ${a.client.name} · renting the floor`, `指導 ${a.client.name} · 場租中`) : tx(`Coaching ${a.client.name}`, `指導 ${a.client.name}`)) : tr(a.spotFor ? 'Spotting' : 'Coaching the floor');
+      if (a.kind !== 'member') now = a.kind === 'cleaner' ? tr(a.task ? ({ strip: 'Stripping a loaded bar', db: 'Returning stray dumbbells', wipe: 'Wiping down equipment' })[a.task.kind] : 'On patrol') : a.kind === 'staff' ? tr('Front desk') : a.kind === 'pcoach' ? (a.outside ? tx(`Coaching ${a.client.name} · renting the floor`, `指導 ${trName(a.client.name)} · 場租中`) : tx(`Coaching ${a.client.name}`, `指導 ${trName(a.client.name)}`)) : tr(a.spotFor ? 'Spotting' : 'Coaching the floor');
       const arch = a.kind === 'pcoach' && a.outside ? tx('Outside coach', '外部教練') : a.arch === 'client' && a.coach && a.coach.outside ? tx('Client (outside coach)', '學員（外部教練）') : tr({ power: 'Powerlifter', oly: 'Olympic lifter', body: 'Bodybuilder', beginner: 'Beginner', client: 'Client (with coach)' }[a.arch] || ({ staff: 'Staff', cleaner: 'Cleaner', coach: 'Head coach', pcoach: 'Personal coach' })[a.kind]);
       const prog = a.prog ? '<ol>' + a.prog.map((p, i) => `<li class="${i < a.exI ? 'done' : i === a.exI && a.state === 'ex' ? 'cur' : ''}">${tr(LIFTS[p.lift].name)}${p.kind === 'cardio' || p.kind === 'mat' ? ` ${p.dur}${MIN()}` : ` ${p.sets.length}×${p.sets[p.sets.length - 1].reps}`}</li>`).join('') + '</ol>' : '';
       cardEl.innerHTML = `<h3><span>${trName(a.name)}</span><button id="cardX" aria-label="${tr('Stop following')}">×</button></h3><div style="color:var(--muted)">${arch}${a.arr ? tx(` · arrived ${hhmm(a.arr)}`, ` · ${hhmm(a.arr)} 到場`) : ''}</div><div class="now">${now}</div>${prog}`;

@@ -14,4 +14,8 @@ test('Chinese: the same three in plain words', () => {
   assert.equal(zhCtx.ZH['Monitors'], '現在');
   assert.equal(zhCtx.ZH['Plots'], '圖表');
 });
-test('other words are unchanged', () => { assert.equal(en('Setup'), 'Setup'); assert.equal(en('Step'), 'Step'); });
+test('Setup says what it does (it restarts the business) and Step says how far it steps, in both languages', () => {
+  assert.equal(en('Setup'), 'Start over'); assert.equal(en('Step'), '+1 min'); assert.equal(en('Go'), 'Go');
+  assert.equal(zhCtx.ZH['Setup'], '重新開始'); assert.equal(zhCtx.ZH['Step'], '+1 分鐘'); assert.equal(zhCtx.ZH['Run'], '營運');
+  for (const k in zhCtx.ZH) assert.ok(!/「設定」|行為類滑桿|單步|執行/.test(zhCtx.ZH[k]), k);
+});

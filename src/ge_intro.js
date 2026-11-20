@@ -44,14 +44,14 @@ function hideGoalCard() { const c = document.getElementById('goalCard'); if (c) 
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#goalCard button[data-goal]'); if (!b) return;
   const keep = !b.dataset.goal && document.getElementById('goalCard').dataset.mode === 'change';   /* Skip from Change goal keeps the goal */
-  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); if (INTRO.phase === 'goal' && document.getElementById('goalCard').dataset.mode !== 'change') { if (S.speed < 60) { S.speed = 60; syncSpeed(); } if (!followA) { view.target.set((HALL.x0 + HALL.x1) / 2, 0, (HALL.zb + HZ) / 2); view.zoomT = innerWidth < 860 ? 1.0 : 1.5; } }   /* and the view steps back to the whole floor */   /* evaluation 2026-11-20: the opening is slow on purpose; the day is not */ INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
+  if (!keep) GOAL.key = b.dataset.goal || null; hideGoalCard(); if (INTRO.phase === 'goal' && document.getElementById('goalCard').dataset.mode !== 'change') { if (S.speed < 60) { S.speed = 60; syncSpeed(); } if (!followA) frameHall();   /* judge 2026-11-20: framed on the hall whatever its size */ }   /* and the view steps back to the whole floor */   /* evaluation 2026-11-20: the opening is slow on purpose; the day is not */ INTRO.phase = 'done'; document.body.classList.remove('introing'); if (typeof updateMonitors === 'function') updateMonitors();
 });
 function resetGoal() { GOAL.key = null; GOAL.told = null; }
 function goalTarget() { return M ? membersTarget(M.steady, M.cfg.build) : 500; }
 function goalLabel(k) { const g = GOALS.find(x => x[0] === k), n = String(goalTarget()); return tx(g[1], g[2]).replace('500', k === 'members500' ? n : '500'); }   /* owner 2026-11-20: the members goal follows the gym's size */
 function goalNow() {
   if (!GOAL.key || !BIZ || !M) return null;
-  return goalStatus(GOAL.key, { months: BIZ.months, mtdEbitda: projectMonth().mtd.ebitda, monthIndex: BIZ.monthIndex, cashOut: !!BIZ.cashOutAt, cashOutMonth: BIZ.cashOutAt ? BIZ.cashOutAt.mi : null, openCash: BIZ.openCash, target: goalTarget(), poolNow: M.pool.length, lapsedNow: M.lapsedTotal, startPool: M.pool.length + M.lapsedTotal });
+  return goalStatus(GOAL.key, { months: BIZ.months, mtdEbitda: projectMonth().mtd.ebitda, monthIndex: BIZ.monthIndex, cashOut: !!BIZ.cashOutAt, cashOutMonth: BIZ.cashOutAt ? BIZ.cashOutAt.mi : null, openCash: BIZ.openCash, target: goalTarget(), poolNow: M.pool.length, lapsedNow: M.lapsedTotal, startPool: M.pool.length + M.lapsedTotal, curDays: M.cal.length });
 }
 function goalLineText() { const g = goalNow(); if (!g) return ''; return tx(`Goal: ${goalLabel(GOAL.key)} · ${g.text.en}`, `目標：${goalLabel(GOAL.key)} · ${g.text.zh}`); }
 function updateGoalLine() {

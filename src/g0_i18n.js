@@ -4,12 +4,12 @@ let LANG = (() => { try { return localStorage.getItem('gymsim.lang') || 'en'; } 
 const ZH = {
   // panel groups and buttons
   'Bank': '銀行', 'Close early': '提前結帳', 'Cap per visit': '每次上限', 'Your own money': '自有資金', 'Bank loan': '銀行貸款', 'Loan rate a year': '貸款年利率', 'Loan term': '貸款年限', 'Today': '今日', 'P&L': '損益表', 'Pricing': '價格', 'Staff': '人員', 'Facility': '場地',
-  'Run': '執行', 'Monitors': '現在', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
-  'Setup': '設定', 'Go': '開始', 'Pause': '暫停', 'Step': '單步', 'Go (new day)': '開始（新的一天）',
+  'Run': '營運', 'Monitors': '現在', 'Day': '當日', 'Members': '會員', 'Gym': '健身房', 'Plots': '圖表',
+  'Setup': '重新開始', 'Go': '開始', 'Pause': '暫停', 'Step': '+1 分鐘', 'Go (new day)': '開始（新的一天）',
   'Sound off': '音效：關', 'Sound on': '音效：開', 'Copy results': '複製結果', 'Seed': '種子', 'Random seed': '隨機種子',
-  'applies on Setup': '按「設定」後生效', '· Setup': '· 設定', 'On': '開', 'Off': '關',
-  'Behaviour sliders apply immediately.': '行為類滑桿會立即生效。',
-  'Some settings change the building or the day: press Setup to apply them.': '部分設定會改變場館或當日安排：按「設定」套用。',
+  'applies on Setup': '重新開始後生效', '· Setup': '· 重新開始後生效', 'On': '開', 'Off': '關',
+  'Behaviour sliders apply immediately.': '這裡的調整會立即生效。',
+  'Some settings change the building or the day: press Setup to apply them.': '有些調整只對新開的健身房生效：按「重新開始」套用。',
   // accessibility labels
   'Pixel-art gym diorama': '像素風健身房場景', 'Rotate left': '向左旋轉', 'Rotate right': '向右旋轉', 'Zoom out': '縮小', 'Zoom in': '放大',
   // sliders and choosers
@@ -36,7 +36,7 @@ const ZH = {
   'Setting': '環境', 'Urban': '都市', 'Suburban': '郊區', 'Rural': '鄉村',
   'Weather': '天氣', 'Clear': '晴天', 'Rain': '雨天', 'Heatwave': '熱浪',
   'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.':
-    '環境與雨天會立即顯示。會員的交通方式（機車、公車、步行、接送）、公車班距和熱浪時的到場曲線，按「設定」後生效。',
+    '環境與雨天會立即顯示。會員的交通方式（機車、公車、步行、接送）、公車班距和熱浪時的到場曲線，按「重新開始」後生效。',
   'Archetype mix (sums to 100 %, applies from tomorrow)': '會員類型組成（合計 100%，明天起生效）',
   'Powerlifter': '健力選手', 'Olympic lifter': '舉重選手', 'Bodybuilder': '健美選手', 'Beginner': '新手', 'Coach with client': '教練帶學員',
   'Patience before swapping': '換器材前的耐心', 'Work-in willingness': '輪流使用意願', 'Rest between sets': '組間休息', 'Re-rack habit': '槓片歸位習慣',
@@ -47,13 +47,13 @@ const ZH = {
   'PRs today': '今日 PR', 'Stray weights': '未歸位', 'Visits': '到訪人次', 'Rack queue': '架前排隊',
   // plots
   'Occupancy vs capacity cap': '館內人數與上限', 'Rack queue length': '健力架排隊人數', 'Zone use (stacked)': '各區使用人數（堆疊）',
-  'Wait times (minutes)': '等待時間（分鐘）', 'today': '今日', 'earlier runs': '先前執行', 'earlier runs (faded)': '先前執行（淡色）', 'cap': '上限',
+  'Wait times (minutes)': '等待時間（分鐘）', 'today': '今日', 'earlier runs': '前幾天', 'earlier runs (faded)': '前幾天（淡色）', 'cap': '上限',
   'waits finished today': '今日完成的等待',
   'Cardio': '有氧', 'Machines': '器械', 'Dumbbells': '啞鈴', 'Racks': '健力架', 'Platforms': '舉重台', 'Machine': '器械', 'DB': '啞鈴', 'Rack': '健力架', 'Platform': '舉重台',
   // hud and toasts
   'Drag to pan · click people and equipment for details': '拖曳平移 · 點擊人物和器材查看詳情',
   'Pinch to zoom · two fingers to pan · tap people and equipment for details': '雙指縮放 · 雙指平移 · 點選人物和器材查看詳情',
-  'Day complete · press Setup or Go for a new day': '今日結束 · 按「設定」或「開始」進入新的一天',
+  'Day complete · press Setup or Go for a new day': '今日結束 · 按「重新開始」或「開始」進入新的一天',
   'Results copied': '已複製結果', 'Copy was blocked here': '此處無法複製',
   'This diorama needs WebGL, which isn\'t available in this browser.': '這個場景需要 WebGL，但此瀏覽器不支援。',
   // follow card: states
@@ -74,12 +74,26 @@ const ZH = {
   'Pull-up': '引體向上', 'Dip': '雙槓撐體', 'Sled push': '推雪橇'
 };
 const zh = () => LANG === 'zh';
-const EN = { 'Speed (gym seconds per real second)': 'Speed', 'Monitors': 'Right now', 'Plots': 'Charts' };   /* first-minute polish: plain words on the panel; the keys stay as they were */
+const EN = { 'Speed (gym seconds per real second)': 'Speed', 'Monitors': 'Right now', 'Plots': 'Charts',
+  /* judge 2026-11-20: Setup restarts the business, so it says so; no lab words on the panel */
+  'Setup': 'Start over', 'Step': '+1 min', 'earlier runs': 'earlier days', 'earlier runs (faded)': 'earlier days (faded)', 'applies on Setup': 'applies on Start over', '· Setup': '· needs Start over', 'Behaviour sliders apply immediately.': 'Changes here apply at once.',
+  'Some settings change the building or the day: press Setup to apply them.': 'Some changes only apply to a new business: press Start over to use them.',
+  'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Setup.': 'Setting and rain show at once. How members travel (scooter, bus, on foot, dropped off), bus frequency and the heatwave curve apply on Start over.',
+  'Day complete · press Setup or Go for a new day': 'Day complete · press Start over or Go for a new day' };   /* first-minute polish: plain words on the panel; the keys stay as they were */
 const tr = (s) => (zh() && ZH[s] !== undefined ? ZH[s] : EN[s] !== undefined && !zh() ? EN[s] : s);
 // a sentence with numbers in it: English and Chinese written side by side at the call site
 const tx = (en, zhs) => (zh() ? zhs : en);
 // "Coach Mara" -> "Mara 教練"
-const trName = (n) => (zh() && n.startsWith('Coach ') ? n.slice(6) + ' 教練' : n);
+// judge 2026-11-20: in Chinese the people on the floor read as Chinese names. Display only: the member data and its random draws keep the names they were made with.
+const ZH_SURNAME = '艾白陳杜易方高黃尹簡柯林馬倪歐潘邱阮蘇唐吳魏王許楊張';   /* by the initial, A to Z */
+const ZH_GIVEN = ['怡君', '家豪', '雅婷', '志明', '淑芬', '冠宇', '欣怡', '承恩', '佩珊', '柏翰', '詩涵', '宗翰', '雅雯', '俊傑', '宜蓁', '建宏', '筱涵', '子軒', '惠如', '品睿', '佳穎', '宇翔', '婉婷', '彥廷', '思妤', '哲瑋', '靜宜', '睿恩', '郁婷', '明哲',
+  '心怡', '浩宇', '美玲', '家瑋', '雅筑', '信宏', '芷晴', '韋廷', '慧君', '柏宇', '嘉玲', '冠廷', '宛蓉', '俊宏', '曉雯', '志豪', '玉婷', '承翰', '依婷', '威廷', '佳蓉', '文傑', '羽彤', '立偉', '孟潔', '政霖', '語彤', '書豪', '筱婷', '晉瑋'];
+function zhGiven(first) { let i = typeof FIRST !== 'undefined' ? FIRST.indexOf(first) : -1; if (i < 0) { i = 0; for (const ch of first) i = (i * 31 + ch.charCodeAt(0)) >>> 0; } return ZH_GIVEN[i % ZH_GIVEN.length]; }
+function trName(n) {
+  if (!zh() || !n) return n;
+  if (n.startsWith('Coach ')) return zhGiven(n.slice(6)) + ' 教練';   // "Coach Mara" -> "怡君 教練"
+  const m = /^([A-Za-z]+) ([A-Z])\.$/.exec(n); return m ? ZH_SURNAME[m[2].charCodeAt(0) - 65] + zhGiven(m[1]) : tr(n);
+}
 const MIN = () => tx(' min', ' 分');
 function setLang(l) {
   LANG = l; try { localStorage.setItem('gymsim.lang', l); } catch (e) {}

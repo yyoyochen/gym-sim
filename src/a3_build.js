@@ -45,6 +45,7 @@ function goalStatus(key, s) {
     const hit = upTo.some(m => m.members >= N) || (!third && s.poolNow >= N);
     if (hit) return { state: 'met', text: T(`${N} members reached`, `已達 ${N} 位會員`) };
     if (third) return { state: 'missed', text: T(`month 3 ended at ${third.members}`, `第三個月結束時 ${third.members} 位`) };
+    if (!full.length && s.curDays != null && s.curDays < 15) return { state: 'on', text: T(`${s.poolNow} of ${N} · the 3 months start next month`, `${s.poolNow}/${N} 位 · 三個月從下個月起算`) };   /* judge 2026-11-20: a short opening month is not month 1, and the line says so */
     return { state: 'on', text: T(`${s.poolNow} of ${N} · month ${full.length + 1} of 3`, `${s.poolNow}/${N} 位 · 第 ${full.length + 1}/3 個月`) };
   }
   if (key === 'cash12') {
@@ -67,14 +68,51 @@ function goalStatus(key, s) {
 function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.55 / 10) * 10 : 500; }
 // ================================================================ the month's report (evaluation 2026-11-20): what the month did, in a handful of numbers a player can act on.
 // cur / prev: archived months { days, members, joined, lapsed, returned, visits, cashEnd, cashIn, cashOut, pnl }. A short opening month is scaled to 30.4 days.
-function monthReport(cur, prev) {
+function monthReport(cur, prev, cashStart) {
   const p = cur.pnl, k = 30.4 / cur.days, start = cur.members - cur.joined - (cur.returned || 0) + cur.lapsed, avg = (start + cur.members) / 2;
   const each = avg > 0 ? p.contribution / avg : 0, out = (cur.cashOut - cur.cashIn) * k;
   const r = { startMembers: start, members: cur.members, joined: cur.joined + (cur.returned || 0), lapsed: cur.lapsed, kept: 1 - cur.lapsed / Math.max(1, cur.members + cur.lapsed),
     ebitda: p.ebitda, breakEven: each > 0 ? Math.ceil(p.fixed / each) : null, runway: out > 0 && cur.cashEnd > 0 ? Math.round(cur.cashEnd / out * 10) / 10 : null,
-    visitsPerMember: avg > 0 ? (cur.visits || 0) / avg * k : 0, cashEnd: cur.cashEnd, prev: null, better: null };
-  if (prev) { r.prev = { ebitda: prev.pnl.ebitda * 30.4 / prev.days, members: prev.members }; r.better = p.ebitda * k > r.prev.ebitda; }
+    visitsPerMember: avg > 0 ? (cur.visits || 0) / avg * k : 0, cashEnd: cur.cashEnd, prev: null, better: null, perDay: p.ebitda / cur.days, days: cur.days, avgMembers: Math.round(avg), cash: null };
+  // judge 2026-11-20: the break-even count is for the whole month, so it is read against the month's average membership and never contradicts the result
+  if (r.breakEven != null) { if (p.ebitda < 0 && r.breakEven <= r.avgMembers) r.breakEven = r.avgMembers + 1; if (p.ebitda >= 0 && r.breakEven > r.avgMembers) r.breakEven = r.avgMembers; }
+  if (prev) { r.prev = { ebitda: prev.pnl.ebitda * 30.4 / prev.days, members: prev.members, perDay: prev.pnl.ebitda / prev.days, days: prev.days, total: prev.pnl.ebitda }; r.better = p.ebitda * k > r.prev.ebitda; r.sameLength = Math.abs(cur.days - prev.days) <= 3; }
+  // what moved the bank balance: the operating result, the loan instalment, income tax, and the rest (prepaid coaching, equipment, sales tax timing)
+  const from = cashStart != null ? cashStart : prev ? prev.cashEnd : null;
+  if (from != null) { const change = cur.cashEnd - from, loan = -((cur.interest || 0) + (cur.principal || 0)) || 0, tax = -(cur.tax || 0) || 0; r.cash = { change, result: p.ebitda, loan, tax, other: change - p.ebitda - loan - tax }; }
   return r;
+}
+// judge 2026-11-20: what the month's changes did, in the numbers the game already has, and one thing to try that the player has not already done.
+// cur / prev: archived months (prev may be null); now: the settings in force { perMinOn, monthlyOn, ... }. Returns { en, zh } or null.
+const TIP_GROUPS = { price: ['priceOff', 'pricePeak', 'priceCap', 'perMinOn', 'monthlyOn', 'monthlyPrice'], coach: ['ptSession', 'coaches'], staff: ['deskFT', 'deskPTh', 'cleaners'], floor: ['pieces', 'rentP'] };
+function monthTip(cur, prev, now) {
+  const ch = (cur.changes || []).map(c => c.k), did = (g) => TIP_GROUPS[g].some(k => ch.includes(k)), en = [], zhs = [], n0 = (v) => Math.round(v).toLocaleString('en-US'), d1 = (v) => (Math.round(v * 10) / 10).toString();
+  const per = (m, v) => v / Math.max(1, m.days), $ = (v) => '$' + n0(v), p = cur.pnl || {}, q = prev ? prev.pnl || {} : {}, same = prev && Math.abs(cur.days - prev.days) <= 3;
+  const joined = (m) => m.joined + (m.returned || 0), fees = (x) => (x.entry || 0) + (x.passes || 0);
+  let warned = false;
+  if (ch.length && !prev) { en.push('This was your first month, so there is no earlier month to compare these changes with yet.'); zhs.push('這是第一個月，還沒有上個月可以比較這些調整的效果。'); }
+  if (prev) {
+    if (did('price')) { const hurt = per(cur, cur.lapsed) > 1.5 * per(prev, prev.lapsed) && cur.lapsed - prev.lapsed >= 10;
+      en.push(`After the price change: ${cur.lapsed} members left, ${joined(cur)} joined (month before: ${prev.lapsed} left, ${joined(prev)} joined${same ? '' : `; per day ${d1(cur.lapsed / cur.days)} left against ${d1(prev.lapsed / prev.days)}`}). Visits ${n0(per(cur, cur.visits || 0))} a day (was ${n0(per(prev, prev.visits || 0))}). Entry and pass money ${$(per(cur, fees(p)))} a day (was ${$(per(prev, fees(q)))}).`);
+      zhs.push(`調整價格後：${cur.lapsed} 位會員離開、${joined(cur)} 位加入（上個月：${prev.lapsed} 位離開、${joined(prev)} 位加入${same ? '' : `；每天離開 ${d1(cur.lapsed / cur.days)} 位，上個月 ${d1(prev.lapsed / prev.days)} 位`}）。每天到訪 ${n0(per(cur, cur.visits || 0))} 人次（原本 ${n0(per(prev, prev.visits || 0))}）。入場費與月費每天 ${$(per(cur, fees(p)))}（原本 ${$(per(prev, fees(q)))}）。`);
+      if (hurt) { warned = true; en.push('That change cost you members. If that was not the plan, put the price list back (Pricing).'); zhs.push('這次調整讓會員流失變多。如果這不是你要的，把價目改回去（價格）。'); } }
+    if (did('coach')) { en.push(`After the coaching change: coaching earned ${$(per(cur, p.ptEarned || 0))} a day (was ${$(per(prev, q.ptEarned || 0))}); the gym kept ${$(per(cur, (p.ptEarned || 0) - (p.coach || 0)))} a day of it after the coaches' share.`); zhs.push(`調整教練後：教練課每天收入 ${$(per(cur, p.ptEarned || 0))}（原本 ${$(per(prev, q.ptEarned || 0))}）；扣掉教練分潤後，健身房每天留下 ${$(per(cur, (p.ptEarned || 0) - (p.coach || 0)))}。`); }
+    if (did('staff')) { en.push(`After the staff change: staff cost ${$(per(cur, p.staff || 0))} a day (was ${$(per(prev, q.staff || 0))}); ${cur.lapsed} members left (${prev.lapsed} the month before).`); zhs.push(`調整人力後：人事每天 ${$(per(cur, p.staff || 0))}（原本 ${$(per(prev, q.staff || 0))}）；${cur.lapsed} 位會員離開（上個月 ${prev.lapsed} 位）。`); }
+    if (did('floor')) { en.push(`After the change on the floor: visits ${n0(per(cur, cur.visits || 0))} a day (was ${n0(per(prev, prev.visits || 0))}).`); zhs.push(`調整場地後：每天到訪 ${n0(per(cur, cur.visits || 0))} 人次（原本 ${n0(per(prev, prev.visits || 0))}）。`); }
+  }
+  if (p.ebitda < 0 && !warned) {   // one thing to try (not on top of a warning: one thing at a time): by the biggest cost, never what was changed this month or is already in force
+    const costs = [['rent', Math.max(p.occupancy || 0, ((now || {}).rentNext || 0) * cur.days / 30.4)],   /* a rent-free first month: the rent about to start counts */ ['staff', p.staff || 0], ['running', (p.elec || 0) + (p.otherOpex || 0)], ['coach', p.coach || 0]].sort((a, b) => b[1] - a[1]), top = costs[0][0], s = now || {};
+    const A = [];
+    if (!did('price') && s.perMinOn !== false && !s.monthlyOn) A.push(['a monthly pass next to the minute price brings regulars in faster (Pricing)', '在計時收費之外加開月費，常客來得更快（價格）']);
+    if (!did('price') && s.perMinOn !== false && s.monthlyOn) A.push(['a lower minute price brings new members in faster (Pricing)', '降低每分鐘價格，新會員來得更快（價格）']);
+    if (!did('coach')) A.push(['coaching income sits on top of entry fees: check that the coaches you pay have clients (Staff)', '教練課收入是入場費之外的收入：看看你付薪水的教練有沒有學員（人員）']);
+    if (!did('staff') && top === 'staff') A.unshift(['fewer desk hours save money at once, but new members leave a little faster (Staff)', '減少櫃檯時數馬上省錢，但新會員會流失得快一點（人員）']);
+    if (!did('staff') && top !== 'staff') A.push(['fewer desk hours save money at once, but new members leave a little faster (Staff)', '減少櫃檯時數馬上省錢，但新會員會流失得快一點（人員）']);
+    const lead = { rent: ['Rent is your biggest cost and it is fixed, so the answer is more members', '租金是最大的成本，而且是固定的，所以要靠更多會員'], staff: ['Staff is your biggest cost', '人事是最大的成本'], running: ['Running costs are your biggest cost and mostly fixed, so the answer is more income', '營運成本最大、而且大多固定，所以要靠更多收入'], coach: ["The coaches' share is your biggest cost; it only goes out when coaching brings money in, so look at the fixed costs", '教練分潤最大；有教練課收入才會支出，所以先看固定成本'] }[top];
+    if (A.length) { en.push(`${lead[0]}: ${A[0][0]}.`); zhs.push(`${lead[1]}：${A[0][1]}。`); }
+    else { en.push(`${lead[0]}. Give this month's changes another month before changing more.`); zhs.push(`${lead[1]}。這個月的調整再觀察一個月，先不要改更多。`); }
+  }
+  return en.length ? { en: en.join(' '), zh: zhs.join('') } : null;
 }
 // what the player changed between two snapshots of the settings: [{ k, from, to }] in the order of `before`
 function settingChanges(before, after) { return Object.keys(before).filter(k => before[k] !== after[k]).map(k => ({ k, from: before[k], to: after[k] })); }
