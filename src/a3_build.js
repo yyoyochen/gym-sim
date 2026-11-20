@@ -71,7 +71,7 @@ function membersTarget(steady, build) { return build === 'new' ? Math.round(stea
 // hist (display only): the last up-to-3 closed months, this one last; months-left is read against their average burn so one odd month does not swing it
 function monthReport(cur, prev, cashStart, hist) {
   const p = cur.pnl, k = 30.4 / cur.days, start = cur.members - cur.joined - (cur.returned || 0) + cur.lapsed, avg = (start + cur.members) / 2;
-  const hs = hist && hist.length ? hist.slice(-3) : [cur], each = avg > 0 ? p.contribution / avg : 0, out = hs.reduce((t, m) => t + (m.cashOut - m.cashIn) * 30.4 / m.days, 0) / hs.length;
+  const hs = hist && hist.length ? hist.slice(-3) : [cur], each = avg > 0 ? p.contribution / avg : 0, out = hs.reduce((t, m) => t + (m.cashOut - m.cashIn + (m.pnl.passOwedChange || 0)) * 30.4 / m.days, 0) / hs.length;   /* rules round 2026-11-21: pass money paid ahead is not counted as cash that keeps coming */
   const r = { startMembers: start, members: cur.members, joined: cur.joined + (cur.returned || 0), lapsed: cur.lapsed, kept: 1 - cur.lapsed / Math.max(1, cur.members + cur.lapsed),
     ebitda: p.ebitda, breakEven: each > 0 ? Math.ceil(p.fixed / each) : null, runway: out > 0 && cur.cashEnd > 0 ? Math.round(cur.cashEnd / out * 10) / 10 : null,
     visitsPerMember: avg > 0 ? (cur.visits || 0) / avg * k : 0, cashEnd: cur.cashEnd, prev: null, better: null, perDay: p.ebitda / cur.days, days: cur.days, avgMembers: Math.round(avg), cash: null };
@@ -126,8 +126,8 @@ function monthTip(cur, prev, now) {
     if (!did('price') && s.perMinOn !== false && !s.monthlyOn) A.push(['a monthly pass next to the minute price brings regulars in faster (Pricing)', '在計時收費之外加開月費，常客來得更快（價格）']);
     if (!did('price') && s.perMinOn !== false && s.monthlyOn) A.push(['a lower minute price brings new members in faster (Pricing)', '降低每分鐘價格，新會員來得更快（價格）']);
     if (!did('coach')) A.push(['coaching income sits on top of entry fees: check that the coaches you pay have clients (Staff)', '教練課收入是入場費之外的收入：看看你付薪水的教練有沒有學員（員工）']);
-    if (!did('staff') && top === 'staff' && (s.deskPTh == null || s.deskPTh > 0 || s.deskFT > 1)) A.unshift(['fewer desk hours save money at once, but new members leave a little faster (Staff)', '減少櫃檯時數馬上省錢，但新會員會流失得快一點（員工）']);
-    if (!did('staff') && top !== 'staff' && (s.deskPTh == null || s.deskPTh > 0 || s.deskFT > 1)) A.push(['fewer desk hours save money at once, but new members leave a little faster (Staff)', '減少櫃檯時數馬上省錢，但新會員會流失得快一點（員工）']);
+    if (!did('staff') && top === 'staff' && (s.deskPTh == null || s.deskPTh > 0 || s.deskFT > 1)) A.unshift(['fewer desk hours save money at once, but cost sign-ups and members: the Staff tab gives the numbers', '減少櫃檯時數馬上省錢，但入會會變少、會員也更容易退會：數字在員工分頁']);
+    if (!did('staff') && top !== 'staff' && (s.deskPTh == null || s.deskPTh > 0 || s.deskFT > 1)) A.push(['fewer desk hours save money at once, but cost sign-ups and members: the Staff tab gives the numbers', '減少櫃檯時數馬上省錢，但入會會變少、會員也更容易退會：數字在員工分頁']);
     const lead = { rent: ['Rent is your biggest cost and it is fixed, so the answer is more members', '租金是最大的成本，而且是固定的，所以要靠更多會員'], staff: ['Staff is your biggest cost', '人事是最大的成本'], running: ['Running costs are your biggest cost and mostly fixed, so the answer is more income', '營運成本最大、而且大多固定，所以要靠更多收入'], coach: ["The coaches' share is your biggest cost; it only goes out when coaching brings money in, so look at the fixed costs", '教練分潤最大；有教練課收入才會支出，所以先看固定成本'] }[top];
     // judge round 4: the advice follows from the lead only when it is about that cost; otherwise it is its own sentence
     const fits = top === 'staff' ? /desk hours/.test(A.length ? A[0][0] : '') : top !== 'coach';

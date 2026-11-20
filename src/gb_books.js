@@ -123,7 +123,7 @@ BOOK_RENDER.Today = {
       <tr><td>${tx('Personal-training packs sold', '售出教練課方案')}${cnt(A.packs)}</td><td class="n" data-k="ptCash">${ntn(ptCash)}</td></tr>
       <tr><td>${tx('Coaches renting the floor', '教練租場地')}${cnt(A.rentN)}</td><td class="n" data-k="rentals">${ntn(p.rentals)}</td></tr>
       <tr class="sum"><td>${tx('Paid at the desk today', '今日櫃檯實收')}</td><td class="n" data-k="takings">${ntn(p.takings)}</td></tr></table>
-      <p class="note" data-k="deskWhy">${tx(`Money handed over today. It is not the "earned ${nt$(p.net)}" on the top line: a coaching pack is paid up front and earned one session at a time, earned leaves out the 5% sales tax, and it counts small extras (drinks, day guests) that are estimated.`, `今天實際收到的錢。它和最上面的「收入 ${nt$(p.net)}」不一樣：教練課方案是預先付款、上一堂才算一堂的收入；收入不含 5% 營業稅；另外還估算了飲料、臨時客人等零星收入。`)}</p>`;
+      <p class="note" data-k="deskWhy">${tx(`Money handed over today. It is not the "earned ${nt$(p.net)}" on the top line: a coaching pack is paid up front and earned one session at a time, earned leaves out the 5% sales tax, and it counts small extras (drinks, day guests) that are estimated.${S.monthlyOn || p.passCash ? ` A monthly pass is paid today and earned a day at a time over its 30 days.` : ''}`, `今天實際收到的錢。它和最上面的「收入 ${nt$(p.net)}」不一樣：教練課方案是預先付款、上一堂才算一堂的收入；收入不含 5% 營業稅；另外還估算了飲料、臨時客人等零星收入。${S.monthlyOn || p.passCash ? '月費是今天收錢，之後 30 天每天認列一天的收入。' : ''}`)}</p>`;
     const floor = `<table>
       <tr><td>${tx('Inside now', '館內人數')}</td><td class="n">${A.inside}</td></tr>
       <tr><td>${tx('Checked in today', '今日進場')}</td><td class="n">${A.checkins || 0}</td></tr>
@@ -405,7 +405,7 @@ BOOK_RENDER.Staff = {
     g.appendChild(el('div', { id: 'bkStaffLines' }));
     const h = bkSliderGroup(body, tx('Opening hours', '營業時間'));
     h.appendChild(el('table', {}, `<tr><td>${tx('Mon–Fri', '週一至五')}</td><td class="n">07:00–24:00</td></tr><tr><td>${tx('Sat–Sun', '週六日')}</td><td class="n">08:00–24:00</td></tr>`));
-    h.appendChild(el('p', { class: 'note' }, tx('Desk cover for about 124 hours a week.', '櫃檯每週約需 124 小時人力。')));
+    h.appendChild(el('p', { class: 'note' }, tx('The gym is open 117 hours a week.', '每週營業 117 小時。')));
   },
   update() {
     const box = document.getElementById('bkStaffLines'); if (!box) return;
@@ -417,7 +417,7 @@ BOOK_RENDER.Staff = {
       <p class="note${deskCover(S, S.area) < 1 ? ' warn' : ''}" data-k="staffEffect">${(() => { const need = deskHours(defaultRoster(S.area)), h = deskHours(S), pc = (v) => Math.round(Math.abs(v - 1) * 100), e = deskEffect(deskCover(S, S.area)), mr = { deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }, min = rosterCost(mr), me = deskEffect(deskCover(mr, S.area)), top = Math.round(need * DESK.max);   /* rules round 2026-11-21: the desk signs people up and looks after them; hours against what this floor needs */
         const en = h < need ? `Your desk covers ${h} of the ${need} hours a week this floor needs. Nobody is free to show people round: ${pc(e.join)}% fewer sign-ups, and members are ${pc(e.churn)}% more likely to leave.` : h > need ? `Your desk covers ${h} hours a week; this floor needs ${need}. The extra hours bring ${pc(e.join)}% more sign-ups and members are ${pc(e.churn)}% less likely to leave (nothing more past ${top} hours).` : `Your desk covers the ${need} hours a week this floor needs. Fewer hours cost sign-ups and members; more hours help half as much.`;
         const zh = h < need ? `這個坪數每週需要 ${need} 小時的櫃檯人力，目前只有 ${h} 小時。沒有人有空帶人參觀：入會少 ${pc(e.join)}%，會員退會的機率多 ${pc(e.churn)}%。` : h > need ? `櫃檯每週 ${h} 小時；這個坪數需要 ${need} 小時。多出來的時數讓入會多 ${pc(e.join)}%，會員退會的機率少 ${pc(e.churn)}%（超過 ${top} 小時就沒有更多效果）。` : `櫃檯人力剛好是這個坪數每週需要的 ${need} 小時。時數減少會少掉入會和會員；增加時數的效果只有一半。`;
-        return tx(`${en} The smallest desk (the manager and one full-timer, no part-time hours) costs ${money(min)} a month: ${pc(me.join)}% fewer sign-ups, members ${pc(me.churn)}% more likely to leave.`, `${zh}最精簡的櫃檯（店長加一位正職、沒有兼職時數）每月 ${money(min)}：入會少 ${pc(me.join)}%，退會機率多 ${pc(me.churn)}%。`); })()}</p>
+        return tx(`${en} The smallest desk (the manager and one full-timer, no part-time hours) costs ${money(min)} a month before coaches: ${pc(me.join)}% fewer sign-ups, members ${pc(me.churn)}% more likely to leave.`, `${zh}最精簡的櫃檯（店長加一位正職、沒有兼職時數）不含教練每月 ${money(min)}：入會少 ${pc(me.join)}%，退會機率多 ${pc(me.churn)}%。`); })()}</p>
       <p class="note${grubbyNow() > 0 ? ' warn' : ''}" data-k="cleanerEffect">${(() => { const wage = money(rosterCost({ ...S, cleaners: (S.cleaners || 0) + 1 }) - rosterCost(S)), v = Math.round(visitsLately()), cap = cleanCap(S.cleaners), g = grubbyNow(), more = Math.round(100 * CLEAN.churn * g), less = Math.round(100 * CLEAN.join * g);   /* rules round 2026-11-21: a hall that outgrows its cleaning loses members; the receptionist's limit and each cleaner's are said */
         const en = g > 0 ? `That is more than your team can keep clean: ${less}% fewer sign-ups and members are ${more}% more likely to leave until you hire a cleaner.` : v > cap - CLEAN.each && S.cleaners ? `Your team keeps up. With one cleaner fewer it would not.` : `Your team keeps up, so a cleaner pays off only once visits pass ${cap} a day.`;
         const zh = g > 0 ? `已經超過現有人手能維持乾淨的量：在請清潔人員之前，入會少 ${less}%，會員退會的機率多 ${more}%。` : v > cap - CLEAN.each && S.cleaners ? `目前人手夠。少一位清潔人員就不夠了。` : `目前人手夠，每天超過 ${cap} 人次再請清潔人員才划算。`;

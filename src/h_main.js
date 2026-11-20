@@ -2373,7 +2373,7 @@ const SELFTESTS = {
       const mr = { deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }, min = rosterCost(mr), eff = Math.round(100 * (deskEffect(deskCover(mr, S.area)).churn - 1));
       const t = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, cl = document.querySelector('#bkBody [data-k="cleanerEffect"]'), ct = cl ? cl.textContent : '';
       setLang('zh'); const z = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, zc = (document.querySelector('#bkBody [data-k="cleanerEffect"]') || {}).textContent || ''; setLang('en');
-      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month: ${eff}% fewer sign-ups, members ${eff}% more likely to leave`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
+      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month before coaches: ${eff}% fewer sign-ups, members ${eff}% more likely to leave`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
       return { ok, detail: { deskFT: S.deskFT, pth: S.deskPTh, min, eff, t, ct, z, zc } }; }
     finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setLang(was); setupRun(); }
   },
