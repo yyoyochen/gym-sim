@@ -68,6 +68,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a33;color:var(--in
 #dayCard[hidden]{display:none}#dayCard h2{font-size:var(--f13);margin:0;color:var(--accent)}#dayCard p{margin:0}#dayCard .big{font-size:22px;font-weight:700}#dayCard .big small{display:block;font-size:var(--f12);font-weight:400;color:#c4c9d4}#dayCard .loss{color:#ff9b8e}#dayCard .gain{color:#5ee08a}
 #dayCard .row2{display:flex;flex-direction:column;gap:2px;font-size:var(--f12)}#dayCard .row{margin:2px 0 0}#dayCard button{min-height:48px}#dayCard button[data-day="next"]{flex:2;font-size:var(--f15);background:var(--accent);color:#10131c}
 body.building #dayCard{display:none}
+#noteCard details{border-top:1px solid rgba(255,255,255,.12);padding-top:2px}#noteCard summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:var(--f13);color:var(--accent)}#noteCard details p{margin:0 0 6px}#dayCard .note{font-size:var(--f12);color:#c4c9d4}#dayCard .note b{color:#e8ecf3}   /* feedback round 2026-11-21: the month card's lines below the result fold away; the day card says what a change did */
 #build button[data-fin6]{background:var(--accent);color:#10131c;min-height:48px}
 #noteCard>.row{position:sticky;bottom:-12px;margin:0 0 -12px;padding:6px 0 12px;background:rgb(16,19,28)}   /* a long report scrolls under its buttons, which stay in reach */
 #recepSay{position:fixed;z-index:6;transform:translate(-50%,-100%);max-width:min(300px,80vw);background:rgba(16,19,28,.95);border:2px solid var(--accent);padding:6px 9px;pointer-events:none;box-shadow:3px 3px 0 rgba(0,0,0,.4)}#recepSay[hidden]{display:none}#recepSay button{pointer-events:auto;display:block;margin-top:6px;min-height:36px;padding:2px 10px;font-size:var(--f12)}#recepSay b{display:block;font-size:var(--f11);color:var(--accent);font-weight:400;margin-bottom:2px}#recepSay p{margin:0;font-size:var(--f13);color:var(--ink)}
@@ -594,8 +595,16 @@ function goalStatus(key, s) {
   }
   return { state: 'on', text: T('', '') };
 }
-// owner 2026-11-20: the members goal asks for 55% of the gym's steady membership (a little more than the ramp gives untouched); an established gym keeps 500
-function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.55 / 10) * 10 : 500; }
+// feedback round 2026-11-21: the members goal asks for 65% of the gym's steady membership; an untouched gym reaches about 61% by the deadline, so the goal takes a move (judge round 4: 55% was met by doing nothing). An established gym keeps 500.
+function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.65 / 10) * 10 : 500; }
+// feedback round 2026-11-21: what a change did. log: one entry a played day { visits, earned, joined, lapsed, closed }; at: the first day played with the change.
+// Each day since (up to 7) is set against the same weekday the week before, so weekends compare with weekends; closed days are left out.
+function changeEffect(log, at) {
+  const n = Math.min(7, log.length - at); if (n < 1) return null;
+  const pairs = []; for (let k = 0; k < n; k++) { const a = log[at + k], b = log[at + k - 7]; if (b && !a.closed && !b.closed) pairs.push([b, a]); }
+  const av = (i, f) => pairs.length ? pairs.reduce((t, p) => t + f(p[i]), 0) / pairs.length : 0, m = (f) => ({ before: av(0, f), after: av(1, f) });
+  return { n, pairs: pairs.length, visits: m(d => d.visits), earned: m(d => d.earned), joined: m(d => d.joined), lapsed: m(d => d.lapsed) };
+}
 // ================================================================ the month's report (evaluation 2026-11-20): what the month did, in a handful of numbers a player can act on.
 // cur / prev: archived months { days, members, joined, lapsed, returned, visits, cashEnd, cashIn, cashOut, pnl }. A short opening month is scaled to 30.4 days.
 // hist (display only): the last up-to-3 closed months, this one last; months-left is read against their average burn so one odd month does not swing it
@@ -3300,12 +3309,19 @@ function liveCash() { return BIZ ? BIZ.cash + (A && A.pnl ? dayCash(A.pnl) : 0) 
 function noteCashOut() { if (BIZ.cash < 0 && !BIZ.cashOutAt) BIZ.cashOutAt = { month: M.cfg.month, year: BIZ.year, day: A.date, mi: BIZ.monthIndex }; }
 function bookCash(p) { if (!BIZ || !p) return; BIZ.cash += dayCash(p); BIZ.mIn += p.cashIn; BIZ.mOut += p.cashIn - dayCash(p); noteCashOut(); }
 function setupRun() { if (typeof hideNote === 'function') hideNote();   /* a new business starts without an old notice */ if (typeof resetGoal === 'function') resetGoal(); applyPublished(); if (typeof BOOKS !== 'undefined') BOOKS.stage = null; applyBuild(); newBusiness(); setupMonth(); setupDay(0); }
+// feedback round 2026-11-21: a rolling log of played days across months (the last 21), and the latest change of settings, noticed the first morning it is in force
+function logDay(rec) { if (!BIZ) return; const L = BIZ.dayLog || (BIZ.dayLog = []); L.push({ visits: rec.visits || 0, earned: rec.pnl ? rec.pnl.net : 0, joined: (rec.joined || 0) + (rec.returned || 0), lapsed: rec.lapsed || 0, closed: !!A.closed }); if (L.length > 21) { L.shift(); if (BIZ.change) BIZ.change.at--; } }
+function noteChange() {
+  if (!BIZ || typeof settingSnap !== 'function') return; const snap = settingSnap(), L = BIZ.dayLog || (BIZ.dayLog = []);
+  if (BIZ.daySnap) { const ch = settingChanges(BIZ.daySnap, snap); if (ch.length) BIZ.change = { at: L.length, changes: ch }; }
+  BIZ.daySnap = snap;
+}
 function bookDay() { return { dayI: A.dayI, dow: A.dow, date: A.date, visits: A.visits, paidVisits: A.paidVisits || 0, blendSum: A.blendSum || 0, lens: (A.visitLens || []).slice(), ptSessions: A.ptSessions, balked: A.balked || 0, bad: A.bad || 0, pnl: A.pnl }; }
-function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
+function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); logDay(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
 // ================================================================ the month closes and the business carries on (D9)
 // closing: the last day is booked (cash, churn between days), the loan instalment and income tax leave the bank, the month is archived
 function closeMonth() {
-  bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec);
+  bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); logDay(rec);
   const pnl = {}; for (const d of M.days) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') pnl[k] = (pnl[k] || 0) + d.pnl[k];
   const frac = M.cal.length / daysInMonth(BIZ.year, M.cfg.month);   /* a short first month pays its share of the instalment and depreciation */
   const lm = loanMonth(BIZ.balance, BIZ.rate * frac, BIZ.payment * frac); BIZ.balance = lm.balance;
@@ -3484,6 +3500,7 @@ function setupDay(i) {
   applyPublished();
   if (BIZ && BIZ.pending && !M.cal[i].rearrange && BIZ.pendingHall) { const h = BIZ.pendingHall; S.hallW = M.cfg.hallW = h.w; S.hallD = M.cfg.hallD = h.d; S.sampleGrid = true; setHall(h.w, h.d); BIZ.pendingHall = null; }   /* Plan 12: the converted sample keeps its rent area (S.area) */
   if (BIZ && BIZ.pending && !M.cal[i].rearrange) { S.layout = M.cfg.layout = BIZ.pending; BIZ.pending = null; const n = countsOf(S.layout); Object.assign(S, n); Object.assign(M.cfg, n); }   /* Plan 12: a rearranged gym reopens with its new layout */
+  noteChange();   /* after a rearrange's new layout is in, so its piece count is part of the change */
   const cfg = JSON.parse(JSON.stringify(M.cfg)), day = M.cal[i];
   M.dayI = i;
   const rng = makeRng((M.seed ^ Math.imul(i + 1, 0x9E3779B1)) >>> 0);
@@ -5941,14 +5958,14 @@ function monthCardHtml(rec, prev) {
     : row(tx('Against last month', '和上個月比'), `<b class="${r.better ? 'gain' : 'loss'}">${word}${tx(' per day', '（以每天計）')}</b> <small>${tx(`${money(r.perDay)} a day against ${money(r.prev.perDay)} a day; last month had ${r.prev.days} days, this one ${r.days}`, `每天 ${money(r.perDay)}，上個月每天 ${money(r.prev.perDay)}；上個月 ${r.prev.days} 天，這個月 ${r.days} 天`)}${rentStarted}</small>`, 'vs');
   const cash = moneyK(r.cashEnd) + (r.cashEnd < 0 ? '' : r.runway ? tx(` · about ${r.runway} months left at the recent rate`, ` · 照最近的速度約可撐 ${r.runway} 個月`) : tx(' · growing', ' · 持續增加'));
   // what moved the bank this month, so the cash change and the result (which leaves out the loan) can be read together
-  const c = r.cash, cashWhy = c ? `<tr data-k="cashWhy"><td colspan="2"><small>${tx(`Cash moved ${sg(c.change)} this month: the result above ${sg(c.result)}, loan payment ${sg(c.loan)}`, `本月現金變動 ${sg(c.change)}：上面的結果 ${sg(c.result)}、貸款還款 ${sg(c.loan)}`)}${Math.abs(c.tax) >= 0.5 ? tx(`, income tax ${sg(c.tax)}`, `、所得稅 ${sg(c.tax)}`) : ''}${Math.abs(c.other) >= 500 ? tx(`, coaching paid ahead and equipment ${sg(c.other)}`, `、預收教練課與器材 ${sg(c.other)}`) : ''}${tx('.', '。')}</small></td></tr>` : '';
+  const c = r.cash, cashWhy = c ? `<p class="note" data-k="cashWhy">${tx(`Cash moved ${sg(c.change)} this month: the result above ${sg(c.result)}, loan payment ${sg(c.loan)}`, `本月現金變動 ${sg(c.change)}：上面的結果 ${sg(c.result)}、貸款還款 ${sg(c.loan)}`)}${Math.abs(c.tax) >= 0.5 ? tx(`, income tax ${sg(c.tax)}`, `、所得稅 ${sg(c.tax)}`) : ''}${Math.abs(c.other) >= 500 ? tx(`, paid ahead (passes, coaching) and equipment ${sg(c.other)}`, `、預收（月費、教練課）與器材 ${sg(c.other)}`) : ''}${tx('.', '。')}</p>` : '';
   // the first month of a built gym is rent-free: the break-even count would mislead, so the card says what rent starts next month instead
   const rentFree = typeof BUILT !== 'undefined' && !!BUILT && idx >= 0 && idx < BUILT.rentFreeMonths, rentNext = S.area * S.rentRate;
   // judge round 4: when the count moves by more than 5% the row says why
   const BE_WHY = { fixedUp: rentStarted ? ['rent started', '開始付租金'] : ['fixed costs rose', '固定成本增加'], fixedDown: ['fixed costs fell', '固定成本減少'], visitsDown: ['visits per member fell', '每位會員來得比較少'], visitsUp: ['visits per member rose', '每位會員來得比較多'], eachDown: ['each member brought in less', '每位會員帶來的收入變少'], eachUp: ['each member brought in more', '每位會員帶來的收入變多'] };
   const bw = r.beWhy ? ` <small data-k="beWhy">${tx(`${r.beWhy.up ? 'up' : 'down'} from ${r.beWhy.from}: ${BE_WHY[r.beWhy.why][0]}`, `上個月 ${r.beWhy.from} 位，${r.beWhy.up ? '變多' : '變少'}：${BE_WHY[r.beWhy.why][1]}`)}</small>` : '';
   const be = r.breakEven && !rentFree ? row(tx('Members needed to cover costs', '打平需要的會員數'), tx(`about ${r.breakEven} all month (you averaged ${r.avgMembers})`, `整個月平均約 ${r.breakEven} 位（你這個月平均 ${r.avgMembers} 位）`) + bw, 'breakEven') : '';
-  // judge round 4: one line that carries the result down to the Year view's net profit, so the card's three money figures can be read together
+  // judge round 4: one line that carries the result down to the Year view's net profit; feedback round 2026-11-21: it and the cash line sit under one disclosure, so the card leads with one figure
   const bl = typeof monthBelow === 'function' && idx >= 0 ? monthBelow(rec) : null, leftOut = bl ? `<p class="note" data-k="leftOut">${tx(`The result leaves out the loan payment (${money(bl.loan)}), income tax (${money(bl.tax)}) and wear on equipment (${money(bl.dep)}). After wear, loan interest and tax the month's net profit is ${money(bl.net)}: the figure on the Year view.`, `這個結果沒有算貸款還款（${money(bl.loan)}）、所得稅（${money(bl.tax)}）和器材折舊（${money(bl.dep)}）。扣掉折舊、貸款利息與所得稅後，本月淨利是 ${money(bl.net)}，也就是「全年」那一頁的數字。`)}</p>` : '';
   const rentNote = rentFree ? `<p class="note warn" data-k="rentNext">${tx(`Rent was free this month. From next month rent of ${moneyK(rentNext)} a month starts: about ${money(rentNext / 30.4)} more cost every day.`, `這個月免租。下個月起每月租金 ${moneyK(rentNext)}：每天的成本大約多 ${money(rentNext / 30.4)}。`)}</p>` : '';
   const ch = (rec.changes || []).map(c => { const n = CHANGE_NAMES[c.k]; return n ? `${tx(n[0], n[1])} ${n[2](c.from)} → ${n[2](c.to)}` : ''; }).filter(Boolean);
@@ -5958,7 +5975,8 @@ function monthCardHtml(rec, prev) {
   const tip = tipT ? `<p class="note" data-k="tip"><b>${ch.length && prev ? tx('What your changes did', '你的調整帶來什麼') : tx('What to try', '可以試試')}</b> ${tx(tipT.en, tipT.zh)}</p>` : '';
   return `<h2 class="ttl">${tx(`${monthLabel(rec.name, rec.year)} closed${short}`, `${monthLabel(rec.name, rec.year)} 結帳${short}`)}</h2>
     <p class="big ${lost ? 'loss' : 'gain'}">${lost ? tx(`Lost ${amt}`, `虧 ${amt}`) : tx(`Made ${amt}`, `賺 ${amt}`)}<small>${tx('after rent, staff and running costs (the loan is separate)', '已扣租金、人事與營運成本（貸款另計）')}</small></p>
-    <table>${row(tx('Members', '會員'), `${r.startMembers} → <b>${r.members}</b> <small>${tx(`(+${r.joined} joined, −${r.lapsed} left)`, `（+${r.joined} 加入、−${r.lapsed} 離開）`)}</small>`)}${be}${row(tx('Cash in the bank', '銀行現金'), cash)}${cashWhy}${vs}</table>${leftOut}${rentNote}
+    <table>${row(tx('Members', '會員'), `${r.startMembers} → <b>${r.members}</b> <small>${tx(`(+${r.joined} joined, −${r.lapsed} left)`, `（+${r.joined} 加入、−${r.lapsed} 離開）`)}</small>`)}${be}${row(tx('Cash in the bank', '銀行現金'), cash)}${vs}</table>${rentNote}
+    ${cashWhy || leftOut ? `<details data-k="below"><summary>${tx('Cash, loan, tax and wear', '現金、貸款、稅與折舊')}</summary>${cashWhy}${leftOut}</details>` : ''}
     <p class="note">${ch.length ? tx('You changed: ', '你這個月調整了：') + ch.join(tx('; ', '；')) : tx('You changed nothing this month: prices, staff and equipment are as they were.', '這個月你沒有調整任何東西：價格、人力和器材都沒變。')}</p>
     ${tip}${g ? `<p class="note">${goalLineText()}</p>` : ''}`;
 }
@@ -5993,10 +6011,30 @@ function dayCardHtml() {
   const why = A.closed ? (A.closedWhy === 'rearrange' ? tx('Closed for rearranging: no visits, the fixed costs still ran.', '重新擺設休館：沒有人來，固定成本照付。') : A.closedWhy === 'closure' ? tx('Closed today: no visits, the fixed costs still ran.', '今日休館：沒有人來，固定成本照付。') : tx('Closed for the typhoon: no visits, the fixed costs still ran.', '颱風休館：沒有人來，固定成本照付。'))
     : tx(`earned ${money(p.net)} · costs ${money(p.net - p.ebitda)}`, `收入 ${money(p.net)} · 成本 ${money(p.net - p.ebitda)}`);
   const mem = n ? tx(`${M.pool.length} members · last night +${n.in} joined, −${n.out} left`, `會員 ${M.pool.length} 位 · 昨晚 +${n.in} 位加入、−${n.out} 位離開`) : tx(`${M.pool.length} members · who joins or leaves tonight shows in the morning`, `會員 ${M.pool.length} 位 · 今晚誰加入、誰離開，明早會告訴你`);
+  const pass = !A.closed && A.passN > 0 ? `<p class="note" data-k="passToday">${tx(`${A.passN} monthly ${A.passN === 1 ? 'pass' : 'passes'} sold today: ${money(A.passRev || 0)} paid at the desk now, counted as earned a day at a time over ${PASS.days} days.`, `今天賣出 ${A.passN} 張月費：${money(A.passRev || 0)} 現在就在櫃檯收到，分 ${PASS.days} 天逐日算進收入。`)}</p>` : '';
+  const fb = changeNoteHtml();
   const next = monthComplete() ? tx('New month', '新的一個月') : tx('Next day', '下一天');
   return `<h2 class="ttl">${dayLabel()} · ${tx('day closed', '今日結束')}</h2><p class="big ${sign < 0 ? 'loss' : sign > 0 ? 'gain' : ''}">${big}<small>${why}</small></p>
-    <p class="row2"><span>${tx(`${A.checkins || 0} visits`, `${A.checkins || 0} 人次到訪`)}</span><span>${mem}</span></p>
+    <p class="row2"><span>${tx(`${A.checkins || 0} visits`, `${A.checkins || 0} 人次到訪`)}</span><span>${mem}</span></p>${pass}${fb}
     <div class="row"><button data-day="next" class="btn-go on">${next} ▸</button><button data-day="books">${tx('Open the P&L', '打開損益表')}</button></div>`;
+}
+// feedback round 2026-11-21: for a week after a change, the day card says what it did so far: each day since against the same weekday the week before.
+// Today is not booked yet (joins and leaves come overnight), so visits and earnings count today and the night's numbers count booked days only.
+function changeNow() {
+  if (!BIZ || !BIZ.change || !A || !A.done) return null; const L = BIZ.dayLog || [], at = BIZ.change.at, today = { visits: A.visits || 0, earned: A.pnl ? A.pnl.net : 0, closed: !!A.closed };
+  if (L.length + 1 - at > 7) return null;
+  return { changes: BIZ.change.changes, day: changeEffect(L.concat([today]), at), night: changeEffect(L, at) };
+}
+function changeNoteHtml() {
+  const c = changeNow(); if (!c || !c.day) return '';
+  const nm = c.changes.map(x => { const n = CHANGE_NAMES[x.k]; return n ? `${tx(n[0], n[1])} ${n[2](x.from)} → ${n[2](x.to)}` : ''; }).filter(Boolean); if (!nm.length) return '';
+  const names = nm.slice(0, 2).join(tx('; ', '；')) + (nm.length > 2 ? tx(` and ${nm.length - 2} more`, ` 等 ${nm.length} 項`) : ''), d = c.day, i0 = (v) => Math.round(v).toLocaleString('en-US'), d1 = (v) => (Math.round(v * 10) / 10).toString();
+  const head = tx(`Your change, day ${d.n} of 7: ${names}`, `你的調整，第 ${d.n}/7 天：${names}`);
+  if (!d.pairs) return `<p class="note" data-k="changeFx"><b>${head}</b><br>${tx('There is no week before the change to compare with yet.', '調整之前還沒有完整的一週可以比較。')}</p>`;
+  const nt = c.night && c.night.pairs ? c.night : null;
+  const body = tx(`Visits ${i0(d.visits.before)} → ${i0(d.visits.after)} a day · earned ${money(d.earned.before)} → ${money(d.earned.after)} a day`, `每天到訪 ${i0(d.visits.before)} → ${i0(d.visits.after)} 人次 · 每天收入 ${money(d.earned.before)} → ${money(d.earned.after)}`)
+    + (nt ? tx(` · joined ${d1(nt.joined.before)} → ${d1(nt.joined.after)}, left ${d1(nt.lapsed.before)} → ${d1(nt.lapsed.after)} a night`, ` · 每晚加入 ${d1(nt.joined.before)} → ${d1(nt.joined.after)} 位、離開 ${d1(nt.lapsed.before)} → ${d1(nt.lapsed.after)} 位`) : '');
+  return `<p class="note" data-k="changeFx"><b>${head}</b><br>${body}<br><small>${tx('Each day since is set against the same weekday the week before.', '每一天都和調整前一週的同一天比較。')}</small></p>`;
 }
 // shown whenever the day is over and nothing else has the player's attention; driven by the monitors' refresh, so it follows the game's state rather than one event
 function syncDayCard() {
@@ -7635,8 +7673,8 @@ const SELFTESTS = {
   },
   goalTracker() {   // frame 6: the picked goal shows under the clock with its progress (a newly opened gym: 145 members)
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); showGoalCard(); document.querySelector('#goalCard [data-goal="members500"]').click(); updateMonitors(); const g = document.getElementById('goalLine');
-      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 530 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 530`), detail: { key: GOAL.key, line: g.textContent } }; }
-    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* owner 2026-11-20: a new gym on the sample floor aims at 55% of 965 */
+      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 630 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 630`), detail: { key: GOAL.key, line: g.textContent } }; }
+    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* feedback round 2026-11-21: a new gym on the sample floor aims at 65% of 965 */
   },
   goalResetsOnSetup() {   // Review focus 5: a new business starts without the old goal
     try { setupRun(); GOAL.key = 'cash12'; updateMonitors(); const a = document.getElementById('goalLine').textContent; setupRun(); updateMonitors(); const b = document.getElementById('goalLine').textContent;
@@ -8523,6 +8561,29 @@ const SELFTESTS = {
       const half = (all + tz).match(/[\u4e00-\u9fff）」][,;(]|[(][\u4e00-\u9fff]|[\u4e00-\u9fff]\)|[\u4e00-\u9fff]: /g) || [];
       return { ok: noteOk && cardOk && dayOk && wan && terms && !half.length, detail: { noteOk, z1, cardOk, z2: z2.slice(0, 500), dayOk, wan, yt: yt.slice(0, 200), terms, tabs, half: half.slice(0, 12) } }; }
     finally { hideNote(); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; GOAL.key = kg; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); updateMonitors(); }
+  },
+  changeFeedback() {   // feedback round 2026-11-21: for a week after a change the day card says what it did, each day against the same weekday the week before; a pass sold today is cash now and earned over 30 days; the month card leads with one figure
+    const was = zh() ? 'zh' : 'en', step = () => { goOn = false; if (!nextDay()) nextMonth(); }, end = () => { goOn = false; fastForward(30 * 3600); updateMonitors(); }, card = () => { const c = document.getElementById('dayCard'); return c && !c.hidden ? c.textContent : ''; }, S0 = JSON.parse(JSON.stringify(S));
+    try { setLang('en'); setupRun(); hideNote();
+      for (let k = 0; k < 8; k++) { end(); hideNote(); step(); }
+      end(); const quiet = !/Your change/.test(card());
+      const c0 = S.coaches, at = BIZ.dayLog.length + 2; step(); S.coaches = c0 + 1; step();   /* hired during a day: in force from the next morning */
+      end(); hideNote(); const t1 = card(), e = changeEffect(BIZ.dayLog.concat([{ visits: A.visits, earned: A.pnl.net, closed: !!A.closed }]), BIZ.change ? BIZ.change.at : -1);
+      const noticed = !!BIZ.change && BIZ.change.at === at && BIZ.change.changes.length === 1 && BIZ.change.changes[0].k === 'coaches';
+      const said = /Your change, day 1 of 7/.test(t1) && t1.includes(`Coaches ${c0} → ${c0 + 1}`) && !!e && e.pairs === 1 && t1.includes(`Visits ${Math.round(e.visits.before).toLocaleString('en-US')} → ${Math.round(e.visits.after).toLocaleString('en-US')} a day`) && t1.includes(money(e.earned.after)) && /same weekday/.test(t1);
+      setLang('zh'); updateMonitors(); const tz = card(), zhOk = /你的調整，第 1\/7 天/.test(tz) && /教練/.test(tz) && !/Your change|Visits/.test(tz); setLang('en'); updateMonitors();
+      for (let k = 0; k < 6; k++) { step(); end(); hideNote(); } const t7 = card(), week = /day 7 of 7/.test(t7) && /joined .* a night/.test(t7);
+      step(); end(); hideNote(); const gone = !/Your change/.test(card());
+      // a pass sold today
+      S.monthlyOn = true; S.monthlyPrice = 1300; let sold = false, tp = ''; for (let k = 0; k < 6 && !sold; k++) { step(); end(); hideNote(); if (A.passN > 0) { sold = true; tp = card(); } }
+      const pass = sold && tp.includes(`${A.passN} monthly pass`) && tp.includes(money(A.passRev)) && /earned a day at a time over 30 days/.test(tp);
+      // the month card: one headline figure; cash, loan, tax and wear under one closed disclosure
+      closeEarlySync('month'); goOn = false; nextMonth(); hideNote(); showMonthCard(); const nc = noteEl(), det = nc.querySelector('details[data-k="below"]');
+      const folded = !!det && !det.open && !!det.querySelector('[data-k="cashWhy"]') && !!det.querySelector('[data-k="leftOut"]') && det.querySelector('summary').getBoundingClientRect().height >= 44;
+      const shown = nc.textContent.replace(det ? det.textContent : '', ''), oneFig = (shown.match(/\b(Lost|Made|lost|made) \$/g) || []).length;
+      const ok = quiet && noticed && said && zhOk && week && gone && pass && folded && oneFig <= 2;
+      return { ok, detail: { quiet, noticed, said, zhOk, week, gone, pass, folded, oneFig, det: !!det, open: det && det.open, cw: !!(det && det.querySelector('[data-k="cashWhy"]')), lo: !!(det && det.querySelector('[data-k="leftOut"]')), sh: det && det.querySelector('summary').getBoundingClientRect().height, nct: nc.textContent.slice(0, 300), t1: t1.slice(0, 400), t7: t7.slice(0, 300), tp: tp.slice(0, 300), ch: BIZ.change, at, e } }; }
+    finally { hideNote(); setLang(was); Object.assign(S, S0); setupRun(); }
   },
   largeHallFits() {   // judge round 4: on a phone-shaped view the large hall is framed whole across the width: the board's limit no longer forces the zoom in past the fit
     const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, zz: view.zoom, x: view.target.x, tz: view.target.z }, a0 = aspect, b0 = view.baseH, out = {};

@@ -79,7 +79,7 @@ test('the weekly peak and the door limit follow the floor area (research 2026-11
   assert.deepEqual([80, 115, 160, 320].map(B.capForPing), [42, 60, 83, 167]);
 });
 
-const R = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js'], ['monthReport', 'monthTip', 'settingChanges', 'goalStatus', 'membersTarget']);
+const R = loadSrc(['src/a1_params.js', 'src/a2_pnl.js', 'src/a3_build.js'], ['monthReport', 'monthTip', 'settingChanges', 'goalStatus', 'membersTarget', 'changeEffect']);
 const month = (o) => ({ name: 'Nov', year: 2026, days: 30.4, members: 220, joined: 60, lapsed: 30, returned: 10, visits: 1000, cashEnd: 1e6, cashIn: 100000, cashOut: 300000,
   pnl: { net: 150000, contribution: 100000, fixed: 250000, ebitda: -150000 }, ...o });
 
@@ -163,8 +163,8 @@ test('setting changes: only what moved, with before and after', () => {
   assert.equal(R.settingChanges(a, { ...a }).length, 0);
 });
 
-test('members goal: the target follows the gym (55% of its steady membership, to the nearest 10); a first month under 15 days does not count as one of the three', () => {
-  assert.equal(R.membersTarget(662, 'new'), 360); assert.equal(R.membersTarget(1351, 'new'), 740); assert.equal(R.membersTarget(965, 'existing'), 500);
+test('members goal: the target follows the gym (65% of its steady membership, to the nearest 10: above what an untouched gym reaches, about 61%); a first month under 15 days does not count as one of the three', () => {
+  assert.equal(R.membersTarget(662, 'new'), 430); assert.equal(R.membersTarget(1351, 'new'), 880); assert.equal(R.membersTarget(965, 'existing'), 500);
   const m = (members, days) => ({ members, days, lapsed: 0 });
   const s = (months, poolNow) => ({ months, poolNow, monthIndex: months.length, target: 360 });
   assert.equal(R.goalStatus('members500', s([m(190, 11), m(250, 31), m(300, 31)], 330)).state, 'on');      // the 11-day month is not one of the three
@@ -206,4 +206,20 @@ test('month report (judge round 4): months left reads the average burn of the la
   const fewer = R.monthReport(month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 3200, pnl: P({ contribution: 200000, ebitda: -50000 }) }), base);
   assert.equal(fewer.beWhy.why, 'visitsDown');
   assert.equal(R.monthReport(month({ members: 400, joined: 30, returned: 0, lapsed: 30, visits: 4000, pnl: P({ fixed: 255000, ebitda: -5000 }) }), base).beWhy, undefined);   // within 5%: nothing to explain
+});
+
+// feedback round: after a change, each day since is set against the same weekday the week before the change
+test('what a change did: each day since the change against the same weekday a week earlier, for up to 7 days', () => {
+  const day = (visits, earned, joined, lapsed, closed) => ({ visits, earned, joined, lapsed, closed: !!closed });
+  const log = [day(100, 40e3, 6, 2), day(110, 42e3, 6, 2), day(120, 44e3, 6, 2), day(130, 46e3, 6, 2), day(140, 48e3, 6, 2), day(150, 50e3, 6, 2), day(160, 52e3, 6, 2),
+    day(90, 41e3, 4, 3), day(99, 43e3, 4, 3)];
+  const e = R.changeEffect(log, 7);
+  assert.equal(e.n, 2); assert.equal(e.pairs, 2);
+  assert.equal(e.visits.before, 105); assert.equal(e.visits.after, 94.5);     // days 0 and 1 against days 7 and 8
+  assert.equal(e.earned.before, 41e3); assert.equal(e.earned.after, 42e3);
+  assert.equal(e.joined.after, 4); assert.equal(e.lapsed.before, 2);
+  assert.equal(R.changeEffect(log, 9), null);                                  // no day played since the change yet
+  assert.equal(R.changeEffect(log.slice(0, 3), 1).pairs, 0);                   // no week before it: nothing to compare with
+  assert.equal(R.changeEffect([...log.slice(0, 7), day(0, 0, 0, 0, true), day(99, 43e3, 4, 3)], 7).pairs, 1);   // a closed day is left out
+  assert.equal(R.changeEffect([...log, ...log], 7).n, 7);                      // a week at most
 });

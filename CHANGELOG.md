@@ -4,7 +4,13 @@ Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+- For a week after you change a price, the pass or the roster, the day card says what the change did so far: visits and earnings a day, sign-ups and leavers a night, each day against the same weekday the week before.
+- A day that sells monthly passes says so on the day card: the cash came in today and is earned over 30 days.
+
 ### Changed
+- The members goal asks for 65% of the gym's full membership, above what an untouched gym reaches.
+- The month card leads with one result; cash, loan, tax and wear sit under one tap.
 - The desk has a job: desk hours below what the floor needs cost sign-ups and members, and hours above help half as much. The Staff tab and the receptionist say so with numbers.
 - A hall that outgrows its cleaning loses members. The receptionist keeps up with 220 visits a day and each cleaner with 200 more.
 - A monthly pass is cash the day it is sold and is earned a day at a time over its 30 days, so the day's result no longer jumps on sale days.

@@ -1615,8 +1615,8 @@ const SELFTESTS = {
   },
   goalTracker() {   // frame 6: the picked goal shows under the clock with its progress (a newly opened gym: 145 members)
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); showGoalCard(); document.querySelector('#goalCard [data-goal="members500"]').click(); updateMonitors(); const g = document.getElementById('goalLine');
-      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 530 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 530`), detail: { key: GOAL.key, line: g.textContent } }; }
-    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* owner 2026-11-20: a new gym on the sample floor aims at 55% of 965 */
+      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 630 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 630`), detail: { key: GOAL.key, line: g.textContent } }; }
+    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* feedback round 2026-11-21: a new gym on the sample floor aims at 65% of 965 */
   },
   goalResetsOnSetup() {   // Review focus 5: a new business starts without the old goal
     try { setupRun(); GOAL.key = 'cash12'; updateMonitors(); const a = document.getElementById('goalLine').textContent; setupRun(); updateMonitors(); const b = document.getElementById('goalLine').textContent;
@@ -2503,6 +2503,29 @@ const SELFTESTS = {
       const half = (all + tz).match(/[\u4e00-\u9fff）」][,;(]|[(][\u4e00-\u9fff]|[\u4e00-\u9fff]\)|[\u4e00-\u9fff]: /g) || [];
       return { ok: noteOk && cardOk && dayOk && wan && terms && !half.length, detail: { noteOk, z1, cardOk, z2: z2.slice(0, 500), dayOk, wan, yt: yt.slice(0, 200), terms, tabs, half: half.slice(0, 12) } }; }
     finally { hideNote(); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; GOAL.key = kg; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); updateMonitors(); }
+  },
+  changeFeedback() {   // feedback round 2026-11-21: for a week after a change the day card says what it did, each day against the same weekday the week before; a pass sold today is cash now and earned over 30 days; the month card leads with one figure
+    const was = zh() ? 'zh' : 'en', step = () => { goOn = false; if (!nextDay()) nextMonth(); }, end = () => { goOn = false; fastForward(30 * 3600); updateMonitors(); }, card = () => { const c = document.getElementById('dayCard'); return c && !c.hidden ? c.textContent : ''; }, S0 = JSON.parse(JSON.stringify(S));
+    try { setLang('en'); setupRun(); hideNote();
+      for (let k = 0; k < 8; k++) { end(); hideNote(); step(); }
+      end(); const quiet = !/Your change/.test(card());
+      const c0 = S.coaches, at = BIZ.dayLog.length + 2; step(); S.coaches = c0 + 1; step();   /* hired during a day: in force from the next morning */
+      end(); hideNote(); const t1 = card(), e = changeEffect(BIZ.dayLog.concat([{ visits: A.visits, earned: A.pnl.net, closed: !!A.closed }]), BIZ.change ? BIZ.change.at : -1);
+      const noticed = !!BIZ.change && BIZ.change.at === at && BIZ.change.changes.length === 1 && BIZ.change.changes[0].k === 'coaches';
+      const said = /Your change, day 1 of 7/.test(t1) && t1.includes(`Coaches ${c0} → ${c0 + 1}`) && !!e && e.pairs === 1 && t1.includes(`Visits ${Math.round(e.visits.before).toLocaleString('en-US')} → ${Math.round(e.visits.after).toLocaleString('en-US')} a day`) && t1.includes(money(e.earned.after)) && /same weekday/.test(t1);
+      setLang('zh'); updateMonitors(); const tz = card(), zhOk = /你的調整，第 1\/7 天/.test(tz) && /教練/.test(tz) && !/Your change|Visits/.test(tz); setLang('en'); updateMonitors();
+      for (let k = 0; k < 6; k++) { step(); end(); hideNote(); } const t7 = card(), week = /day 7 of 7/.test(t7) && /joined .* a night/.test(t7);
+      step(); end(); hideNote(); const gone = !/Your change/.test(card());
+      // a pass sold today
+      S.monthlyOn = true; S.monthlyPrice = 1300; let sold = false, tp = ''; for (let k = 0; k < 6 && !sold; k++) { step(); end(); hideNote(); if (A.passN > 0) { sold = true; tp = card(); } }
+      const pass = sold && tp.includes(`${A.passN} monthly pass`) && tp.includes(money(A.passRev)) && /earned a day at a time over 30 days/.test(tp);
+      // the month card: one headline figure; cash, loan, tax and wear under one closed disclosure
+      closeEarlySync('month'); goOn = false; nextMonth(); hideNote(); showMonthCard(); const nc = noteEl(), det = nc.querySelector('details[data-k="below"]');
+      const folded = !!det && !det.open && !!det.querySelector('[data-k="cashWhy"]') && !!det.querySelector('[data-k="leftOut"]') && det.querySelector('summary').getBoundingClientRect().height >= 44;
+      const shown = nc.textContent.replace(det ? det.textContent : '', ''), oneFig = (shown.match(/\b(Lost|Made|lost|made) \$/g) || []).length;
+      const ok = quiet && noticed && said && zhOk && week && gone && pass && folded && oneFig <= 2;
+      return { ok, detail: { quiet, noticed, said, zhOk, week, gone, pass, folded, oneFig, det: !!det, open: det && det.open, cw: !!(det && det.querySelector('[data-k="cashWhy"]')), lo: !!(det && det.querySelector('[data-k="leftOut"]')), sh: det && det.querySelector('summary').getBoundingClientRect().height, nct: nc.textContent.slice(0, 300), t1: t1.slice(0, 400), t7: t7.slice(0, 300), tp: tp.slice(0, 300), ch: BIZ.change, at, e } }; }
+    finally { hideNote(); setLang(was); Object.assign(S, S0); setupRun(); }
   },
   largeHallFits() {   // judge round 4: on a phone-shaped view the large hall is framed whole across the width: the board's limit no longer forces the zoom in past the fit
     const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, zz: view.zoom, x: view.target.x, tz: view.target.z }, a0 = aspect, b0 = view.baseH, out = {};

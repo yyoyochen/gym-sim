@@ -64,8 +64,16 @@ function goalStatus(key, s) {
   }
   return { state: 'on', text: T('', '') };
 }
-// owner 2026-11-20: the members goal asks for 55% of the gym's steady membership (a little more than the ramp gives untouched); an established gym keeps 500
-function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.55 / 10) * 10 : 500; }
+// feedback round 2026-11-21: the members goal asks for 65% of the gym's steady membership; an untouched gym reaches about 61% by the deadline, so the goal takes a move (judge round 4: 55% was met by doing nothing). An established gym keeps 500.
+function membersTarget(steady, build) { return build === 'new' ? Math.round(steady * 0.65 / 10) * 10 : 500; }
+// feedback round 2026-11-21: what a change did. log: one entry a played day { visits, earned, joined, lapsed, closed }; at: the first day played with the change.
+// Each day since (up to 7) is set against the same weekday the week before, so weekends compare with weekends; closed days are left out.
+function changeEffect(log, at) {
+  const n = Math.min(7, log.length - at); if (n < 1) return null;
+  const pairs = []; for (let k = 0; k < n; k++) { const a = log[at + k], b = log[at + k - 7]; if (b && !a.closed && !b.closed) pairs.push([b, a]); }
+  const av = (i, f) => pairs.length ? pairs.reduce((t, p) => t + f(p[i]), 0) / pairs.length : 0, m = (f) => ({ before: av(0, f), after: av(1, f) });
+  return { n, pairs: pairs.length, visits: m(d => d.visits), earned: m(d => d.earned), joined: m(d => d.joined), lapsed: m(d => d.lapsed) };
+}
 // ================================================================ the month's report (evaluation 2026-11-20): what the month did, in a handful of numbers a player can act on.
 // cur / prev: archived months { days, members, joined, lapsed, returned, visits, cashEnd, cashIn, cashOut, pnl }. A short opening month is scaled to 30.4 days.
 // hist (display only): the last up-to-3 closed months, this one last; months-left is read against their average burn so one odd month does not swing it

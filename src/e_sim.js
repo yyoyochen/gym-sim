@@ -302,12 +302,19 @@ function liveCash() { return BIZ ? BIZ.cash + (A && A.pnl ? dayCash(A.pnl) : 0) 
 function noteCashOut() { if (BIZ.cash < 0 && !BIZ.cashOutAt) BIZ.cashOutAt = { month: M.cfg.month, year: BIZ.year, day: A.date, mi: BIZ.monthIndex }; }
 function bookCash(p) { if (!BIZ || !p) return; BIZ.cash += dayCash(p); BIZ.mIn += p.cashIn; BIZ.mOut += p.cashIn - dayCash(p); noteCashOut(); }
 function setupRun() { if (typeof hideNote === 'function') hideNote();   /* a new business starts without an old notice */ if (typeof resetGoal === 'function') resetGoal(); applyPublished(); if (typeof BOOKS !== 'undefined') BOOKS.stage = null; applyBuild(); newBusiness(); setupMonth(); setupDay(0); }
+// feedback round 2026-11-21: a rolling log of played days across months (the last 21), and the latest change of settings, noticed the first morning it is in force
+function logDay(rec) { if (!BIZ) return; const L = BIZ.dayLog || (BIZ.dayLog = []); L.push({ visits: rec.visits || 0, earned: rec.pnl ? rec.pnl.net : 0, joined: (rec.joined || 0) + (rec.returned || 0), lapsed: rec.lapsed || 0, closed: !!A.closed }); if (L.length > 21) { L.shift(); if (BIZ.change) BIZ.change.at--; } }
+function noteChange() {
+  if (!BIZ || typeof settingSnap !== 'function') return; const snap = settingSnap(), L = BIZ.dayLog || (BIZ.dayLog = []);
+  if (BIZ.daySnap) { const ch = settingChanges(BIZ.daySnap, snap); if (ch.length) BIZ.change = { at: L.length, changes: ch }; }
+  BIZ.daySnap = snap;
+}
 function bookDay() { return { dayI: A.dayI, dow: A.dow, date: A.date, visits: A.visits, paidVisits: A.paidVisits || 0, blendSum: A.blendSum || 0, lens: (A.visitLens || []).slice(), ptSessions: A.ptSessions, balked: A.balked || 0, bad: A.bad || 0, pnl: A.pnl }; }
-function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
+function nextDay() { if (!M || M.dayI + 1 >= M.cal.length) return false; bookCash(A.pnl); noteDayBest(A.pnl.takings); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); logDay(rec); M.balkedTotal += rec.balked; M.badTotal += rec.bad; setupDay(M.dayI + 1); return true; }
 // ================================================================ the month closes and the business carries on (D9)
 // closing: the last day is booked (cash, churn between days), the loan instalment and income tax leave the bank, the month is archived
 function closeMonth() {
-  bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec);
+  bookCash(A.pnl); const rec = bookDay(); Object.assign(rec, endDay()); M.days.push(rec); logDay(rec);
   const pnl = {}; for (const d of M.days) for (const k in d.pnl) if (typeof d.pnl[k] === 'number') pnl[k] = (pnl[k] || 0) + d.pnl[k];
   const frac = M.cal.length / daysInMonth(BIZ.year, M.cfg.month);   /* a short first month pays its share of the instalment and depreciation */
   const lm = loanMonth(BIZ.balance, BIZ.rate * frac, BIZ.payment * frac); BIZ.balance = lm.balance;
@@ -486,6 +493,7 @@ function setupDay(i) {
   applyPublished();
   if (BIZ && BIZ.pending && !M.cal[i].rearrange && BIZ.pendingHall) { const h = BIZ.pendingHall; S.hallW = M.cfg.hallW = h.w; S.hallD = M.cfg.hallD = h.d; S.sampleGrid = true; setHall(h.w, h.d); BIZ.pendingHall = null; }   /* Plan 12: the converted sample keeps its rent area (S.area) */
   if (BIZ && BIZ.pending && !M.cal[i].rearrange) { S.layout = M.cfg.layout = BIZ.pending; BIZ.pending = null; const n = countsOf(S.layout); Object.assign(S, n); Object.assign(M.cfg, n); }   /* Plan 12: a rearranged gym reopens with its new layout */
+  noteChange();   /* after a rearrange's new layout is in, so its piece count is part of the change */
   const cfg = JSON.parse(JSON.stringify(M.cfg)), day = M.cal[i];
   M.dayI = i;
   const rng = makeRng((M.seed ^ Math.imul(i + 1, 0x9E3779B1)) >>> 0);
