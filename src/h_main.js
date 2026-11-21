@@ -67,6 +67,8 @@ function applyLighting(t) {
 }
 // ================================================================ picking: tap a person to follow, or a station to inspect
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), gPlane = new THREE.Plane(new V3(0, 1, 0), 0), hitP = new V3(), _pv = new V3();
+// judge round 4: on a phone the view is tall and narrow, so fitting a large hall across the width needs the top of the frame (under the HUD) to reach past the board's far edge
+let VIEW_NARROW = null; const topM = () => ((VIEW_NARROW != null ? VIEW_NARROW : innerWidth < 860) ? 44 : 0);
 const ZMIN = 0.6, ZMAX = 10;   // furthest view is locked so the board always fills the screen
 const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downAt = null, panning = false, panLast = null;
 const _pr2 = new V3(), _pf2 = new V3();
@@ -148,7 +150,7 @@ canvas.addEventListener('touchend', touchEnd, { passive: false }); canvas.addEve
 
 for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });   // stop iOS zooming the whole page
 // the receptionist opens the books instead of being followed (Call 13); everyone else is followed
-function onAgentPicked(a) { if (A && a === A.desk) { receptionistSay(); return; }   /* owner 2026-11-15: the receptionist talks; the counter opens the P&L */ followA = a; focusS = null; view.follow = a; updateCard(); }
+function onAgentPicked(a) { if (A && a === A.desk) { if (!booksSeen()) openBooks(); else receptionistSay(); return; }   /* evaluation 2026-11-20: while the desk hint is up, the desk and the person at it both open the books */   /* owner 2026-11-15: the receptionist talks; the counter opens the P&L */ followA = a; focusS = null; view.follow = a; updateCard(); }
 // a tap on the reception desk (within 1.6 m of its centre) opens the books; the price sign opens Pricing
 function groundTarget(x, z) { if (Math.hypot(x - PRICEBOARD_AT.x, z - PRICEBOARD_AT.z) < 0.55) return { kind: 'board' }; if (Math.hypot(x - DESK_C.x, z - DESK_C.z) < 1.6) return { kind: 'desk' }; return null; }
 function actOn(t) { if (t.kind === 'agent') onAgentPicked(t.a); else if (t.kind === 'board') openBooks('Pricing'); else if (t.kind === 'desk') openBooks(); else if (t.kind === 'station') { focusS = t.s; followA = null; view.follow = null; updateCard(); } }
@@ -203,10 +205,17 @@ function render() {
 const focusV = new V3();
 let last = performance.now(), simAcc = 0, uiT = 0, plotT = 0;
 function frame(now) { requestAnimationFrame(frame); const real = Math.min(0.25, Math.max(0, (now - last) / 1000)); last = now; try { tick(real, now); } catch (err) { if (!frame.warned) { frame.warned = true; console.error(err); } } }   // one bad frame must never freeze the sim
+const QUIET = { rate: 600, ahead: 600 };   /* evaluation 2026-11-20: nobody about and nobody due for ten minutes: the clock runs at 600x until someone is */
+function quietNow() {
+  if (!A || A.done || A.inside > 0 || A.outQ.length || (typeof INTRO !== 'undefined' && INTRO.phase !== 'off' && INTRO.phase !== 'done')) return false;
+  const next = A.members[A.spawnI]; if (next && next.spawnT - A.t <= QUIET.ahead) return false;
+  return !A.members.some(a => a.visible);
+}
+function advanceRate() { return quietNow() ? Math.max(S.speed, QUIET.rate) : S.speed; }
 function advance(real) {
   if (!playing()) return;
-  simAcc += real * S.speed; let n = 0;
-  while (simAcc >= STEP && n < 1200) { simStep(); simAcc -= STEP; n++; if (A.done) { goOn = false; refreshGo(); showToast(tr(monthComplete() ? 'Month complete · press New month' : 'Day complete · press Next day')); break; } }
+  simAcc += real * advanceRate(); let n = 0;
+  while (simAcc >= STEP && n < 1200) { simStep(); simAcc -= STEP; n++; if (A.done) { goOn = false; refreshGo(); if (typeof syncDayCard === 'function') syncDayCard(); break; } }   /* judge 2026-11-20: the day ends on a card with its own Next day button, not a toast that points at a hidden one */
 }
 // the furthest view never shows past the board: zoom in just enough, and keep the target where every screen corner lands on the board
 const _vc = new V3();
@@ -225,7 +234,7 @@ function keepViewOnBoard() {
       const top = H2 - (view.yOff || 0) * 2 * H2, vis = (view.yOff || 0) > 0.01 ? 0.48 : 1;
       _vc.copy(_cr).multiplyScalar(sx * W2).addScaledVector(_cu, sy > 0 ? top : top - vis * 2 * H2);
       const k = -(view.target.y + _vc.y) / _cf.y; const ox = _vc.x + _cf.x * k, oz = _vc.z + _cf.z * k;
-      const m = sy < 0 ? 26 : 0; x0 = Math.max(x0, -Wb - m - ox); x1 = Math.min(x1, E + m - ox); z0 = Math.max(z0, -N - m - oz); z1 = Math.min(z1, S + m - oz);
+      const m = sy < 0 ? 26 : topM(); x0 = Math.max(x0, -Wb - m - ox); x1 = Math.min(x1, E + m - ox); z0 = Math.max(z0, -N - m - oz); z1 = Math.min(z1, S + m - oz);
     }
     return x0 <= x1 && z0 <= z1 ? [x0, x1, z0, z1] : null;
   };
@@ -278,51 +287,71 @@ function tick(raw, now) {
 // ================================================================ "+$" pops at the gate as members pay on the way out
 const PAYS = [], _payV = new V3();
 let payNext = 0, payDing = 0, payRun = null, payBiz = null;
+function bigPopHtml(p) {   /* a closed day's or month's takings, labelled as takings, with its result under it (first-minute polish: the till is not the headline win) */
+  const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase(), r = p.ebitda != null ? verdictShort(p.ebitda) : null;
+  const amt = p.earned != null ? p.earned : p.fee;   /* judge 2026-11-20: one income figure everywhere: what the period earned, the number its result is computed from */
+  return `+$${amt.toLocaleString('en-US')}<small>${lab} · ${tx('EARNED', '收入')}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>${r ? `<small class="v ${p.ebitda < 0 && r !== '±$0' ? 'loss' : 'gain'}">${tx(`${r} AFTER COSTS`, `扣除成本後 ${r}`)}</small>` : ''}`;
+}
 function updatePays() {
   const now = performance.now();
-  if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
-  if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; return; }   /* no money pops over the builder's preview */
+  if (A !== payRun) { payRun = A; if (BIZ !== payBiz) { payBiz = BIZ; for (const p of PAYS) p.el.remove(); PAYS.length = 0; payNext = 0; sumNext = 0; } }   // a new business clears pops still waiting from the old one; a new day keeps them (a week's close pops day by day)
+  if (BUILD.on) { for (const p of PAYS) p.el.remove(); PAYS.length = 0; if (A && A.payQ) A.payQ.length = 0; flushToasts(); return; }   /* no money pops over the builder's preview */
   if (A && A.payQ && A.payQ.length) {
     const q = A.payQ.splice(0);
     // fast-forward can bill dozens at once: show the latest few floor fees, and every PT sale
     const last = (f, n) => q.filter(f).slice(-n);
-    const show = [...last(p => !p.pt && !p.rent, 3), ...last(p => p.rent, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
+    const show = [...last(p => !p.pt && !p.rent && !p.pass, 3), ...last(p => p.rent, 2), ...last(p => p.pass, 2), ...last(p => p.pt, 3)];   // after a fast-forward: a few of each kind, PT sales last
     for (const p of show) {
       // colour: green = money in (fee, rent), yellow = capped visit, gold = PT sale (gold is reserved for it)
-      const crit = !p.pt && !p.rent && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
+      const crit = !p.pt && !p.rent && !p.pass && p.fee >= PRICE.cap;   // hit the per-visit cap: the "critical hit"
       const el = document.createElement('div'); el.className = 'pay' + (p.pt ? ' pt' : p.rent ? ' rent' : crit ? ' crit' : ''); el.style.opacity = 0;
-      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : crit ? '<small>MAX!</small>' : ''}`;
+      el.innerHTML = `+$${p.fee.toLocaleString('en-US')}${p.pt ? `<small>PT ×${p.pt.n}${p.pt.inst ? ' · ' + p.pt.inst : ''}!</small>` : p.rent ? '<small>RENT</small>' : p.pass ? `<small>${tx('MONTH PASS', '月費')}</small>` : crit ? '<small>MAX!</small>' : ''}`;
       document.body.appendChild(el);
       payNext = Math.max(now, payNext + (p.pt ? 700 : 450));
       const side = Math.random() < 0.5 ? -1 : 1;
       PAYS.push({ el, born: payNext, pt: !!p.pt, vx: side * (p.pt ? 6 : 14 + Math.random() * 22), size: p.pt ? 2.1 : 0.8 + Math.min(1, p.fee / PRICE.cap) * 0.6 + (crit ? 0.25 : 0), rung: false });
     }
   }
-  for (const p of BIG_POPS.splice(0)) {   /* owner 2026-11-16: a closed day's or the month's takings: big, like a PT sale; glowing only for an all-time best */
-    const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
-    const lab = p.month ? tr(p.month).toUpperCase() : `${tr(p.day.dow)} ${p.day.date}`.toUpperCase();
-    el.innerHTML = `+$${p.fee.toLocaleString('en-US')}<small>${lab}${p.best ? tx(' · BEST!', ' · 新高！') : ''}</small>`; document.body.appendChild(el);
-    payNext = Math.max(now, payNext + 700); PAYS.push({ el, born: payNext, pt: true, vx: 0, size: p.month ? 2.8 : 2.2, rung: false });
-  }
+  for (const p of BIG_POPS.splice(0)) addBigPop(p, now);   /* owner 2026-11-16: a closed day's or the month's result: big, like a PT sale; glowing only for an all-time best */
+  { const nc = document.getElementById('noteCard'); if (nc && !nc.hidden) for (let i = PAYS.length - 1; i >= 0; i--) if (PAYS[i].sum) dropPop(i); }   /* a notice card (the month's report) is read without a pop across it */
   const r = canvas.getBoundingClientRect();
   _payV.set(DOOR.x, 2.6, HZ).project(cam);   // the gate: numbers burst from here, they don't follow the member
   const gx = r.left + (_payV.x + 1) / 2 * r.width, gy = r.top + (1 - _payV.y) / 2 * r.height;
   for (let i = PAYS.length - 1; i >= 0; i--) {
-    const p = PAYS[i], ms = now - p.born, k = ms / (p.pt ? 2600 : 1300);
+    const p = PAYS[i], ms = now - p.born, k = ms / popDur(p);
     if (k < 0) continue;
-    if (k >= 1) { p.el.remove(); PAYS.splice(i, 1); continue; }
+    if (k >= 1) { dropPop(i); continue; }
     if (!p.rung) { p.rung = true; if (p.pt) sfx('jackpot'); else if (now - payDing > 120) { payDing = now; sfx('cash'); } }
-    // RPG damage number: punch in big, settle, hop up on an arc, drift sideways, fade at the end
-    const s = ms / 1000, punch = ms < 90 ? 0.3 + ms / 90 * 1.4 : ms < 220 ? 1.7 - (ms - 90) / 130 * 0.7 : 1;
-    let y = -(150 * s - 170 * s * s) - 18 * s, x = p.vx * s;   // fast hop that slows near its peak, then sinks a little
-    if (p.pt) {   // the PT sale: a bigger, slower rise that hangs in the air and shakes like a level-up
-      y = -70 * (1 - Math.exp(-s * 3.2));
-      if (ms > 120 && ms < 900) { x += Math.sin(ms / 22) * 3 * (1 - ms / 900); y += Math.cos(ms / 17) * 2 * (1 - ms / 900); }
-      p.el.style.filter = `brightness(${(1.1 + 0.25 * Math.sin(ms / 70)).toFixed(2)})`;   // gold glints
-    }
-    p.el.style.transform = `translate(${gx + x}px, ${gy + y}px) translate(-50%, -100%) scale(${(punch * p.size).toFixed(3)})`;
-    p.el.style.opacity = k < 0.7 ? 1 : (1 - k) / 0.3;
+    if (p.sum && popCovered()) placePop(p, innerWidth / 2, innerHeight * 0.42, ms); else placePop(p, gx, gy, ms);   /* judge round 4: with the books or the phone's sheet over the gate, the period's pop plays mid-screen, above them */
   }
+  { const on = sumPopsOn(), t = document.getElementById('toast'); if (t && (t.style.visibility === 'hidden') !== on) t.style.visibility = on ? 'hidden' : ''; }   /* a toast already up steps aside while a period's pop plays */
+  if (TOAST_Q.length && !sumPopsOn()) flushToasts();
+}
+function popCovered() { return (typeof BOOKS !== 'undefined' && BOOKS.open) || (innerWidth < 860 && !panel.classList.contains('closed')); }
+const POP_WEEK_MS = 950;   /* judge 2026-11-20: a week's seven pops come one after another, each on its own */
+let sumNext = 0;
+function popDur(p) { return p.dur || (p.pt ? 2600 : 1300); }
+function dropPop(i) { const p = PAYS[i]; if (p.el.parentNode) p.el.parentNode.removeChild(p.el); PAYS.splice(i, 1); }
+function addBigPop(p, now) {
+  const el = document.createElement('div'); el.className = 'pay sum' + (p.best ? ' best' : ''); el.style.opacity = 0;
+  el.innerHTML = bigPopHtml(p); document.body.appendChild(el);
+  const P = { el, born: Math.max(now, sumNext), pt: true, sum: true, dur: p.week ? POP_WEEK_MS : 2600, vx: 0, size: p.month ? 2.8 : 2.2, rung: false };
+  sumNext = P.born + P.dur; PAYS.push(P); return P;
+}
+// where a pop sits `ms` after it was born; (gx, gy) is the gate on screen. Whatever its size and language it stays inside a screen `vw` wide (judge 2026-11-20: a minus sign was pushed off a phone)
+function placePop(p, gx, gy, ms, vw = innerWidth) {
+  // RPG damage number: punch in big, settle, hop up on an arc, drift sideways, fade at the end
+  const s = ms / 1000, punch = ms < 90 ? 0.3 + ms / 90 * 1.4 : ms < 220 ? 1.7 - (ms - 90) / 130 * 0.7 : 1, k = ms / popDur(p);
+  let y = -(150 * s - 170 * s * s) - 18 * s, x = p.vx * s;   // fast hop that slows near its peak, then sinks a little
+  if (p.pt) {   // the PT sale: a bigger, slower rise that hangs in the air and shakes like a level-up
+    y = -70 * (1 - Math.exp(-s * 3.2));
+    if (ms > 120 && ms < 900) { x += Math.sin(ms / 22) * 3 * (1 - ms / 900); y += Math.cos(ms / 17) * 2 * (1 - ms / 900); }
+    p.el.style.filter = `brightness(${(1.1 + 0.25 * Math.sin(ms / 70)).toFixed(2)})`;   // gold glints
+  }
+  const w0 = p.el.offsetWidth || 1, h0 = p.el.offsetHeight || 1, sc = Math.min(punch * p.size, (vw - 16) / w0), half = w0 * sc / 2;
+  const cx = half * 2 >= vw - 12 ? vw / 2 : clamp(gx + x, half + 6, vw - half - 6), cy = Math.min(Math.max(gy + y, h0 * sc + 4), Math.max(h0 * sc + 4, innerHeight - 8));
+  p.el.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px) translate(-50%, -100%) scale(${sc.toFixed(3)})`;
+  p.el.style.opacity = k < 0.7 ? 1 : (1 - k) / 0.3;
 }
 const _lv = new V3(); function _lookOf(s) { return _lv.set(s.x, 1.2, s.z); }
 // ================================================================ boot
@@ -340,7 +369,7 @@ document.getElementById('langBtn').addEventListener('click', () => setLang(zh() 
 { const q = new URLSearchParams(location.search); if (!q.has('selftest') && !q.has('shot')) Object.assign(S, todayStart(new Date())); }   /* owner: the gym opens today; tests and screenshots keep 1 Jun 2027 */
 setupRun(); if (typeof syncSetupWidgets === 'function') syncSetupWidgets(); refreshPending();
 goOn = true; refreshGo();
-if (introWanted()) { goOn = false; refreshGo(); if (!resumeSaved()) openIntro(); }   /* a saved gym carries on; otherwise start by building (Plan 10) */
+if (introWanted()) { goOn = false; refreshGo(); if (!resumeSaved()) openIntro(); else frameHall(); }   /* a saved gym carries on; otherwise start by building (Plan 10) */
 if (window.innerWidth < 860) panel.classList.add('closed');
 if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('700 22px Silkscreen'), document.fonts.load('16px Digits', '0123456789')]).then(() => { drawPriceBoard(true); paintSign(); drawWhiteboard(A ? A.wb : 0); drawPRBoard(); }).catch(() => {});
 function fastForward(gymSeconds) { const n = Math.round(gymSeconds / STEP); for (let i = 0; i < n && !A.done; i++) simStep(); }
@@ -484,6 +513,168 @@ const SELFTESTS = {
       return { ok: Math.abs(v1 / v0 - Math.pow(1.1, -0.4)) < 0.005, detail: { v0, v1, ratio: v1 / v0 } }; }
     finally { Object.assign(S, keep); }
   },
+  hintOpensBooks() {   // evaluation 2026-11-20: the desk hint itself opens the books, and so does the receptionist until the books have been seen once
+    try { setupRun(); BOOKS_SEEN = false; closeBooks(); BOOKS_SEEN = false; document.getElementById('booksHint').click(); const byHint = BOOKS.open; closeBooks();
+      BOOKS_SEEN = false; onAgentPicked(A.desk); const byDesk = BOOKS.open; closeBooks();
+      onAgentPicked(A.desk); const rs = document.getElementById('recepSay'), talks = !BOOKS.open && !!rs && !rs.hidden;
+      return { ok: byHint && byDesk && talks, detail: { byHint, byDesk, talks } }; }
+    finally { closeBooks(); const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; BOOKS_SEEN = false; }
+  },
+  setupNeedsConfirm() {   // evaluation 2026-11-20: Setup never wipes a business that has been played in one tap
+    try { setupRun(); fastForward(30 * 3600); nextDay(); W.setup.click(); const kept = M.dayI === 1, asks = /\?|？/.test(W.setup.textContent);
+      W.setup.click(); const wiped = M.dayI === 0; W.setup.click(); const fresh = M.dayI === 0 && !/\?|？/.test(W.setup.textContent);
+      return { ok: kept && asks && wiped && fresh, detail: { kept, asks, wiped, fresh, text: W.setup.textContent } }; }
+    finally { setupRun(); refreshPending(); }
+  },
+  rearrangeKeepsZoom() {   // evaluation 2026-11-20: closing Rearrange gives the view back as it was; judge 2026-11-20: opening it frames the hall (it never zooms out past the fit)
+    try { setupRun(); view.zoomT = 2.2; view.target.set(3, 0, 1); openRearrange(); const fit = Math.max(BUILD_ZOOM(), hallFitZoom()), framed = view.zoomT === fit && Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2) < 0.01; cancelBuild();
+      const back = view.zoomT === 2.2 && view.target.x === 3 && view.target.z === 1; view.zoomT = 0.65; openRearrange(); const inNotOut = view.zoomT > 0.65; cancelBuild();
+      return { ok: framed && back && inNotOut && view.zoomT === 0.65, detail: { framed, fit, back, inNotOut, zoom: view.zoomT, x: view.target.x, z: view.target.z } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  quietHoursRunFast() {   // evaluation 2026-11-20: with nobody about and nobody due for ten minutes the clock runs fast; with people in, at the chosen speed
+    const keep = S.speed;
+    try { setupRun(); S.speed = 10; A.members.forEach(a => { if (a.spawnT < A.t + 1800) a.spawnT = A.t + 1800; }); const quiet = advanceRate();
+      setupRun(); fastForward(12.5 * 3600); const busy = advanceRate(), inside = A.inside;
+      INTRO.phase = 'wait'; const intro = (() => { setupRun(); A.members.forEach(a => { if (a.spawnT < A.t + 1800) a.spawnT = A.t + 1800; }); return advanceRate(); })(); INTRO.phase = 'off';
+      return { ok: quiet >= 600 && inside > 0 && busy === 10 && intro === 10, detail: { quiet, busy, inside, intro } }; }
+    finally { S.speed = keep; INTRO.phase = 'off'; setupRun(); }
+  },
+  speedButton() {   // evaluation 2026-11-20: the speed is one tap away on the view bar, and the gym runs at 60x once the opening is over
+    const keep = S.speed;
+    try { const b = document.getElementById('spdBtn'); S.speed = 10; syncSpeed(); const t0 = b.textContent; b.click(); const s1 = S.speed, t1 = b.textContent; b.click(); const s2 = S.speed; b.click(); const s3 = S.speed;
+      setupRun(); S.speed = 10; showGoalCard(); document.querySelector('#goalCard button[data-goal=""]').click(); const after = S.speed;
+      return { ok: /10/.test(t0) && s1 === 60 && /60/.test(t1) && s2 === 240 && s3 === 10 && after === 60, detail: { t0, s1, t1, s2, s3, after } }; }
+    finally { S.speed = keep; syncSpeed(); hideGoalCard(); INTRO.phase = 'off'; GOAL.key = null; }
+  },
+  liveLineAddsUp() {   // evaluation 2026-11-20: the line under the result explains it (earned and costs), never a cash figure that contradicts it; no absurd percentages
+    try { runDay({}); updateMonitors(); const small = document.querySelector('#liveLine small').textContent, nums = (small.match(/\$[\d,]+/g) || []).map(x => +x.replace(/[$,]/g, ''));
+      const adds = nums.length === 2 && Math.abs((nums[0] - nums[1]) - A.pnl.ebitda) < 2;
+      return { ok: adds && !/cash in/.test(small) && pctOf(2708, 100) === '–' && pctOf(168, 100) === '168.0%', detail: { small, nums, ebitda: A.pnl.ebitda } }; }
+    finally { setupRun(); }
+  },
+  scenario() {   // measurement only (not in the suite): one business played hands-off for some months. ?sc=<json> { size: S|M|L, seed, months, set: { settings }, counts: { category: multiplier } }
+    const q = JSON.parse(new URLSearchParams(location.search).get('sc') || '{}'), p = PRESETS[q.size || 'M'], ping = p.w * p.d, counts = q.rawKit ? presetCounts(p.w, p.d) : presetKit(p.w, p.d), med = (a) => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
+    for (const k in (q.counts || {})) counts[k] = Math.max(0, Math.round(counts[k] * q.counts[k]));
+    Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: null, build: 'new', monthsOpen: 0, peak: peakForPing(ping), cap: capForPing(ping) }, defaultRoster(ping), { finLoan: ({ S: 2.5e6, M: 9e6, L: 21e6 })[q.size || 'M'] }   /* the loan the money step opens with for each size */, q.seed ? { seed: q.seed } : {}, q.set || {}); S.staff = rosterCost(S);
+    setupRun(); const out = { size: q.size, ping, peakSet: S.peak, cap: S.cap, staff: S.staff, capex: Math.round(COSTS.capex), cash0: Math.round(BIZ.cash), pieces: S.layout ? S.layout.pieces.length : 0, stations: STATIONS.length, loanPay: Math.round(BIZ.payment), months: [] };
+    for (let m = 0; m < (q.months || 12); m++) {
+      const peaks = [], eve = []; let waits = 0, nw = 0, skipNone = 0, skipBusy = 0, lenSum = 0, lenN = 0, exPlan = 0;
+      for (;;) { fastForward(30 * 3600); if (!A.done) endStuckDay(); skipNone += A.skipNone || 0; skipBusy += A.skipBusy || 0; for (const v of A.visitLens || []) { lenSum += v; lenN++; } for (const a of A.members) if (a.rec && a.tDoor) exPlan += a.prog ? a.prog.length : 0; const occ = Array.from(A.occ).filter(v => !isNaN(v)); peaks.push(occ.length ? Math.max(...occ) : 0); for (const w of A.waits || []) { waits += (typeof w === 'number' ? w : w.w || 0); nw++; } if (!nextDay()) break; }
+      const pt = M.pool.filter(x => x.pt).length, pass = M.pool.filter(x => x.passUntil != null && x.passUntil > M.dayI).length, balk = M.balkedTotal + (A.balked || 0), bad = M.badTotal + (A.bad || 0);
+      nextMonth(); const r = BIZ.months[BIZ.months.length - 1], g = r.pnl, R = Math.round;
+      out.months.push({ len: lenN ? Math.round(lenSum / lenN * 10) / 10 : 0, waitMin: Math.round(waits), waitN: nw, skipNone, skipBusy, exPlan, mem: r.members, join: r.joined, lapse: r.lapsed, visits: r.visits, peakMax: Math.max(...peaks), peakMed: med(peaks), balk, bad, pt, pass, ebitda: R(g.ebitda), net: R(g.net), entry: R(g.entry), passes: R(g.passes || 0), ptEarned: R(g.ptEarned), rentals: R(g.rentals), coach: R(g.coach), fixed: R(g.fixed), staffC: R(g.staff), occ: R(g.occupancy), cash: R(r.cashEnd), tax: R(r.tax), interest: R(r.interest), principal: R(r.principal) });
+    }
+    out.kinds = STATIONS.reduce((o, s) => { o[s.type] = (o[s.type] || 0) + 1; return o; }, {}); out.asked = counts;
+    out.cashOutAt = BIZ.cashOutAt ? BIZ.cashOutAt.mi : null;
+    return { ok: true, detail: out };
+  },
+  monthCard() {   // evaluation 2026-11-20: a new month starts with last month's report: result, members, cash, what the player changed; it waits for the player
+    const keep = JSON.parse(JSON.stringify(S));
+    try { setupRun(); S.coaches = 3; const closed = monthLabel(M.cfg.month, BIZ.year), w = closeEarlySync('month'); finishClose(w, 'month', 0); closeBooks(); goOn = false; refreshGo();
+      W.go.click(); const c = document.getElementById('noteCard'), up = !c.hidden, text = c.textContent, waits = goOn === false && M.dayI === 0 && BIZ.months.length === 1;
+      const rec = BIZ.months[0], has = text.includes(closed) && /Coaches/.test(text) && text.includes(String(rec.members)) && rec.visits > 0 && rec.changes.length === 1;
+      c.querySelector('button[data-note="0"]').click(); const gone = c.hidden && goOn === true;
+      return { ok: up && waits && has && gone, detail: { up, waits, has, gone, text: text.slice(0, 260), changes: rec.changes } }; }
+    finally { goOn = false; hideNote(); Object.assign(S, keep); setupRun(); refreshGo(); }
+  },
+  cashOutCard() {   // evaluation 2026-11-20: running out of cash stops the game once and says what it means; the player may start over or carry on
+    try { setupRun(); goOn = true; BIZ.cash = -1; noteCashOut(); updateMonitors(); const c = document.getElementById('noteCard'), up = !c.hidden && /cash/i.test(c.textContent), paused = goOn === false, two = c.querySelectorAll('button').length === 2;
+      c.querySelector('button[data-note="1"]').click(); updateMonitors(); const once = c.hidden;
+      return { ok: up && paused && two && once, detail: { up, paused, two, once, text: c.textContent.slice(0, 200) } }; }
+    finally { goOn = false; hideNote(); setupRun(); refreshGo(); }
+  },
+  goalCards() {   // evaluation 2026-11-20: a goal met or missed is announced once, with the next goal a tap away; the members goal fits the gym's size
+    const keepG = GOAL.key, keepS = JSON.stringify(S);
+    try { setupRun(); GOAL.key = 'members500'; updateMonitors(); const c = document.getElementById('noteCard'), met = !c.hidden && /Goal met/.test(c.textContent);
+      c.querySelector('button[data-note="0"]').click(); const picks = !document.getElementById('goalCard').hidden; hideGoalCard(); INTRO.phase = 'off'; updateMonitors(); const once = c.hidden;
+      openIntro(); document.querySelector('#build [data-intro="S"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click(); goOn = false;
+      showGoalCard(); const label = document.querySelector('#goalCard button[data-goal="members500"]').textContent, fits = label.includes(String(membersTarget(M.steady, 'new'))) && !label.includes('500');
+      return { ok: met && picks && once && fits, detail: { met, picks, once, label } }; }
+    finally { GOAL.key = keepG; goOn = false; INTRO.phase = 'off'; hideGoalCard(); hideNote(); clearFollow(); if (BUILD.on) cancelBuild(); for (const q of Object.keys(S)) delete S[q]; Object.assign(S, JSON.parse(keepS)); document.body.classList.remove('introing'); syncSpeed(); setupRun(); refreshGo(); }
+  },
+  pnlSimpleFirst() {   // evaluation 2026-11-20: the P&L opens on six plain lines that add up to the result; the full statement is one tap away and stays open once opened
+    try { runDay({}); BOOKS.full = false; openBooks('Books'); const body = document.getElementById('bkBody'), rows = [...body.querySelectorAll('[data-k="simple"] tr')], v = (k) => +body.querySelector(`[data-k="simple"] [data-k="${k}"] [data-v]`).dataset.v;
+      const sum = v('s_earned') + v('s_coach') + v('s_premises') + v('s_staff') + v('s_running'), adds = Math.abs(sum - v('s_result')) <= 3 && Math.abs(v('s_result') - A.pnl.ebitda) <= 1;
+      const det = body.querySelector('details[data-k="full"]'), closed = !!det && !det.open && !!det.querySelector('[data-k="ebitda"]');
+      det.open = true; det.dispatchEvent(new Event('toggle')); updateBooks(true); const stays = document.querySelector('#bkBody details[data-k="full"]').open;
+      return { ok: rows.length === 6 && adds && closed && stays, detail: { rows: rows.length, sum, result: v('s_result'), closed, stays } }; }
+    finally { BOOKS.full = false; closeBooks(); setupRun(); }
+  },
+  runwayWarns() {   // evaluation 2026-11-20: under six months of running costs the money step says so in the warning colour; a comfortable start does not
+    try { setupRun(); const at = (k) => { openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click(); const w = document.querySelector('#build [data-k="runway"]'), o = { warn: w.classList.contains('warn'), text: w.textContent }; cancelBuild(); return o; };
+      const s = at('S'), m = at('M'); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); const at2 = () => { const w = document.querySelector('#build [data-k="runway"]'); return { warn: w.classList.contains('warn'), text: w.textContent }; };
+      S.finLoan = 7e6; renderBuild(); const thin = at2();   /* judge round 4: the default loan now fits the gym, so the thin start is one the player chose */
+      return { ok: !s.warn && !m.warn && thin.warn && /6/.test(thin.text), detail: { s, m, thin } }; }
+    finally { if (BUILD.on) cancelBuild(); }
+  },
+  ptPriceAdjust() {   // owner 2026-11-20: the PT session price is on the price list; packs carry the price in force when sold; dearer sessions sell fewer packs
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      const run = (p) => { let packs = 0, priced = true; const prices = ptPacks(p).map(k => k.price);
+        for (const sd of [1, 2, 3]) { Object.assign(S, JSON.parse(JSON.stringify(keep)), { seed: sd, ptSession: p }); setupRun(); for (let d = 0; d < 8; d++) { fastForward(30 * 3600); packs += A.packs || 0; if (d < 7) nextDay(); }
+          priced = priced && M.pool.concat(M.lapsed).every(m => !m.pt || prices.includes(m.pt.price)); }
+        return { packs, priced }; };
+      const cheap = run(1200), dear = run(2600);
+      Object.assign(S, JSON.parse(JSON.stringify(keep))); setupRun(); openBooks('Pricing');
+      const body = document.getElementById('bkBody'), row8 = () => body.querySelector('[data-k="pack8"]').textContent;
+      const before = row8(); body.querySelector('button[data-f="ptSession"][data-d="1"]').click(); const staged = row8(), liveStill = S.ptSession === PT_BASE;
+      document.querySelector('#bkBody [data-k="publish"]').click(); nextDay(); const applied = S.ptSession === PT_BASE + 50; closeBooks();
+      const ok = cheap.priced && dear.priced && cheap.packs > dear.packs && before === nt$(8 * PT_BASE) && staged === nt$(8 * (PT_BASE + 50)) && liveStill && applied;
+      return { ok, detail: { cheap, dear, before, staged, liveStill, applied } }; }
+    finally { closeBooks(); Object.assign(S, keep); PUBLISH = null; }
+  },
+  monthlyPass() {   // owner 2026-11-20: an optional monthly pass next to the minute price; members pick what is cheaper for them; pass visits are free; pass-only is allowed
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      setupRun(); const exp0 = (() => { fastForward(30 * 3600); return { v: A.visitsExpected, passes: A.pnl.passes, any: M.pool.some(m => m.passUntil != null) }; })();
+      Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600);
+      const p1 = A.pnl, n1 = A.passN || 0, holders = M.pool.concat(M.lapsed).filter(m => m.passUntil > M.dayI).length, ptCash = p1.deferredChange + p1.ptEarned;
+      const adds = Math.abs(p1.takings - (p1.entry + p1.cards + p1.passCash + ptCash + p1.rentals)) < 1, more = A.visitsExpected > exp0.v, day1 = p1.passCash === n1 * 600 && Math.abs(p1.passes - n1 * 20) < 1e-6;   /* rules round 2026-11-21: $600 in the till, $20 earned on the first of its 30 days */
+      const bought = A.members.filter(a => a.pass === 'bought'), boughtFree = bought.length === n1 && bought.every(a => a.fee === 0);
+      nextDay(); fastForward(30 * 3600); const day2 = Math.abs(A.pnl.passes - (n1 + (A.passN || 0)) * 20) < 1e-6 && A.pnl.passCash === (A.passN || 0) * 600;
+      const held = A.members.filter(a => a.pass === 'held'), heldFree = held.length > 0 && held.every(a => a.fee === 0 && a.paid);
+      Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1500 }); setupRun(); fastForward(30 * 3600);
+      const paid = A.members.filter(a => a.paid && a.rec), only = paid.length > 0 && paid.every(a => a.pass) && (A.paidVisits || 0) === 0;
+      const ok = exp0.passes === 0 && !exp0.any && n1 > 0 && day1 && day2 && holders === n1 && adds && more && boughtFree && heldFree && only;
+      return { ok, detail: { off: exp0, n1, passes: p1.passes, holders, adds, more, boughtFree, held: held.length, heldFree, only } }; }
+    finally { Object.assign(S, keep); }
+  },
+  passOnlyLeaves() {   // balance 2026-11-20: in a pass-only gym a member who would not buy the pass stops coming and is gone within weeks; nobody is charged by the minute; newcomers who would not buy do not join
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1000 }); setupRun(); const pr = priceList(), n0 = M.pool.length, non0 = M.pool.filter(m => !passMember(m, pr)).length;
+      fastForward(30 * 3600); const came = A.members.filter(a => a.rec), allBuyers = came.length > 0 && came.every(a => passMember(a.rec, pr) || a.pass);
+      for (let d = 0; d < 21 && nextDay(); d++) fastForward(30 * 3600);
+      const non1 = M.pool.filter(m => !passMember(m, pr)).length, share = passMarket(pr);
+      const ok = non0 > n0 * 0.2 && non0 < n0 * 0.6 && allBuyers && (A.paidVisits || 0) === 0 && non1 <= non0 * 0.1 && share > 0.5 && share < 0.72;
+      return { ok, detail: { n0, non0, non1, came: came.length, allBuyers, share, pool: M.pool.length } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  rosterFollowsFloor() {   // balance 2026-11-20: a new gym opens with the roster its floor needs; the sample keeps 2 full-time, 40 part-time hours and 2 coaches
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      const got = ['S', 'M', 'L'].map(k => { const p = PRESETS[k], r = defaultRoster(p.w * p.d); return [r.deskFT, r.deskPTh, r.coaches, rosterCost(r)]; });
+      const sample = defaultRoster(COSTS.area), lean = { ...S, deskFT: 1, deskPTh: 0 };
+      const cover = (ping) => deskCover(defaultRoster(ping), ping);   /* rules round 2026-11-21: the roster a floor opens with covers its desk exactly */
+      const ok = JSON.stringify(got.map(g => g.slice(0, 3))) === '[[2,10,1],[3,30,3],[4,100,6]]' && got[0][3] < got[1][3] && got[1][3] < got[2][3] && sample.deskFT === 2 && sample.deskPTh === 40 && sample.coaches === 2
+        && cover(80) === 1 && cover(320) === 1 && deskEffect(deskCover(lean, 320)).churn > 1.2 && deskEffect(deskCover(lean, 320)).join < 0.8;
+      return { ok, detail: { got } }; }
+    finally { Object.assign(S, keep); }
+  },
+  pricingMix() {   // the price list: pay-by-the-minute and the monthly pass each switch on and off, never both off; the pass shows who would take it; published for tomorrow
+    const keep = JSON.parse(JSON.stringify(S));
+    try {
+      setupRun(); openBooks('Pricing'); const body = document.getElementById('bkBody'), q = (s) => body.querySelector(s);
+      const noShare = !q('[data-k="passShare"]'); q('button[data-t="perMinOn"]').click();
+      const forced = BOOKS.stage.monthlyOn === true && BOOKS.stage.perMinOn === false, share = q('[data-k="passShare"]') ? q('[data-k="passShare"]').textContent : '';
+      q('button[data-t="monthlyOn"]').click(); const swapped = BOOKS.stage.perMinOn === true && BOOKS.stage.monthlyOn === false;
+      q('button[data-t="monthlyOn"]').click(); q('button[data-f="monthlyPrice"][data-d="-1"]').click(); const stepped = BOOKS.stage.monthlyPrice === PASS.price - 50 && S.monthlyOn === false;
+      q('[data-k="publish"]').click(); nextDay(); const applied = S.monthlyOn === true && S.perMinOn === true && S.monthlyPrice === PASS.price - 50; closeBooks();
+      const ok = noShare && forced && /\d/.test(share) && swapped && stepped && applied;
+      return { ok, detail: { noShare, forced, share, swapped, stepped, applied } }; }
+    finally { closeBooks(); Object.assign(S, keep); PUBLISH = null; }
+  },
   priceRaisesRevenue() {   // D3: a 10% rise earns more per day at first, with fewer visits
     const run = (k) => [1, 2, 3].map(sd => runDay({ seed: sd, priceOff: 1.2 * k, pricePeak: 1.5 * k })).reduce((t, r) => ({ fee: t.fee + r.fee, visits: t.visits + r.visits }), { fee: 0, visits: 0 });
     const a = run(1), b = run(1.1);
@@ -510,7 +701,7 @@ const SELFTESTS = {
   },
   staffRetention() {   // a lean roster raises members' churn hazard over a month (D10)
     const keep = JSON.parse(JSON.stringify(S)), haz = () => M.pool.reduce((t, m) => t + lapseHazard(m, M.dayI), 0);
-    try { S.seed = 5; S.staff = 184000; skimDays(30, true); const base = haz(); S.staff = 133000; const lean = haz();
+    try { S.seed = 5; skimDays(30, true); const base = haz(); S.deskFT = 1; S.deskPTh = 0; const lean = haz();   /* rules round 2026-11-21: desk hours, not the wage bill */
       return { ok: lean > base, detail: { base, lean } }; }
     finally { Object.assign(S, keep); }
   },
@@ -540,11 +731,11 @@ const SELFTESTS = {
       return { ok: S.priceOff === 1.1 && S.pricePeak === 1.3 && S.priceCap === 150 && maxFee > 0 && maxFee <= 150, detail: { maxFee, S: [S.priceOff, S.pricePeak, S.priceCap] } }; }
     finally { Object.assign(S, keep); }
   },
-  newBuildOpens() {   // a brand-new gym: 15% of the steady base, nothing prepaid yet, and the day still runs
+  newBuildOpens() {   // a brand-new gym: 25% of the steady base, nothing prepaid yet, and the day still runs
     const keep = JSON.parse(JSON.stringify(S));
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); const pool = M.pool.length, owed = owedValue(); fastForward(30 * 3600);
       const stuck = A.members.filter(a => a.state !== 'gone').length;
-      return { ok: Math.abs(pool - Math.round(965 * 0.15)) <= 1 && owed === 0 && stuck === 0 && A.visits > 0, detail: { pool, owed, visits: A.visits, stuck } }; }
+      return { ok: Math.abs(pool - Math.round(965 * 0.25)) <= 1 && owed === 0 && stuck === 0 && A.visits > 0, detail: { pool, owed, visits: A.visits, stuck } }; }
     finally { Object.assign(S, keep); }
   },
   rampBreakEven() {   // a new gym loses money in month 1 and makes it by month 9 (break-even around month 7)
@@ -670,9 +861,57 @@ const SELFTESTS = {
       return { ok: shown && M.dayI === d0 + 1 && BOOKS.open && !A.done, detail: { shown, d0, d1: M.dayI, open: BOOKS.open } }; }
     finally { closeBooks(); goOn = false; }
   },
-  liveLineTakings() {   // Plan 6 D2: the live line shows today's takings and check-ins
+  cardAndBooksPlain() {   // judge round 2: a member card never covers the HUD; the books' header and Today rows use plain words; the goal and hint lines sit on a plate
+    try { setupRun(); fastForward(9 * 3600 - A.t); const a = AGENTS.find(q => q.visible && q.kind === 'member'); onAgentPicked(a); updateMonitors(); updateHudBottom(); updateCard();
+      const card = document.getElementById('card').getBoundingClientRect(), hud = document.getElementById('hud').getBoundingClientRect(), shown = getComputedStyle(document.getElementById('card')).display !== 'none';
+      openBooks('Today'); const head = document.querySelector('#books .bkh h2').textContent, body = document.getElementById('bkBody').textContent; closeBooks();
+      const plate = getComputedStyle(document.getElementById('goalLine')).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(document.getElementById('hudSub')).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      const ok = shown && card.top >= hud.bottom - 1 && !/P&L/.test(head) && !/In the till|Floor rentals|PT packs sold/.test(body) && plate;
+      return { ok, detail: { shown, cardTop: card.top, hudBottom: hud.bottom, head, plate } }; }
+    finally { clearFollow(); closeBooks(); }
+  },
+  hudClear() {   // judge round 1: on a phone-width page the clock line clears the toolbar, the goal line stays on screen, and the desk hint stays on screen
+    const keep = GOAL.key; try { setupRun(); GOAL.key = 'members500'; updateMonitors(); updateGoalLine();
+      const r = (id) => document.getElementById(id).getBoundingClientRect(), clk = r('hudClock'), vb = r('viewbar'), gl = r('goalLine'), narrow = innerWidth < 860;
+      const clear = !narrow || clk.top >= vb.bottom - 1 || clk.right <= vb.left + 1, goalIn = gl.right <= innerWidth + 1;
+      const h = document.getElementById('booksHint'), seen0 = BOOKS_SEEN; BOOKS_SEEN = false; closeBooks(); updateBooksHint(window.__LO.toScreen); BOOKS_SEEN = seen0; h.style.display = 'block'; h.style.left = (innerWidth - 20) + 'px'; h.style.top = '200px'; placeBooksHint(h); const hb = h.getBoundingClientRect(), hintIn = hb.right <= innerWidth + 1 && hb.left >= -1;
+      const t = h.textContent;
+      return { ok: clear && goalIn && hintIn && t.length > 8 && !/P&L|損益表/.test(t), detail: { narrow, clk: [clk.top, clk.right], vb: [vb.bottom, vb.left], gl: gl.right, w: innerWidth, hb: [hb.left, hb.right], t } }; }
+    finally { GOAL.key = keep; const h = document.getElementById('booksHint'); h.style.display = 'none'; updateGoalLine(); }
+  },
+  introHidesHint() {   // judge round 1: the gesture hint is not shown while the opening follows the first member; it comes back after the goal card
+    try { document.body.classList.remove('hinted'); setupRun(); clearFollow(); onGymOpened(true); const sub = document.getElementById('hudSub'), vis = () => getComputedStyle(sub).display !== 'none';
+      let during = false; for (let i = 0; i < 20000 && INTRO.phase !== 'goal'; i++) { fastForward(1); updateIntro(0.1); if (INTRO.phase === 'follow' && vis()) during = true; }
+      document.querySelector('#goalCard [data-goal=""]').click(); const after = vis();
+      return { ok: !during && after, detail: { during, after, phase: INTRO.phase } }; }
+    finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); document.body.classList.remove('introing'); }
+  },
+  booksTabsNoLoneRow() {   // first-minute polish: on a phone-width page the books' tabs never leave one tab alone on a row
+    const bk = document.getElementById('books'), w0 = bk.style.width; try { openBooks('Today'); bk.style.width = '370px'; const tops = [...document.querySelectorAll('#books .bktabs button')].map(b => Math.round(b.getBoundingClientRect().top)), rows = {};
+      for (const t of tops) rows[t] = (rows[t] || 0) + 1; const counts = Object.values(rows), narrow = innerWidth < 860;
+      return { ok: tops.length === 7 && (!narrow || counts.join() === '4,3'),   /* two even rows whatever the font: 4 then 3 */ detail: { w: innerWidth, bw: bk.getBoundingClientRect().width, counts } }; }
+    finally { bk.style.width = w0; closeBooks(); }
+  },
+  hudHintAndToasts() {   // first-minute polish: the gesture hint goes after the first touch of the scene, and toasts sit below the HUD block, never on it
+    try { document.body.classList.remove('hinted', 'introing'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {}
+      const sub = document.getElementById('hudSub'), before = getComputedStyle(sub).display !== 'none';
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40, pointerId: 9 })); window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 40, clientY: 40, pointerId: 9 }));
+      const after = getComputedStyle(sub).display === 'none';
+      updateHudBottom(); const hb = parseFloat(document.documentElement.style.getPropertyValue('--hudB')), real = document.getElementById('hud').getBoundingClientRect().bottom;
+      return { ok: before && after && Math.abs(hb - real) <= 1, detail: { before, after, hb, real } }; }
+    finally { document.body.classList.remove('hinted'); try { localStorage.removeItem('gymsim.hinted'); } catch (e) {} }
+  },
+  verdictShown() {   // first-minute polish: whether the day made money is readable without opening a tab, and is the first thing on the Today tab and under the day's pop
+    try { runDay({}); updateMonitors(); const v = verdictText(A.pnl), ll = document.getElementById('liveLine').textContent, short = verdictLive(A.pnl.ebitda, A.pnl).en;
+      openBooks('Today'); const first = (document.querySelector('#bkBody .grp') || {}).textContent || ''; closeBooks();
+      BIG_POPS.length = 0; nextDay(); closeEarlySync('day'); const p = BIG_POPS[0], html = p ? bigPopHtml(p) : '';
+      const ok = ll.includes(short) && first.includes(v.en) && !!p && p.ebitda === Math.round(A.pnl.ebitda) && html.includes(verdictShort(p.ebitda));
+      return { ok, detail: { ll, short, first: first.slice(0, 120), v: v.en, pop: html.slice(0, 160) } }; }
+    finally { BIG_POPS.length = 0; closeBooks(); setupRun(); }
+  },
+  liveLineTakings() {   // Plan 6 D2: the live line shows what the day earned and what it cost
     runDay({}); updateMonitors(); const t = document.getElementById('liveLine').textContent;
-    return { ok: t.includes(money(A.pnl.takings)) && t.includes(String(A.checkins)) && A.pnl.takings > 0, detail: t };
+    return { ok: t.includes(money(A.pnl.net)) && t.includes(money(A.pnl.net - A.pnl.ebitda)) && A.pnl.takings > 0, detail: t };   /* evaluation 2026-11-20: earned and costs, the two numbers behind the result */
   },
   booksTodayTill() {   // Plan 6: the till on the Today tab matches the day's P&L
     try { runDay({}); openBooks('Today'); const v = (k) => (document.querySelector(`#bkBody [data-k="${k}"]`) || {}).textContent;
@@ -685,7 +924,7 @@ const SELFTESTS = {
       const sum = cells.reduce((t, c) => t - +c.querySelector('[data-v]').dataset.v, 0);   /* fixed lines are shown as negatives */
       const want = ['entryOff', 'entryPeak', 'cards', 'ptEarned', 'rentals', 'addOns', 'gross', 'vat', 'net', 'coach', 'mkt', 'card', 'contribution', 'fixed', 'ebitda', 'depEq', 'depFit', 'ebit', 'tax', 'netProfit', 'ptCash', 'deferred', 'ptDue'];
       const missing = want.filter(k => !document.querySelector(`#bkBody [data-k="${k}"]`));
-      return { ok: cells.length === 18 && Math.abs(sum - A.pnl.fixed) <= cells.length && !missing.length, detail: { lines: cells.length, sum, fixed: A.pnl.fixed, missing } }; }
+      return { ok: cells.length === 19 && Math.abs(sum - A.pnl.fixed) <= cells.length && !missing.length, detail: { lines: cells.length, sum, fixed: A.pnl.fixed, missing } }; }
     finally { closeBooks(); }
   },
   booksMonthView() {   // Plan 6: the month view shows the projected month and its payback and range
@@ -838,7 +1077,7 @@ const SELFTESTS = {
     const keep = JSON.parse(JSON.stringify(S));
     try { skimDays(30, true); fastForward(30 * 3600); nextMonth(); skimDays(31); fastForward(30 * 3600); nextMonth(); fastForward(10 * 3600);
       BOOKS.period = 'year'; openBooks('Books'); const rows = document.querySelectorAll('#bkBody [data-k="yr"]').length, tot = (document.querySelector('#bkBody [data-k="yrEbitda"]') || {}).textContent;
-      const want = money(BIZ.months.reduce((t, m) => t + m.pnl.ebitda, 0) + projectMonth().total.ebitda); closeBooks();
+      const want = money(BIZ.months.reduce((t, m) => t + m.pnl.ebitda, 0) + projectMonth().mtd.ebitda); closeBooks();   /* judge 2026-11-20: so far = closed months + this month to date */
       return { ok: BIZ.months.length === 2 && rows === 3 && tot === want, detail: { months: BIZ.months.length, rows, tot, want } }; }
     finally { closeBooks(); BOOKS.period = 'today'; Object.assign(S, keep); }
   },
@@ -1120,7 +1359,7 @@ const SELFTESTS = {
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click();
       S.finOwn = 0; S.finLoan = 0; renderBuild(); const neg = document.getElementById('build').textContent;
       S.finOwn = 20e6; S.finLoan = 4e6; renderBuild(); const pos = document.getElementById('build').textContent, pay = money(Math.round(loanPayment(S.finLoan, S.finRate, S.finYears)));
-      const ok = BUILD.step === 'pay' && /overdrawn/.test(neg) && /How will you pay for it/.test(pos) && /months of running costs/.test(pos) && pos.includes(pay) && !/overdrawn/.test(pos) && !!document.querySelector('#build [data-bact="open"]');
+      const ok = BUILD.step === 'pay' && /You would open .* short/.test(neg) && /How will you pay for it/.test(pos) && /months of running costs/.test(pos) && pos.includes(pay) && !/You would open/.test(pos) && !!document.querySelector('#build [data-bact="open"]');
       return { ok, detail: { pay, neg: neg.slice(0, 300), pos: pos.slice(0, 400) } }; }
     finally { if (BUILD.on) cancelBuild(); }
   },
@@ -1165,7 +1404,7 @@ const SELFTESTS = {
     try { setupRun(); const w = closeEarlySync('week'); finishClose(w, 'week', 0); const tw = document.getElementById('bkBody') ? document.getElementById('books').textContent : '', openW = BOOKS.open && BOOKS.tab === 'Today';
       const dayRows = document.querySelectorAll('#books table.closed tr.cday').length; closeBooks();
       const m = closeEarlySync('month'); finishClose(m, 'month', 0); const tm = document.getElementById('books').textContent, openM = BOOKS.open;
-      const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'EBITDA'].filter(k => !tm.includes(k));
+      const cats = ['Visit fees', 'Member cards', 'PT', 'Floor rentals', 'Rent', 'Staff', 'Coach payout', 'Result before loan and tax'].filter(k => !tm.includes(k));   /* judge round 4: EBITDA is named only on the verdict and the full P&L */
       const ok = w.list.length === w.days && w.days >= 1 && dayRows === w.days && openW && openM && !cats.length && m.list.length === m.days;
       return { ok, detail: { wDays: w.days, list: w.list.length, dayRows, openW, openM, missing: cats } }; }
     finally { closeBooks(); BOOKS.closed = null; setupRun(); }
@@ -1184,11 +1423,11 @@ const SELFTESTS = {
     finally { if (BUILD.on) cancelBuild(); setupRun(); }
   },
   staffSteppers() {   // owner 2026-11-15: hire or let go desk staff and coaches; the roster cost follows; each coach carries up to 15 PT clients and more coaches sell more PT
-    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, staff: S.staff };
-    try { setupRun(); const base = rosterCost(S) === 184000 && S.staff === 184000, conv0 = ptConvert();
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, staff: S.staff };
+    try { Object.assign(S, defaultRoster(COSTS.area)); S.staff = rosterCost(S); setupRun(); const base = rosterCost(S) === 209952 && S.staff === 209952 && rosterCost({ ...S, coaches: 0 }) === 184000, conv0 = ptConvert();   /* balance 2026-11-20: the 2 coaches' retainers are on the roster */
       openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
-      q('coaches', 1).click(); const c3 = S.coaches === 3 && S.staff === 184000 && Math.abs(ptConvert() - conv0 * 1.5) < 1e-12 && ptCap() === 45;
-      q('deskFT', -1).click(); updateBooks(true); const t = document.getElementById('bkBody').textContent, ft = S.deskFT === 1 && S.staff === rosterCost(S) && S.staff < 184000 && /full-time \(1\)/.test(t);
+      q('coaches', 1).click(); const c3 = S.coaches === 3 && S.staff === 209952 + 12976 && Math.abs(ptConvert() - conv0 * Math.pow(1.5, 0.3)) < 1e-12 && ptCap() === 45;   /* a third coach costs a retainer and sells less than the first two */
+      q('deskFT', -1).click(); updateBooks(true); const t = document.getElementById('bkBody').textContent, ft = S.deskFT === 1 && S.staff === rosterCost(S) && S.staff < 209952 && /full-time \(1\)/.test(t);
       closeBooks(); S.coaches = 1; setupRun(); const inHouse = M.pool.filter(m => m.pt && !m.outside).length;
       S.coaches = 0; const none = ptCap() === 0 && ptConvert() === 0;
       return { ok: base && c3 && ft && inHouse <= 15 && none, detail: { base, c3, ft, staff: S.staff, inHouse, none } }; }
@@ -1311,11 +1550,11 @@ const SELFTESTS = {
     finally { setupRun(); }
   },
   cleanerEconomics() {   // owner 2026-11-16: a cleaner costs a wage on the roster; mess (a loaded bar to strip, dumbbells strewn about) counts against a visit, so a messy gym loses members
-    const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff };
-    try { setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;
+    const keep = { cleaners: S.cleaners, rerack: S.rerack, staff: S.staff, deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches };
+    try { Object.assign(S, defaultRoster(COSTS.area)); S.staff = rosterCost(S); setupRun(); const base = rosterCost(S); S.cleaners = 1; const one = rosterCost(S); S.cleaners = 0;
       openBooks('Staff'); const plus = document.querySelector('#bkBody [data-roster="cleaners"][data-d="1"]'); if (plus) plus.click(); const staffed = S.cleaners === 1 && S.staff === one; closeBooks();
       const day = (c) => { S.cleaners = c; S.rerack = 20; setupRun(); fastForward(30 * 3600); return A.badMess || 0; }, messy = day(0), tidy = day(3);
-      const ok = base === 184000 && one - base === Math.round(30000 * (1 + 42200 / 141800)) && staffed && !W.w_cleaners && messy > 0 && tidy < messy;
+      const ok = base === 209952 && one - base === Math.round(30000 * (1 + 42200 / 141800)) && staffed && !W.w_cleaners && messy > 0 && tidy < messy;
       return { ok, detail: { base, one, staffed, slider: !!W.w_cleaners, messy, tidy } }; }
     catch (e) { return { ok: false, detail: String(e) }; }
     finally { closeBooks(); Object.assign(S, keep); setupRun(); }
@@ -1325,7 +1564,7 @@ const SELFTESTS = {
     try { setupRun(); S.speed = 30; openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
       const out = W.w_speed ? W.w_speed.out.textContent : '';
       return { ok: S.speed === 10 && INTRO.phase === 'wait' && /10/.test(out), detail: { speed: S.speed, phase: INTRO.phase, out } }; }
-    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
+    finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.speed = keep; syncSpeed(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; S.peak = DEMAND.peak; S.cap = 60; setupRun(); }
   },
   deskHintStays() {   // owner 2026-11-15: the desk hint stays on until the player clicks the desk (or the P&L tab): not hidden by an earlier visit, and gone once clicked
     try { BOOKS_SEEN = false; { const rs = document.getElementById('recepSay'); if (rs) rs.hidden = true; } setupRun(); try { localStorage.setItem('gymsim.booksSeen', '1'); } catch (e) {}   /* a fresh visit; an old visit's flag must not hide it */
@@ -1355,9 +1594,15 @@ const SELFTESTS = {
   introFollowsFirst() {   // Plan 10 frames 3–5: the doors open, the camera follows the first member in, then hands off and asks for a goal
     try { setupRun(); clearFollow(); onGymOpened(true); const lead = A.members[0].spawnT - A.t, near = lead >= 0 && lead <= 15, playingNow = goOn;   /* review I1: just before the first member, not before the doors */
       for (let i = 0; i < 7200 && INTRO.phase === 'wait'; i++) { fastForward(30); updateIntro(0.1); }
-      const first = followA, ph1 = INTRO.phase; updateIntro(8.1); const card = document.getElementById('goalCard');
+      const first = followA, ph1 = INTRO.phase; for (let i = 0; i < 20000 && INTRO.phase !== 'goal'; i++) { fastForward(1); updateIntro(0.1); } const card = document.getElementById('goalCard');
       const ok = near && playingNow && ph1 === 'follow' && first && first.kind === 'member' && INTRO.phase === 'goal' && followA === null && !card.hidden && card.querySelectorAll('[data-goal]').length === 4;
       return { ok, detail: { near, playingNow, ph1, kind: first && first.kind, phase: INTRO.phase, card: !card.hidden } }; }
+    finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); }
+  },
+  introShowsLift() {   // first-minute polish: the camera follows the first member only once they are inside, and the goal card comes while they are lifting
+    try { setupRun(); clearFollow(); onGymOpened(true); let followedOutside = false, liftAtCard = null, liftedS = 0, steps = 0;
+      for (; steps < 20000 && INTRO.phase !== 'goal'; steps++) { fastForward(1); updateIntro(0.1); const a = INTRO.a; if (a && followA === a && !introInside(a.pos.z, HZ)) followedOutside = true; if (INTRO.phase === 'goal') { liftAtCard = !!a && introLifting(a); liftedS = INTRO.lift; } }
+      return { ok: INTRO.phase === 'goal' && !followedOutside && liftedS >= INTRO_SET_MIN_S && liftAtCard === false, detail: { phase: INTRO.phase, followedOutside, liftAtCard, liftedS, realS: +(steps * 0.1).toFixed(1) } }; }
     finally { goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); }
   },
   introUserTakesOver() {   // Review focus 3: tapping someone else during the automatic follow keeps the player's pick
@@ -1370,8 +1615,8 @@ const SELFTESTS = {
   },
   goalTracker() {   // frame 6: the picked goal shows under the clock with its progress (a newly opened gym: 145 members)
     try { S.build = 'new'; S.monthsOpen = 0; setupRun(); showGoalCard(); document.querySelector('#goalCard [data-goal="members500"]').click(); updateMonitors(); const g = document.getElementById('goalLine');
-      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 500 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 500`), detail: { key: GOAL.key, line: g.textContent } }; }
-    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; }
+      return { ok: GOAL.key === 'members500' && document.getElementById('goalCard').hidden && /Reach 630 members by the end of month 3/.test(g.textContent) && g.textContent.includes(`${M.pool.length} of 630`), detail: { key: GOAL.key, line: g.textContent } }; }
+    finally { GOAL.key = null; INTRO.phase = 'off'; hideGoalCard(); S.build = 'existing'; S.monthsOpen = 1; S.speed = 30; syncSpeed(); }   /* feedback round 2026-11-21: a new gym on the sample floor aims at 65% of 965 */
   },
   goalResetsOnSetup() {   // Review focus 5: a new business starts without the old goal
     try { setupRun(); GOAL.key = 'cash12'; updateMonitors(); const a = document.getElementById('goalLine').textContent; setupRun(); updateMonitors(); const b = document.getElementById('goalLine').textContent;
@@ -1397,10 +1642,11 @@ const SELFTESTS = {
   },
   staffEffectShown() {   // personas: "members who meet no staff drift away faster" had no number; the dead end "come later" goes
     const keep = S.staff;
-    try { setupRun(); S.staff = 133000; openBooks('Staff'); updateBooks(true); const t = document.getElementById('bkBody').textContent;
-      const x = Math.round(100 * (churnMonthly(0, null, 0, staffAdj(133000)) / churnMonthly(0, null, 0, 0) - 1));   /* review I4: the month-0 churn change, not the raw adjustment */
-      return { ok: x === 10 && t.includes(`${x}% more often`) && !/30% faster/.test(t) && !/come later/.test(t), detail: { x, t: t.slice(0, 600) } }; }
-    finally { S.staff = keep; closeBooks(); BOOKS.tab = 'Today'; }
+    const kr = { deskFT: S.deskFT, deskPTh: S.deskPTh };
+    try { setupRun(); S.deskFT = 1; S.deskPTh = 40; S.staff = rosterCost(S); openBooks('Staff'); updateBooks(true); const t = document.getElementById('bkBody').textContent;   /* rules round 2026-11-21: 80 of the sample's 120 desk hours */
+      const e = deskEffect(deskCover(S, S.area)), x = Math.round(100 * (1 - e.join)), y = Math.round(100 * (e.churn - 1));
+      return { ok: x === 17 && y === 17 && t.includes('80 of the 120 hours') && t.includes(`${x}% fewer sign-ups`) && t.includes(`${y}% more likely to leave`) && !/30% faster/.test(t) && !/come later/.test(t), detail: { x, y, t: t.slice(0, 600) } }; }
+    finally { Object.assign(S, kr); S.staff = keep; closeBooks(); BOOKS.tab = 'Today'; }
   },
   booksGoalLine() {   // frame 7: the goal line sits under the plain profit line in Books
     try { setupRun(); GOAL.key = 'members500'; BOOKS.period = 'today'; openBooks('Books'); const t = document.getElementById('bkBody').textContent;
@@ -1503,9 +1749,9 @@ const SELFTESTS = {
   },
   builtGymStartsNew() {   // owner 2026-11-15: a built gym opens as a new business (pre-sale members only, then grows), not an established one; taking over stays established
     try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
-      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)) };
+      const a = { build: S.build, open: S.monthsOpen, pool: M.pool.length, want: Math.round(M.steady * rampLevel(0)), peak: S.peak, cap: S.cap, steady: M.steady, elec: Math.round(pnlCosts().elec) };
       openIntro(); buildPick('sample'); openGym(); const b = { build: S.build, pool: M.pool.length };
-      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 200 && b.build === 'existing' && b.pool > 900, detail: { a, b } }; }
+      return { ok: a.build === 'new' && a.open === 0 && Math.abs(a.pool - a.want) <= 1 && a.pool < 0.3 * a.steady && a.peak === 49 && a.cap === 83 && a.elec === Math.round(66000 * 160 / 115) && pnlCosts().elec === 66000 && b.build === 'existing' && b.pool > 900 && S.peak === 35 && S.cap === 60, detail: { a, b, peak: S.peak, cap: S.cap } }; }   /* owner 2026-11-20: a 160-ping gym fills to about 49 at the weekly peak; the sample keeps 35 */
     finally { goOn = false; INTRO.phase = 'off'; clearFollow(); if (BUILD.on) cancelBuild(); S.hallW = S.hallD = null; S.build = 'existing'; S.monthsOpen = 1; setupRun(); }
   },
   noPillars() {   // owner 2026-11-15: no structural columns in built gyms, and the builder no longer lists them
@@ -1840,7 +2086,7 @@ const SELFTESTS = {
       S.seed = 20261112; setupRun(); fastForward(30 * 3600); const proj = projectMonth().total.ebitda;
       while (nextDay()) fastForward(30 * 3600);
       const real = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda, visits = M.days.reduce((t, d) => t + d.visits, 0) + A.visits;
-      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 130600 };   // re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; mess (bars to strip, strewn dumbbells) counts against a visit
+      const got = { actives: M.pool.length, visits, ebitda: Math.round(real) }, want = { actives: 971, visits: 5815, ebitda: 104989 };   // re-pinned 2026-11-20 (balance): members and visits unchanged; the 2 coaches' retainers take $25,611 off the month's 130,600. Before that, re-pinned 2026-11-16 (owner): no cleaner by default, the receptionist cleans between check-ins; mess (bars to strip, strewn dumbbells) counts against a visit
       const net = M.days.reduce((t, d) => t + d.pnl.net, 0) + A.pnl.net, projOk = Math.abs(proj - real) / net <= 0.08;   // EBITDA is a small difference of large numbers: judge the projection against net sales
       return { ok: projOk && JSON.stringify(got) === JSON.stringify(want), detail: { got, want, proj: Math.round(proj), real: Math.round(real), net: Math.round(net) } };
     } finally { Object.assign(S, keep); }
@@ -1935,6 +2181,360 @@ const SELFTESTS = {
       return { ok: Math.abs((before - after) - 115 * 100 / 30.4) <= 1, detail: { before, after, want: 115 * 100 / 30.4 } };
     } finally { Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); }
   },
+  // ---------------------------------------------------------------- judge round 3 (2026-11-20, phone, En + 中文): clarity and playability
+  popFits() {   // a closed day's pop fits a phone screen in both languages, keeps its minus sign, and shows the earned figure the result is computed from
+    const was = zh() ? 'zh' : 'en', res = {};
+    try { for (const lang of ['en', 'zh']) { setLang(lang);
+        const P = addBigPop({ fee: 1300000, earned: 1234567, ebitda: -987654, day: { dow: 'Sat', date: 21 } }, performance.now()), fit = [];
+        for (const [x, ms] of [[195, 0], [195, 100], [195, 400], [195, 2000], [385, 400], [4, 400]]) { placePop(P, x, 300, ms, 390); const r = P.el.getBoundingClientRect(); fit.push(r.width > 40 && r.left >= -0.5 && r.right <= 390.5); }
+        const t = P.el.textContent; res[lang] = { fit: fit.every(Boolean), figs: t.includes('+$1,234,567') && t.includes('−$988,000'), word: lang === 'en' ? /EARNED/.test(t) && !/TAKINGS/.test(t) : /收入/.test(t), t };
+        P.el.remove(); PAYS.splice(PAYS.indexOf(P), 1); }
+      return { ok: ['en', 'zh'].every(l => res[l].fit && res[l].figs && res[l].word), detail: res }; }
+    finally { setLang(was); for (const p of PAYS) p.el.remove(); PAYS.length = 0; }
+  },
+  popsOneAtATime() {   // closing a week shows each day's pop after the one before, never stacked; a notice card clears them
+    try { setupRun(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; closeEarlySync('week'); const n = BIG_POPS.length; updatePays();
+      const s = PAYS.filter(p => p.sum).sort((a, b) => a.born - b.born), apart = s.every((p, i) => !i || p.born >= s[i - 1].born + s[i - 1].dur - 1);
+      const span = s.length ? s[s.length - 1].born + s[s.length - 1].dur - s[0].born : 0;
+      showNote('<p>x</p>', [['ok']]); updatePays(); const cleared = PAYS.filter(p => p.sum).length === 0; hideNote();
+      return { ok: n >= 2 && s.length === n && apart && span <= 9000 && cleared, detail: { n, shown: s.length, apart, span, cleared } }; }
+    finally { hideNote(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; setupRun(); }
+  },
+  dayEndCard() {   // the day ends on a card: the result in one line, visits, a big Next day button; the next morning and the next card say who joined and left overnight
+    const was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); updateMonitors(); const c0 = document.getElementById('dayCard'), before = !c0 || c0.hidden;
+      fastForward(30 * 3600); updateMonitors(); const c = document.getElementById('dayCard'), up = !!c && !c.hidden, t1 = c ? c.textContent : '';
+      const has = t1.includes('$' + roundAbout(A.pnl.ebitda).toLocaleString('en-US')) && /lost|made|broke even/i.test(t1) && t1.includes(money(A.pnl.net)) && t1.includes(`${A.checkins} visits`);
+      const btn = c && c.querySelector('button[data-day="next"]'), big = !!btn && btn.getBoundingClientRect().height >= 44 && /Next day/.test(btn.textContent);
+      const r = c.getBoundingClientRect(), onScreen = r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+      document.getElementById('toast').innerHTML = ''; btn.click(); updateMonitors(); const moved = M.dayI === 1 && c.hidden, rec = M.days[0], inN = rec.joined + rec.returned, morning = document.getElementById('toast').textContent;
+      const told = morning.includes(`+${inN}`) && morning.includes(`−${rec.lapsed}`);
+      goOn = false; fastForward(30 * 3600); updateMonitors(); const t2 = c.textContent, overnight = !c.hidden && t2.includes(`+${inN}`) && t2.includes(`−${rec.lapsed}`) && t2.includes(String(M.pool.length));
+      setLang('zh'); updateMonitors(); const tz = c.textContent, zhOk = /下一天/.test(tz) && !/Next day|visits/.test(tz);
+      setLang('en'); closeEarlySync('month'); updateMonitors(); const last = /New month/.test(c.querySelector('button[data-day="next"]').textContent);
+      openBuild(); updateMonitors(); const offBuild = c.hidden; cancelBuild();
+      return { ok: before && up && has && big && onScreen && moved && told && overnight && zhOk && last && offBuild, detail: { before, up, has, big, onScreen, moved, told, overnight, zhOk, last, offBuild, t1: t1.slice(0, 200), morning, t2: t2.slice(0, 200), tz: tz.slice(0, 120) } }; }
+    finally { goOn = false; if (BUILD.on) cancelBuild(); setLang(was); setupRun(); refreshGo(); updateMonitors(); }
+  },
+  sheetTabsOpen() {   // phone sheet: a tab opens it, the handle is a real target and reopens the tab last used
+    try { const tab = (t) => panel.querySelector(`.tabs button[data-t="${t}"]`), h = document.getElementById('sheetHandle'); panel.classList.add('closed');
+      tab('Plots').click(); const opened = !panel.classList.contains('closed') && tab('Plots').classList.contains('on');   /* judge round 4: the Day, Members and Gym tabs went behind Advanced; Charts is the other tab */
+      h.click(); const shut = panel.classList.contains('closed'); h.click();
+      const back = !panel.classList.contains('closed') && tab('Plots').classList.contains('on') && (innerWidth >= 860 || getComputedStyle(panel.querySelector('.grp[data-tab="Plots"]')).display !== 'none');
+      const hr = h.getBoundingClientRect(), tr0 = tab('Plots').getBoundingClientRect(), tall = innerWidth >= 860 || (hr.height >= 24 && hr.bottom <= tr0.top + 1);
+      return { ok: opened && shut && back && tall, detail: { opened, shut, back, tall, h: hr.height, hb: hr.bottom, tabTop: tr0.top } }; }
+    finally { showTab('Run'); panel.classList.toggle('closed', innerWidth < 860); }
+  },
+  oneIncomeFigure() {   // one income figure on the HUD, the day's pop and the day-end card (earned, what the result is computed from); the desk's cash is labelled as paid at the desk, with the reason it differs
+    const was = zh() ? 'zh' : 'en', res = {};
+    try { runDay({}); const earned = money(A.pnl.net), pop = { fee: Math.round(A.pnl.takings), earned: Math.round(A.pnl.net), ebitda: Math.round(A.pnl.ebitda), day: { dow: A.dow, date: A.date } };
+      for (const lang of ['en', 'zh']) { setLang(lang); updateMonitors(); const hud = document.querySelector('#liveLine small').textContent, popT = bigPopHtml(pop).replace(/<[^>]+>/g, ' '), card = document.getElementById('dayCard').textContent;
+        openBooks('Today'); const desk = document.getElementById('bkBody').textContent; closeBooks();
+        res[lang] = { hud: hud.includes(earned), pop: popT.includes('+' + earned), card: card.includes(earned), deskFig: desk.includes(money(A.pnl.takings)),
+          desk: lang === 'en' ? /Paid at the desk today/.test(desk) && /paid up front/.test(desk) && !/Cash taken/.test(desk) : /今日櫃檯實收/.test(desk) && /預先付款|先付/.test(desk) && !/今日收現/.test(desk),
+          sameWord: lang === 'en' ? /earned/i.test(hud) && /EARNED/.test(popT) && /earned/i.test(card) : /收入/.test(hud) && /收入/.test(popT) && /收入/.test(card) }; }
+      setLang('en'); setupRun(); BIG_POPS.length = 0; const w = closeEarlySync('day'), pushed = BIG_POPS[0] && BIG_POPS[0].earned === Math.round(A.pnl.net) && Math.abs(w.earned - A.pnl.net) < 1e-6;
+      const ok = ['en', 'zh'].every(l => Object.values(res[l]).every(Boolean)) && pushed;
+      return { ok, detail: { res, pushed, differ: Math.round(A.pnl.net) !== Math.round(A.pnl.takings) } }; }
+    finally { setLang(was); closeBooks(); BIG_POPS.length = 0; setupRun(); updateMonitors(); }
+  },
+  monthCardFair() {   // the month card compares months of different length per day and says so, never shows a break-even count that contradicts the result, and reconciles the cash change with the result
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); Object.assign(S, { year: 2026, month: 'Nov', startDay: 20 }); setupRun(); closeEarlySync('month'); nextMonth(); closeEarlySync('month'); nextMonth();
+      const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a); const t = box.textContent, r = monthReport(b, a, a.cashEnd);
+      const vs = (box.querySelector('[data-k="vs"]') || {}).textContent || '', perDay = /a day/.test(vs) && vs.includes(`${a.days} days`) && vs.includes(money(Math.round(b.pnl.ebitda / b.days))) && (r.better ? /better/ : /worse/).test(vs);
+      const be = (box.querySelector('[data-k="breakEven"]') || {}).textContent || '', nums = (be.match(/\d+/g) || []).map(Number), fair = !be || (nums.length >= 2 && (b.pnl.ebitda < 0 ? nums[0] > nums[1] : nums[0] <= nums[1]) && /averaged/.test(be));
+      const cw = (box.querySelector('[data-k="cashWhy"]') || {}).textContent || '', loan = b.interest + b.principal, rec = cw.includes(moneyK(b.cashEnd - a.cashEnd)) && cw.includes(moneyK(-loan)) && /loan/.test(cw) && Math.abs(r.cash.change - (r.cash.result + r.cash.loan + r.cash.tax + r.cash.other)) < 1;
+      box.innerHTML = monthCardHtml(a, null); const first = box.textContent, noVs = !box.querySelector('[data-k="vs"]');
+      setLang('zh'); box.innerHTML = monthCardHtml(b, a); const z = box.textContent, zhOk = /每天/.test(z) && !/a day|loan payment|averaged/.test(z);
+      return { ok: perDay && fair && rec && noVs && zhOk, detail: { perDay, vs, fair, be, rec, cw, noVs, zhOk, days: [a.days, b.days], eb: [Math.round(a.pnl.ebitda), Math.round(b.pnl.ebitda)] } }; }
+    finally { setLang(was); hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  rentFreeSaid() {   // the first month's free rent is said where it matters: the cost screen, the statement's rent line, and the first month's card (with the rent that starts next month)
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); const cost = document.getElementById('build').textContent, onCost = /first month rent-free/i.test(cost);
+      document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click(); INTRO.phase = 'off'; goOn = false; const rent = S.area * S.rentRate;
+      fastForward(12 * 3600 - A.t); BOOKS.period = 'today'; BOOKS.full = true; openBooks('Books'); updateBooks(true); const row = document.querySelector('#bkBody [data-k="fx_rent"]').closest('tr').textContent, onRow = /rent-free/.test(row) && row.includes(moneyK(rent)); closeBooks();
+      closeEarlySync('month'); nextMonth(); const box = document.createElement('div'); box.innerHTML = monthCardHtml(BIZ.months[0], null); const nt = (box.querySelector('[data-k="rentNext"]') || {}).textContent || '', onCard = /rent/i.test(nt) && nt.includes(moneyK(rent)) && !box.querySelector('[data-k="breakEven"]');
+      updateMonitors(); fastForward(12 * 3600 - A.t); BOOKS.period = 'today'; openBooks('Books'); updateBooks(true); const row2 = document.querySelector('#bkBody [data-k="fx_rent"]').closest('tr').textContent, later = !/rent-free/.test(row2); closeBooks();
+      closeEarlySync('month'); nextMonth(); box.innerHTML = monthCardHtml(BIZ.months[1], BIZ.months[0]); const gone = !box.querySelector('[data-k="rentNext"]');
+      setLang('zh'); box.innerHTML = monthCardHtml(BIZ.months[0], null); const zhOk = /免租/.test(box.textContent);
+      return { ok: onCost && onRow && onCard && later && gone && zhOk, detail: { onCost, onRow, row, onCard, nt, later, gone, zhOk } }; }
+    finally { setLang(was); closeBooks(); BOOKS.full = false; BOOKS.tab = 'Today'; goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); if (BUILD.on) cancelBuild(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
+  },
+  tipReadsChanges() {   // the month card's tip names what each change did this month, with numbers, and never recommends what the player already did
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); closeEarlySync('month'); nextMonth(); Object.assign(S, { perMinOn: false, monthlyOn: true, monthlyPrice: 1500 }); applyPublished(); closeEarlySync('month'); nextMonth();
+      const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a); const tip = (box.querySelector('[data-k="tip"]') || {}).textContent || '';
+      const names = b.changes.some(c => c.k === 'perMinOn') && tip.includes(String(b.lapsed)) && tip.includes(String(a.lapsed)) && /left/.test(tip), noRepeat = !/monthly pass brings|a monthly pass/.test(tip.replace(/After[^.]*\./, ''));
+      Object.assign(S, { perMinOn: true, monthlyOn: true, monthlyPrice: 1500 }); const quiet = monthTip({ ...a, changes: [] }, null, { ...settingSnap(), monthlyOn: true }), q = quiet ? quiet.en : '', noPass = !/monthly pass brings|or a monthly pass/.test(q);
+      setLang('zh'); box.innerHTML = monthCardHtml(b, a); const z = (box.querySelector('[data-k="tip"]') || {}).textContent || '', zhOk = z.includes(String(b.lapsed)) && !/[a-z]{4,}/.test(z);
+      return { ok: names && noRepeat && noPass && zhOk, detail: { names, noRepeat, noPass, zhOk, tip, q, z, changes: b.changes, lapsed: [a.lapsed, b.lapsed] } }; }
+    finally { setLang(was); hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  goalMonthCount() {   // the members goal says when its three months start if the gym opened late in a month, so "month 1 of 3" is not shown for two months running
+    const keep = JSON.parse(JSON.stringify(S)), kg = GOAL.key;
+    try { Object.assign(S, { year: 2026, month: 'Nov', startDay: 20, build: 'new', monthsOpen: 0 }); setupRun(); GOAL.key = 'members500'; const t0 = goalNow().text.en;
+      closeEarlySync('month'); nextMonth(); const t1 = goalNow().text.en;
+      Object.assign(S, { year: 2026, month: 'Nov', startDay: 1, build: 'new', monthsOpen: 0 }); setupRun(); GOAL.key = 'members500'; const t2 = goalNow().text.en;
+      return { ok: !/month 1 of 3/.test(t0) && /start/.test(t0) && /month 1 of 3/.test(t1) && /month 1 of 3/.test(t2), detail: { t0, t1, t2 } }; }
+    finally { GOAL.key = kg; Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  plainWords() {   // player-facing English has no developer phrases; Setup is called Start over; a month close is stamped as a month, in plain words; the sensitivity table says which gym it describes
+    const was = zh() ? 'zh' : 'en', keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); refreshPending(); const setup = W.setup.textContent, run = document.getElementById('runGrp').textContent; let all = panel.innerText;
+      BOOKS.full = true; BOOKS.period = 'month'; for (const t of BOOK_TABS) { openBooks(t); updateBooks(true); all += ' ' + document.getElementById('books').textContent; }
+      const sens = document.querySelector('#bkBody [data-k="sens"]'); BOOKS.tab = 'Books'; openBooks('Books'); updateBooks(true); const sec = document.querySelector('#bkBody [data-k="sens"]').closest('section').textContent, labelled = /full, established gym/.test(sec); closeBooks();
+      const bad = (all.match(/below EBIT|parameter-book|base case|at base\b|履約保證|\bSetup\b|Behaviour sliders/g) || []);
+      closeEarlySync('week'); const m = closeEarlySync('month'); finishClose(m, 'month', 0); const stamp = (document.querySelector('#bkBody .stamp') || {}).textContent || '', line = document.getElementById('bkBody').textContent;
+      const whole = M.days.reduce((t, d) => t + d.pnl.ebitda, 0) + A.pnl.ebitda;   /* judge round 4: the stamp carries the whole month's result (the month card's figure), not only the days closed in the last tap */
+      nextMonth(); const card = BIZ.months[BIZ.months.length - 1].pnl.ebitda;
+      const month = /Month closed/.test(stamp) && !/Day closed|EBITDA/.test(stamp) && stamp.includes(money(Math.abs(whole))) && Math.round(whole) !== Math.round(m.ebitda) && Math.abs(card - whole) < 1 && !/takings/i.test(line.slice(0, 400));
+      return { ok: setup === 'Start over' && !bad.length && labelled && month, detail: { setup, bad, labelled, month, stamp } }; }
+    finally { setLang(was); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; setupRun(); refreshPending(); }
+  },
+  zhReads() {   // Chinese mode: money in 萬 where English uses K / M, natural labels on the panel, and Chinese display names (the member data keeps its own)
+    const was = zh() ? 'zh' : 'en';
+    try { setupRun(); setLang('en'); const en = [moneyK(6.6e6), moneyK(187000)].join();
+      setLang('zh'); const m = [moneyK(6.6e6), moneyK(187000), moneyK(1.25e8), moneyK(9500), moneyK(-4218800), moneyK(850), moneyK(10470000)], wantM = ['$660 萬', '$18.7 萬', '$1.25 億', '$9,500', '−$422 萬', '$850', '$1,047 萬'];
+      const pt = panel.innerText, dev = (pt.match(/執行|單步|設定|行為類滑桿/g) || []);
+      const n1 = trName('Maya C.'), n2 = trName('Maya D.'), n3 = trName('Teo C.'), c1 = trName('Coach Mara'), cjk = (s) => /^[一-鿿]{2,4}$/.test(s);
+      const names = cjk(n1) && cjk(n2) && cjk(n3) && n1 !== n2 && n1 !== n3 && n1 === trName('Maya C.') && /^[一-鿿]{1,3} ?教練$/.test(c1) && /^[A-Z][a-z]+ [A-Z]\.$/.test(M.pool[0].name);
+      BOOKS.tab = 'Members'; openBooks('Members'); const mem = [...document.querySelectorAll('#bkBody tr[data-k="risk"] td:first-child')].map(td => td.firstChild.textContent), listed = mem.length > 0 && mem.every(cjk); closeBooks();
+      setLang('en'); const back = trName('Maya C.') === 'Maya C.';
+      return { ok: en === '$6.6M,$187K' && m.join() === wantM.join() && !dev.length && names && listed && back, detail: { en, m, dev, n1, n2, n3, c1, mem: mem.slice(0, 3), back } }; }
+    finally { setLang(was); closeBooks(); BOOKS.tab = 'Today'; }
+  },
+  yearFitsPhone() {   // the Year view fits a phone (nothing cut off) and its So far row is closed months plus this month to date, not the projection
+    const keep = JSON.parse(JSON.stringify(S)), b = document.getElementById('books');
+    try { setupRun(); closeEarlySync('month'); nextMonth(); fastForward(15 * 3600 - A.t); BOOKS.period = 'year'; openBooks('Books'); b.style.width = '390px'; b.style.right = 'auto'; updateBooks(true);
+      const lim = b.getBoundingClientRect().right - 8, cells = [...document.querySelectorAll('#bkBody table.yr td')], overT = cells.filter(td => td.getBoundingClientRect().right > lim + 0.5 || td.scrollWidth > td.clientWidth + 1).map(td => td.textContent), over = overT.length;
+      const wrap = document.querySelector('#bkBody table.yr').parentNode, noScroll = wrap.scrollWidth <= wrap.clientWidth + 1;
+      const tot = document.querySelector('#bkBody [data-k="yrEbitda"]').textContent, want = money(BIZ.months[0].pnl.ebitda + projectMonth().mtd.ebitda), proj = money(BIZ.months[0].pnl.ebitda + projectMonth().total.ebitda);
+      const tag = getComputedStyle(document.querySelector('#bkBody .tag')).whiteSpace === 'nowrap';
+      return { ok: innerWidth < 860 && cells.length >= 15 && !over && noScroll && tot === want && want !== proj && tag, detail: { w: innerWidth, cells: cells.length, over, overT, noScroll, tot, want, proj, tag } }; }
+    finally { b.style.width = ''; b.style.right = ''; closeBooks(); BOOKS.period = 'today'; BOOKS.tab = 'Today'; Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  phoneLayoutBits() {   // the title clears the toolbar at phone width; a Gone home card does not outlive the day; with a pass on, the desk says pass holders do not pay at the desk
+    const keep = JSON.parse(JSON.stringify(S)), was = zh() ? 'zh' : 'en';
+    try { setLang('en'); setupRun(); const h1 = document.querySelector('#hud h1').getBoundingClientRect(), vb = document.getElementById('viewbar').getBoundingClientRect(), title = innerWidth >= 860 || h1.width + vb.width + 24 <= 390;
+      fastForward(9 * 3600 - A.t); const a = AGENTS.find(q => q.visible && q.kind === 'member'); onAgentPicked(a); a.state = 'gone'; a.visible = false; updateCard(); const card = document.getElementById('card'), shown = card.style.display !== 'none' && /Gone home/.test(card.textContent);
+      fastForward(30 * 3600); nextDay(); updateMonitors(); updateCard(); const cleared = card.style.display === 'none' && !followA;
+      Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600); openBooks('Today'); const t = document.getElementById('bkBody').textContent, pass = A.passVisits > 0 && !/the two meet at closing/.test(t) && /do not pay at the desk/.test(t) && t.includes(`${A.passVisits}`); closeBooks();
+      Object.assign(S, { monthlyOn: false }); setupRun(); fastForward(30 * 3600); openBooks('Today'); const t2 = document.getElementById('bkBody').textContent, plain = !/the two meet at closing/.test(t2) && /pays by the minute on the way out/.test(t2); closeBooks();
+      return { ok: title && shown && cleared && pass && plain, detail: { title, h1: h1.width, vb: vb.width, shown, cleared, pass, plain } }; }
+    finally { setLang(was); clearFollow(); closeBooks(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  hallFramed() {   // the camera frames the hall: a small gym is shown bigger than a medium one, and the hall fills most of the view's width or height
+    const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, x: view.target.x, zz: view.target.z }, out = {};
+    try { for (const [k, w, d] of [['S', 10, 8], ['M', 16, 10]]) { const counts = presetCounts(w, d); Object.assign(S, counts, { hallW: w, hallD: d, layout: autoBuild(w, d, counts) }); setupRun(); frameHall();
+        const sp = hallSpan(), H = view.baseH / view.zoomT, Wv = H * aspect, band = innerWidth < 860 ? 0.62 : 0.8; out[k] = { zoom: +view.zoomT.toFixed(3), wFrac: +(sp.w / Wv).toFixed(3), hFrac: +(sp.h / (H * band)).toFixed(3), cx: Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2) < 0.01 }; }
+      const fills = (o) => o.cx && o.wFrac <= 1.001 && o.hFrac <= 1.001 && Math.max(o.wFrac, o.hFrac) >= 0.85;
+      return { ok: fills(out.S) && fills(out.M) && out.S.zoom > out.M.zoom * 1.2, detail: out }; }
+    finally { view.zoomT = v0.z; view.target.set(v0.x, 0, v0.zz); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setHall(); setupRun(); }
+  },
+  hudCash() {   // cash sits on the HUD, compact, in both languages
+    const was = zh() ? 'zh' : 'en';
+    try { setupRun(); fastForward(10 * 3600 - A.t); setLang('en'); updateMonitors(); const en = document.getElementById('liveLine').textContent, okEn = en.includes('Cash ' + moneyK(liveCash()));
+      setLang('zh'); updateMonitors(); const z = document.getElementById('liveLine').textContent, okZh = z.includes('現金 ' + moneyK(liveCash())) && /萬/.test(z);
+      return { ok: okEn && okZh, detail: { en, z } }; }
+    finally { setLang(was); updateMonitors(); }
+  },
+  borrowSix() {   // the money step offers one tap out of a thin start: borrow enough for six months
+    const keep = { own: S.finOwn, loan: S.finLoan };
+    try { setupRun(); openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click();
+      S.finOwn = 6e6; S.finLoan = 6e6; renderBuild();   /* judge round 4: the default loan is sized to the gym, so the thin start is set by hand here */
+      const def = FIN.own === 6e6 && FIN.loan === 6e6, w0 = document.querySelector('#build [data-k="runway"]').classList.contains('warn'), b = document.querySelector('#build [data-fin6]'), loan0 = S.finLoan;
+      if (b) b.click(); const w1 = document.querySelector('#build [data-k="runway"]'), c = buildCostNow(), pay = loanPayment(S.finLoan, S.finRate, S.finYears), run = runwayMonths(S.finOwn + S.finLoan - c.capex - c.deposit, monthlyRunCost(c.rentMonth, rosterCost(defaultRoster(c.ping)), pay));
+      const fixed = !!b && S.finLoan > loan0 && run >= 6 && run < 7 && !w1.classList.contains('warn') && !document.querySelector('#build [data-fin6]');
+      return { ok: def && w0 && fixed, detail: { def, w0, btn: b ? b.textContent : null, loan: S.finLoan, run } }; }
+    finally { if (BUILD.on) cancelBuild(); S.finOwn = keep.own; S.finLoan = keep.loan; }
+  },
+  loanFitsGym() {   // judge round 4: each size opens the money step with a loan that leaves about six months of cover; a short start says so plainly, in the warning colour, with the way out
+    const keep = { own: S.finOwn, loan: S.finLoan }, was = LANG;
+    try { setLang('en'); setupRun(); const out = {};
+      for (const k of ['S', 'M', 'L']) { openIntro(); document.querySelector(`#build [data-intro="${k}"]`).click(); document.querySelector('#build [data-istep="pay"]').click();
+        const c = buildCostNow(), run = runwayOf(c, S.finOwn, S.finLoan), w = document.querySelector('#build [data-k="runway"]');
+        out[k] = { loan: S.finLoan, run: Math.round(run * 10) / 10, cash: S.finOwn + S.finLoan - c.capex - c.deposit, warn: w.classList.contains('warn'), six: !!document.querySelector('#build [data-fin6]'), step: S.finLoan % 5e5 === 0 };
+        if (k === 'L') { S.finLoan = 6e6; renderBuild(); const w2 = document.querySelector('#build [data-k="runway"]');
+          const colour = getComputedStyle(w2).color, cls = w2.classList.contains('warn') && w2.classList.contains('short'), en = w2.textContent; setLang('zh'); const zhT = document.querySelector('#build [data-k="runway"]').textContent; setLang('en'); const b = document.querySelector('#build [data-fin6]');
+          out.short = { cls, en, zh: zhT, colour, btn: !!b, open: !!document.querySelector('#build [data-bact="open"]') };
+          if (b) { document.querySelector('#build [data-fin6]').click(); out.short.after = Math.round(runwayOf(c, S.finOwn, S.finLoan) * 10) / 10; } }
+        cancelBuild(); }
+      const fit = ['S', 'M', 'L'].every(k => out[k].run >= 6 && out[k].run < 7.2 && out[k].cash > 0 && !out[k].warn && !out[k].six && out[k].step);
+      const sh = out.short, short = sh.cls && /You would open \$[\d.,]+M? short/.test(sh.en) && /短少/.test(sh.zh) && sh.colour === 'rgb(224, 143, 90)' && sh.btn && sh.after >= 6 && sh.after < 7;
+      return { ok: fit && short, detail: out }; }
+    finally { if (BUILD.on) cancelBuild(); S.finOwn = keep.own; S.finLoan = keep.loan; setLang(was); }
+  },
+  deskFloor() {   // judge round 4: someone always sits at the desk, so full-time desk staff stop at 1; the text gives that roster's true cost and the effect the model applies there; cleaners say what they do
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, coaches: S.coaches, cleaners: S.cleaners, staff: S.staff }, was = LANG;
+    try { setLang('en'); setupRun(); openBooks('Staff'); const q = (k, d) => document.querySelector(`#bkBody [data-roster="${k}"][data-d="${d}"]`);
+      for (let i = 0; i < 8; i++) q('deskFT', -1).click(); for (let i = 0; i < 20; i++) q('deskPTh', -1).click(); updateBooks(true);
+      const mr = { deskFT: 1, deskPTh: 0, coaches: 0, cleaners: 0 }, min = rosterCost(mr), eff = Math.round(100 * (deskEffect(deskCover(mr, S.area)).churn - 1));
+      const t = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, cl = document.querySelector('#bkBody [data-k="cleanerEffect"]'), ct = cl ? cl.textContent : '';
+      setLang('zh'); const z = document.querySelector('#bkBody [data-k="staffEffect"]').textContent, zc = (document.querySelector('#bkBody [data-k="cleanerEffect"]') || {}).textContent || ''; setLang('en');
+      const ok = S.deskFT === 1 && S.deskPTh === 0 && S.staff - coachPay(S.coaches) === min && t.includes(`costs ${money(min)} a month before coaches: ${eff}% fewer sign-ups, members ${eff}% more likely to leave`) && z.includes(money(min)) && /stray dumbbells/.test(ct) && /pays off only/.test(ct) && /receptionist/.test(ct) && /清潔人員/.test(zc) && /划算/.test(zc) && !/otherwise the receptionist cleans/.test(document.getElementById('bkBody').textContent);
+      return { ok, detail: { deskFT: S.deskFT, pth: S.deskPTh, min, eff, t, ct, z, zc } }; }
+    finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setLang(was); setupRun(); }
+  },
+  deskJob() {   // rules round 2026-11-21: the desk has a job. Hours below what the floor needs cost sign-ups and members; hours above help half as much
+    const keep = { deskFT: S.deskFT, deskPTh: S.deskPTh, staff: S.staff };
+    try { const near = (a, b) => Math.abs(a - b) < 1e-9, e0 = deskEffect(1), e6 = deskEffect(0.6), e2 = deskEffect(2);
+      const pure = e0.join === 1 && e0.churn === 1 && near(e6.join, 0.8) && near(e6.churn, 1.2) && near(e2.join, 1.0625) && near(e2.churn, 0.9375);
+      setupRun(); const m = M.pool[0], full = lapseHazard(m, M.dayI), wk = () => { closeEarlySync('week'); return M.joinedTotal; }, j1 = wk();
+      S.deskFT = 1; S.deskPTh = 0; S.staff = rosterCost(S); setupRun(); const thin = lapseHazard(M.pool[0], M.dayI), cover = deskCover(S, S.area), j2 = wk();
+      const lines = receptionistLines().join(' ');
+      return { ok: pure && near(cover, 1 / 3) && thin > full * 1.15 && j2 < j1 && /needs 120/.test(lines), detail: { pure, cover, full, thin, j1, j2 } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  cleanHall() {   // rules round 2026-11-21: a hall that outgrows its cleaning loses members; the receptionist keeps up with 220 visits a day, each cleaner with 200 more
+    const keep = { cleaners: S.cleaners, staff: S.staff };
+    try { const pure = grubby(220, 0) === 0 && grubby(330, 0) === 1 && grubby(330, 1) === 0 && Math.abs(grubby(275, 0) - 0.5) < 1e-9 && cleanCap(2) === 620;
+      setupRun(); const m = M.pool[0], clean = lapseHazard(m, M.dayI), calm = grubbyNow() === 0; BIZ.lastWeek = [400, 400, 400, 400, 400, 400, 400];
+      const dirty = lapseHazard(m, M.dayI), said = receptionistLines().join(' '); openBooks('Staff'); updateBooks(true); const warn = document.querySelector('#bkBody [data-k="cleanerEffect"]').textContent;
+      S.cleaners = 1; S.staff = rosterCost(S); updateBooks(true); const fixed = lapseHazard(m, M.dayI), ok1 = document.querySelector('#bkBody [data-k="cleanerEffect"]').textContent;
+      const ok = pure && calm && dirty > clean * 1.25 && Math.abs(fixed - clean) < 1e-12 && /Staff tab/.test(said) && /15% fewer sign-ups/.test(warn) && /30% more likely to leave/.test(warn) && /keeps up/.test(ok1);
+      return { ok, detail: { pure, calm, clean, dirty, fixed, warn: warn.slice(0, 300), ok1: ok1.slice(0, 300) } }; }
+    finally { closeBooks(); BOOKS.tab = 'Today'; Object.assign(S, keep); setupRun(); }
+  },
+  openingBuzz() {   // rules round 2026-11-21: a new gym's members come more often in its first 60 days (1.6 times at the opening); an established gym is untouched
+    const keep = JSON.parse(JSON.stringify(S));
+    try { const pure = buzzMult(0) === 1.6 && Math.abs(buzzMult(30) - 1.3) < 1e-9 && buzzMult(60) === 1 && buzzMult(400) === 1;
+      setupRun(); const est = A.buzz, v0 = A.visitsExpected / M.pool.length;
+      openIntro(); document.querySelector('#build [data-intro="M"]').click(); document.querySelector('#build [data-istep="pay"]').click(); document.querySelector('#build [data-bact="open"]').click();
+      const fresh = A.buzz, v1 = A.visitsExpected / M.pool.length;
+      return { ok: pure && est === 1 && fresh > 1.5 && v1 > v0 * 1.2, detail: { pure, est, fresh, v0, v1 } }; }
+    finally { openIntro(); buildPick('sample'); openGym(); goOn = false; INTRO.phase = 'off'; hideGoalCard(); clearFollow(); Object.assign(S, keep); setupRun(); }
+  },
+  passEarnedDaily() {   // rules round 2026-11-21: a monthly pass is cash the day it is sold and earned a day at a time over its 30 days, so the result no longer jumps on sale days
+    const keep = JSON.parse(JSON.stringify(S));
+    try { Object.assign(S, { monthlyOn: true, monthlyPrice: 600 }); setupRun(); fastForward(30 * 3600); const d = M.dayI, m = M.pool.find(x => x.passUntil === d + PASS.days), p = A.pnl;
+      let days = 1; for (let j = d + 1; j < d + 60; j++) if (onPass(m, j)) days++;   /* the day it was sold, then every morning it is still running */
+      const whole = days === 30 && Math.abs(days * passDayValue(m) - 600) < 1e-9, split = p.passCash > 0 && Math.abs(p.passOwedChange - (p.passCash - p.passes)) < 1e-9 && p.passes < p.passCash / 20;
+      const cash = Math.abs(p.cashIn - (p.entry + p.passCash + p.cards + p.deferredChange + p.ptEarned + p.rentals + p.addOns)) < 1e-6;
+      nextDay(); const carried = Math.abs(A.passHeld - passHeldValue(M.dayI)) < 1e-9 && A.passHeld > 0 && A.pnl.passCash === 0;
+      return { ok: !!m && whole && split && cash && carried, detail: { days, passes: p.passes, passCash: p.passCash, held: A.passHeld, whole, split, cash, carried } }; }
+    finally { Object.assign(S, keep); setupRun(); }
+  },
+  popsOnTop() {   // judge round 4: a closed day's pop draws above the books, the sheet and the day card; the card and any toast wait until it has played; skipped days raise no PR toasts
+    try { setupRun(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; const toast = document.getElementById('toast'); toast.innerHTML = '';
+      closeEarlySync('week'); const noPR = !/PR ·/.test(toast.textContent) && TOAST_Q.every(t => !/^PR ·/.test(t)); BIG_POPS.length = 1;
+      updateMonitors(); const c0 = document.getElementById('dayCard'), held0 = !c0 || c0.hidden;
+      openBooks('Today'); updatePays(); const pop = PAYS.find(p => p.sum), z = pop ? +getComputedStyle(pop.el).zIndex : 0, zb = +getComputedStyle(document.getElementById('books')).zIndex, zc = +getComputedStyle(dayCardEl()).zIndex, zn = +getComputedStyle(noteEl()).zIndex;
+      const r = pop ? pop.el.getBoundingClientRect() : null, mid = !!r && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+      closeBooks(); updateMonitors(); const held1 = document.getElementById('dayCard').hidden; showToast('held toast'); const waits = !/held toast/.test(toast.textContent);
+      for (const p of PAYS) p.el.remove(); PAYS.length = 0; updatePays(); updateMonitors(); const after = !document.getElementById('dayCard').hidden && /held toast/.test(toast.textContent) && !!document.querySelector('#dayCard button[data-day="next"]');
+      return { ok: noPR && held0 && !!pop && z > zb && z > zc && z > zn && mid && held1 && waits && after, detail: { noPR, held0, pop: !!pop, z, zb, zc, zn, mid, held1, waits, after } }; }
+    finally { closeBooks(); BIG_POPS.length = 0; for (const p of PAYS) p.el.remove(); PAYS.length = 0; TOAST_Q.length = 0; document.getElementById('toast').innerHTML = ''; setupRun(); updateMonitors(); }
+  },
+  skipOnHud() {   // judge round 4: once the opening is over the HUD carries a Skip to closing button (the Run sheet's close-early path); the sheet's three skip buttons are 40 px tall and Start over sits apart; a size says what it fits
+    const was = LANG;
+    try { setLang('en'); setupRun(); hideNote(); hideGoalCard(); document.body.classList.remove('introing'); closing = null; INTRO.phase = 'off'; updateMonitors(); const b = document.getElementById('skipBtn'), r = b.getBoundingClientRect(), shown = !b.hidden && r.height >= 40 && /Skip to closing/.test(b.textContent) && b.closest('#hud') !== null;
+      INTRO.phase = 'follow'; updateMonitors(); const hiddenIntro = b.hidden; INTRO.phase = 'done'; updateMonitors();
+      setLang('zh'); updateMonitors(); const zhT = b.textContent; setLang('en'); updateMonitors();
+      const skips = [...document.querySelectorAll('#runGrp button[data-close]')], tall = skips.length === 3 && skips.every(x => innerWidth >= 860 && !x.getBoundingClientRect().height ? true : x.getBoundingClientRect().height >= 40);
+      const apart = W.setup.parentNode !== W.go.parentNode && W.setup.parentNode !== skips[0].parentNode && (W.setup.getBoundingClientRect().top - skips[0].getBoundingClientRect().bottom >= 16 || !skips[0].getBoundingClientRect().height);
+      const d0 = M.dayI; b.click(); const viaClose = !!closing && closing.kind === 'day'; while (closing) { if (!closeOneDay(closing.out, closeTarget('day'))) { const o = closing.out; closing = null; finishClose(o, 'day', 0); } }
+      updateMonitors(); const done = A.done && M.dayI === d0 && b.hidden;
+      openIntro(); const note = document.querySelector('#build [data-k="sizeNote"]').textContent; cancelBuild();
+      return { ok: shown && hiddenIntro && /跳到打烊/.test(zhT) && tall && apart && viaClose && done && /fits about \d+ at once/.test(note) && !/busy at about/.test(note), detail: { shown, h: r.height, hiddenIntro, zhT, tall, apart, viaClose, done, note } }; }
+    finally { closing = null; if (BUILD.on) cancelBuild(); BIG_POPS.length = 0; BOOKS.closed = null; INTRO.phase = 'off'; setLang(was); setupRun(); updateMonitors(); }
+  },
+  advancedTucked() {   // judge round 4: the model's dials sit behind one closed Advanced disclosure (not "More"), remembered per browser; plain words replace the lab phrases; EBITDA is named only on the verdict and the full P&L
+    const was = LANG, keepTab = BOOKS.tab; let stored = null; try { stored = localStorage.getItem('gymsim.adv'); localStorage.removeItem('gymsim.adv'); } catch (e) {}
+    try { ADV.open = null; setLang('en'); const adv = document.getElementById('advBox'), sum = adv ? adv.querySelector('summary').textContent : '';
+      const closed = !!adv && !adv.open && sum === 'Advanced', inside = ['w_power', 'w_workIn', 'w_rerack', 'w_cap', 'w_patience', 'w_peak', 'mStray'].every(id => { const e = document.getElementById(id); return e && adv.contains(e); }) && adv.contains(W.step);
+      const outside = [...panel.querySelectorAll('.tabs button')].map(x => x.dataset.t).join(), noMore = !panel.querySelector('details.more') && !/\bMore\b/.test(panel.textContent);
+      adv.open = true; adv.dispatchEvent(new Event('toggle')); let saved = true; try { saved = localStorage.getItem('gymsim.adv') === '1'; } catch (e) {}
+      setLang('zh'); const adv2 = document.getElementById('advBox'), kept = adv2.open && adv2.querySelector('summary').textContent === '進階選項'; setLang('en');
+      openBooks('Facility'); const fa = document.getElementById('bkAdv'), rentIn = !!fa && fa.contains(document.getElementById('w_rentRate')) && fa.open; closeBooks();
+      document.getElementById('advBox').open = false; document.getElementById('advBox').dispatchEvent(new Event('toggle'));
+      let all = ''; BOOKS.full = false; BOOKS.period = 'today'; const bt = () => { const bk = document.getElementById('books'), d = bk.querySelector('details[data-k="full"]'); const v = bk.querySelector('[data-k="plain"]'); let t = bk.textContent; for (const e of [d, v]) if (e) t = t.replace(e.textContent, ''); return t; };   /* the verdict line and the full statement keep the accountant's word (owner) */
+      for (const lang of ['en', 'zh']) { setLang(lang); for (const t of BOOK_TABS) { openBooks(t); updateBooks(true); all += ' ' + bt(); } all += panel.textContent + document.getElementById('hud').textContent; }
+      closeBooks(); const m = closeEarlySync('week'); finishClose(m, 'week', 0); all += bt(); closeBooks();
+      const bad = all.match(/Worked out from the model|sample size|依參數表估算|以範例大小|EBITDA|EBIT\b/g) || [];
+      return { ok: closed && inside && outside === 'Run,Plots,Books' && noMore && saved && kept && rentIn && !bad.length, detail: { closed, sum, inside, outside, noMore, saved, kept, rentIn, bad, ctx: (all.match(/.{60}EBITDA.{30}/g) || []).slice(0, 3) } }; }
+    finally { closeBooks(); BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; ADV.open = null; try { if (stored == null) localStorage.removeItem('gymsim.adv'); else localStorage.setItem('gymsim.adv', stored); } catch (e) {} setLang(was); setupRun(); }
+  },
+  resultReconciled() {   // judge round 4: the day's stamp and verdict give one figure; the month card says what its result leaves out and lands on the Year view's net profit; the Year view adds the same up
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); fastForward(30 * 3600); BOOKS.closed = null; openBooks('Today'); updateBooks(true); const fig = '$' + roundAbout(A.pnl.ebitda).toLocaleString('en-US'), stamp = document.querySelector('#bkBody .stamp').textContent, verdict = document.querySelector('#bkBody .verdict').textContent;
+      const figs = (document.getElementById('bkBody').textContent.match(/(?:lost|made)(?: about)? \$[\d,]+/g) || []).map(x => x.replace(/.*\$/, '$')), one = stamp.includes(fig) && verdict.includes(fig) && new Set(figs).size === 1; closeBooks();
+      closeEarlySync('month'); nextMonth(); closeEarlySync('month'); nextMonth(); const a = BIZ.months[0], b = BIZ.months[1], box = document.createElement('div'); box.innerHTML = monthCardHtml(b, a);
+      const lo = (box.querySelector('[data-k="leftOut"]') || {}).textContent || '', x = monthBelow(b), card = /loan payment/.test(lo) && /income tax/.test(lo) && /wear on equipment/.test(lo) && lo.includes(money(x.net)) && lo.includes(money(b.interest + b.principal)) && /Made|Lost/.test(box.querySelector('.big').textContent);
+      BOOKS.period = 'year'; openBooks('Books'); updateBooks(true); const rows = [...document.querySelectorAll('#bkBody tr[data-arch]')], yrRow = rows[1] ? rows[1].textContent : '', same = yrRow.includes(money(x.net));
+      const yl = (document.querySelector('#bkBody [data-k="yrLeftOut"]') || {}).textContent || '', sumRow = document.querySelector('#bkBody table.yr tr.sum').textContent, year = /wear on equipment/.test(yl) && /loan interest/.test(yl) && /not a cost/.test(yl) && (yl.match(/−?\$\d[\d,]*\d/g) || []).filter(v => sumRow.includes(v)).length >= 2;
+      setLang('zh'); updateBooks(true); const zy = (document.querySelector('#bkBody [data-k="yrLeftOut"]') || {}).textContent || ''; box.innerHTML = monthCardHtml(b, a); const zc = (box.querySelector('[data-k="leftOut"]') || {}).textContent || '', zhOk = /折舊/.test(zy) && /貸款還款/.test(zc) && !/[a-z]{4,}/.test(zy + zc);
+      return { ok: one && card && same && year && zhOk, detail: { one, fig, stamp, verdict, figs, card, lo, same, yrRow, year, yl, zhOk } }; }
+    finally { setLang(was); closeBooks(); BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; hideNote(); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); }
+  },
+  smallTraps() {   // judge round 4: Undo keeps a published price list (withdrawing it takes two taps); the receptionist's bubble leads to the books; a piece that does not fit says so when smaller kit still does; the rearrange quote is opaque; a toast sits under an open member card on a phone
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, keepPub = PUBLISH, seen = BOOKS_SEEN;
+    try { setLang('en'); setupRun(); openBooks('Pricing'); const q = (s) => document.querySelector('#bkBody ' + s), p0 = S.priceOff;
+      q('button[data-f="priceOff"][data-d="1"]').click(); q('[data-k="publish"]').click(); const pub = PUBLISH && PUBLISH.priceOff;
+      q('button[data-f="priceOff"][data-d="1"]').click(); const edited = BOOKS.stage.priceOff; q('[data-k="reset"]').click();
+      const undo = !!PUBLISH && PUBLISH.priceOff === pub && BOOKS.stage.priceOff === pub && edited > pub && pub > p0 && !/Undo changes/.test(q('[data-k="reset"]').textContent);
+      q('[data-k="withdraw"]').click(); const armed = !!PUBLISH && /Sure/.test(q('[data-k="withdraw"]').textContent); q('[data-k="withdraw"]').click(); const withdrawn = PUBLISH === null && !q('[data-k="withdraw"]') && BOOKS.stage.priceOff === p0; closeBooks();
+      BOOKS_SEEN = true; onAgentPicked(A.desk); const say = document.getElementById('recepSay'), bubble = !say.hidden && !BOOKS.open, rb = say.querySelector('button[data-recep="books"]'), tappable = !!rb && getComputedStyle(rb).pointerEvents === 'auto' && /P&L/.test(rb.textContent);
+      rb.click(); const toBooks = BOOKS.open && say.hidden; closeBooks(); BOOKS_SEEN = false; onAgentPicked(A.desk); const hintPath = BOOKS.open; closeBooks();
+      { const counts = presetCounts(16, 10); Object.assign(S, counts, { hallW: 16, hallD: 10, layout: autoBuild(16, 10, counts) }); } setupRun(); openRearrange(); const toast = document.getElementById('toast'); let full = '', n = 0; toast.innerHTML = '';
+      while (n++ < 40) { toast.innerHTML = ''; rearrangeAdd('rack'); if (/No room/.test(toast.textContent)) { full = toast.textContent; break; } }
+      const smaller = RGROUPS.flatMap(x => x[2]).some(k => k !== 'rack' && k !== 'turf' && KINDS[k] && bestSpot(BUILD.layout, k, BUILD.w, BUILD.d)), said = smaller ? /No room for a power rack; smaller kit still fits/.test(full) : /the floor is full/.test(full);
+      setLang('zh'); toast.innerHTML = ''; rearrangeAdd('rack'); const zhSaid = smaller ? /小一點的器材還放得下/.test(toast.textContent) : /場地已滿/.test(toast.textContent); setLang('en');
+      const rq = document.querySelector('#build .rquote'), bg = getComputedStyle(rq).backgroundColor, opaque = /^rgb\(/.test(bg); cancelBuild();
+      const css = [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } }).map(r => r.cssText).join(' '), under = /#toast\s*\{[^}]*--cardH/.test(css);
+      Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); fastForward(10 * 3600 - A.t); const a = AGENTS.find(x => x.visible && x.kind === 'member'); let cardH = '';
+      if (a) { onAgentPicked(a); updateCard(); showToast('x'); cardH = toast.style.getPropertyValue('--cardH'); clearFollow(); updateCard(); showToast('y'); }
+      const moved = !a || (parseFloat(cardH) > 20 && toast.style.getPropertyValue('--cardH') === '0px');
+      return { ok: undo && armed && withdrawn && bubble && tappable && toBooks && hintPath && said && smaller && zhSaid && opaque && under && moved, detail: { undo, armed, withdrawn, bubble, tappable, toBooks, hintPath, said, smaller, full, zhSaid, opaque, bg, under, moved, cardH, n, fitsNow: BUILD.on ? 0 : RGROUPS.flatMap(x => x[2]).filter(k => KINDS[k]).join() } }; }
+    finally { if (BUILD.on) cancelBuild(); closeBooks(); BOOKS.tab = 'Today'; BOOKS.withdrawArm = 0; PUBLISH = keepPub; BOOKS_SEEN = seen; { const sy = document.getElementById('recepSay'); if (sy) sy.hidden = true; } clearFollow(); document.getElementById('toast').innerHTML = ''; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setupRun(); }
+  },
+  zhFollows() {   // judge round 4: a card open during a language switch is written again; one Chinese word each for staff, full-time desk staff and turned away at the door; the Year table counts in 萬; Chinese strings use full-width punctuation
+    const keep = JSON.parse(JSON.stringify(S)), was = LANG, kg = GOAL.key, keepTab = BOOKS.tab;
+    try { setLang('en'); setupRun(); GOAL.key = 'cash12'; showNote(() => [`<h2 class="ttl">${tx('Goal met', '目標達成')}</h2><p>${goalLabel(GOAL.key)}</p>`, [[tx('Keep playing', '繼續玩')]]]);
+      const c = document.getElementById('noteCard'), en1 = c.textContent; setLang('zh'); const z1 = c.textContent, noteOk = /Goal met/.test(en1) && /目標達成/.test(z1) && /繼續玩/.test(z1) && !/[A-Za-z]{4,}/.test(z1); hideNote(); setLang('en');
+      closeEarlySync('month'); nextMonth(); S.deskPTh = Math.max(0, S.deskPTh - 10); S.staff = rosterCost(S); closeEarlySync('month'); nextMonth(); showMonthCard(); const e2 = c.textContent; setLang('zh'); const z2 = c.textContent, cardOk = /closed/.test(e2) && /結帳/.test(z2) && !/[A-Za-z]{4,}/.test(z2.replace(/P&L/g, '')); hideNote();
+      fastForward(30 * 3600); updateMonitors(); const dc = document.getElementById('dayCard'); setLang('en'); const d1 = dc.textContent; setLang('zh'); const d2 = dc.textContent, dayOk = /Next day/.test(d1) && /下一天/.test(d2);
+      let all = z2 + d2; BOOKS.full = true; for (const t of BOOK_TABS) { BOOKS.period = t === 'Books' ? 'year' : 'today'; openBooks(t); updateBooks(true); all += ' ' + document.getElementById('books').innerText; }
+      const yr = document.querySelector('#bkBody table.yr'), tabs = [...document.querySelectorAll('#books .bktabs button')].map(x => x.textContent).join(); BOOKS.tab = 'Books'; BOOKS.period = 'year'; openBooks('Books'); updateBooks(true);
+      const yt = document.querySelector('#bkBody table.yr').textContent, wan = /萬/.test(yt) && !/\$\d{2,3},\d{3}/.test(yt); closeBooks();
+      const tip = monthTip({ ...BIZ.months[0], pnl: { ...BIZ.months[0].pnl, ebitda: -1 }, changes: [] }, null, { perMinOn: true, monthlyOn: true }), tz = tip ? tip.zh : '';
+      const terms = /員工/.test(tabs) && !/人員\b/.test(tabs) && !/全職櫃檯|門口離開/.test(all) && !/（人員）/.test(all + tz) && /櫃檯兼職時數/.test(z2) && tr('Turned away at the door') === '門口被擋下';
+      const half = (all + tz).match(/[\u4e00-\u9fff）」][,;(]|[(][\u4e00-\u9fff]|[\u4e00-\u9fff]\)|[\u4e00-\u9fff]: /g) || [];
+      return { ok: noteOk && cardOk && dayOk && wan && terms && !half.length, detail: { noteOk, z1, cardOk, z2: z2.slice(0, 500), dayOk, wan, yt: yt.slice(0, 200), terms, tabs, half: half.slice(0, 12) } }; }
+    finally { hideNote(); closeBooks(); BOOKS.full = false; BOOKS.period = 'today'; BOOKS.tab = keepTab; BOOKS.closed = null; BIG_POPS.length = 0; GOAL.key = kg; setLang(was); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); setupRun(); updateMonitors(); }
+  },
+  changeFeedback() {   // feedback round 2026-11-21: for a week after a change the day card says what it did, each day against the same weekday the week before; a pass sold today is cash now and earned over 30 days; the month card leads with one figure
+    const was = zh() ? 'zh' : 'en', step = () => { goOn = false; if (!nextDay()) nextMonth(); }, end = () => { goOn = false; fastForward(30 * 3600); updateMonitors(); }, card = () => { const c = document.getElementById('dayCard'); return c && !c.hidden ? c.textContent : ''; }, S0 = JSON.parse(JSON.stringify(S));
+    try { setLang('en'); setupRun(); hideNote();
+      for (let k = 0; k < 8; k++) { end(); hideNote(); step(); }
+      end(); const quiet = !/Your change/.test(card());
+      const c0 = S.coaches, at = BIZ.dayLog.length + 2; step(); S.coaches = c0 + 1; step();   /* hired during a day: in force from the next morning */
+      end(); hideNote(); const t1 = card(), e = changeEffect(BIZ.dayLog.concat([{ visits: A.visits, earned: A.pnl.net, closed: !!A.closed }]), BIZ.change ? BIZ.change.at : -1);
+      const noticed = !!BIZ.change && BIZ.change.at === at && BIZ.change.changes.length === 1 && BIZ.change.changes[0].k === 'coaches';
+      const said = /Your change, day 1 of 7/.test(t1) && t1.includes(`Coaches ${c0} → ${c0 + 1}`) && !!e && e.pairs === 1 && t1.includes(`Visits ${Math.round(e.visits.before).toLocaleString('en-US')} → ${Math.round(e.visits.after).toLocaleString('en-US')} a day`) && t1.includes(money(e.earned.after)) && /same weekday/.test(t1);
+      setLang('zh'); updateMonitors(); const tz = card(), zhOk = /你的調整，第 1\/7 天/.test(tz) && /教練/.test(tz) && !/Your change|Visits/.test(tz); setLang('en'); updateMonitors();
+      for (let k = 0; k < 6; k++) { step(); end(); hideNote(); } const t7 = card(), week = /day 7 of 7/.test(t7) && /joined .* a night/.test(t7);
+      step(); end(); hideNote(); const gone = !/Your change/.test(card());
+      // a pass sold today
+      S.monthlyOn = true; S.monthlyPrice = 1300; let sold = false, tp = ''; for (let k = 0; k < 6 && !sold; k++) { step(); end(); hideNote(); if (A.passN > 0) { sold = true; tp = card(); } }
+      const pass = sold && tp.includes(`${A.passN} monthly pass`) && tp.includes(money(A.passRev)) && /earned a day at a time over 30 days/.test(tp);
+      // the month card: one headline figure; cash, loan, tax and wear under one closed disclosure
+      closeEarlySync('month'); goOn = false; nextMonth(); hideNote(); showMonthCard(); const nc = noteEl(), det = nc.querySelector('details[data-k="below"]');
+      const folded = !!det && !det.open && !!det.querySelector('[data-k="cashWhy"]') && !!det.querySelector('[data-k="leftOut"]') && det.querySelector('summary').getBoundingClientRect().height >= 44;
+      const shown = nc.textContent.replace(det ? det.textContent : '', ''), oneFig = (shown.match(/\b(Lost|Made|lost|made) \$/g) || []).length;
+      const ok = quiet && noticed && said && zhOk && week && gone && pass && folded && oneFig <= 2;
+      return { ok, detail: { quiet, noticed, said, zhOk, week, gone, pass, folded, oneFig, det: !!det, open: det && det.open, cw: !!(det && det.querySelector('[data-k="cashWhy"]')), lo: !!(det && det.querySelector('[data-k="leftOut"]')), sh: det && det.querySelector('summary').getBoundingClientRect().height, nct: nc.textContent.slice(0, 300), t1: t1.slice(0, 400), t7: t7.slice(0, 300), tp: tp.slice(0, 300), ch: BIZ.change, at, e } }; }
+    finally { hideNote(); setLang(was); Object.assign(S, S0); setupRun(); }
+  },
+  largeHallFits() {   // judge round 4: on a phone-shaped view the large hall is framed whole across the width: the board's limit no longer forces the zoom in past the fit
+    const keep = JSON.parse(JSON.stringify(S)), v0 = { z: view.zoomT, zz: view.zoom, x: view.target.x, tz: view.target.z }, a0 = aspect, b0 = view.baseH, out = {};
+    try { const p = PRESETS.L, counts = presetCounts(p.w, p.d); Object.assign(S, counts, { hallW: p.w, hallD: p.d, layout: autoBuild(p.w, p.d, counts) }); setupRun(); aspect = 390 / 844; view.baseH = 75.27;   /* the view of a 390 × 844 phone */
+      for (const narrow of [true, false]) { VIEW_NARROW = narrow; frameHall(); const want = view.zoomT; view.zoom = view.zoomT; keepViewOnBoard(); const sp = hallSpan();
+        out[narrow ? 'phone' : 'wide'] = { want: +want.toFixed(3), got: +view.zoomT.toFixed(3), wFrac: +(sp.w / (view.baseH / view.zoomT * aspect)).toFixed(3), cx: +Math.abs(view.target.x - (HALL.x0 + HALL.x1) / 2).toFixed(2) }; }
+      return { ok: out.phone.wFrac <= 1.001 && out.phone.got <= out.phone.want * 1.005 && (VIEW_NARROW = true, topM()) > 26 && (VIEW_NARROW = false, topM()) === 0, detail: out }; }   /* the far edge gives way only on a narrow view; the forced zoom itself is checked on the phone screenshots (the camera axes do not move inside a synchronous test) */
+    finally { VIEW_NARROW = null; aspect = a0; view.baseH = b0; view.zoomT = v0.z; view.zoom = v0.zz; view.target.set(v0.x, 0, v0.tz); Object.keys(S).forEach(k => { if (!(k in keep)) delete S[k]; }); Object.assign(S, keep); S.hallW = S.hallD = null; setHall(); setupRun(); }
+  },
   mixSumsTo100() { const m = Object.values(S.mix); return { ok: m.reduce((a, b) => a + b, 0) === 100 && m.every(Number.isInteger), detail: S.mix }; },
   resultsText() {
     runDay({}); const en = resultsText(), was = zh() ? 'zh' : 'en';
@@ -1964,8 +2564,8 @@ const SELFTESTS = {
   if (q.has('shot') && st) {
     openIntro(); if (st !== 'welcome') { buildPick('M'); BUILD.step = 'cost'; renderBuild(); } if (st === 'pay') { BUILD.step = 'pay'; renderBuild(); }
     if (!['welcome', 'cost', 'pay'].includes(st)) { openGym();
-      for (let i = 0; i < 7200 && INTRO.phase === 'wait'; i++) { fastForward(30); updateIntro(0); }
-      if (st !== 'follow') { updateIntro(INTRO_FOLLOW_S); }
+      for (let i = 0; i < 7200 && (INTRO.phase === 'wait' || INTRO.phase === 'enter'); i++) { fastForward(5); updateIntro(0); }
+      if (st !== 'follow') { updateIntro(INTRO_CAP_S); }
       if (st === 'tracker' || st === 'books') { document.querySelector('#goalCard [data-goal="members500"]').click(); goOn = false; refreshGo(); fastForward((+q.get('h') || 15) * 3600 - A.t); updateMonitors(); }
       if (st === 'books') { BOOKS.period = 'today'; openBooks('Books'); }
       if (st === 'follow' || st === 'goal') S.speed = 1; } } }

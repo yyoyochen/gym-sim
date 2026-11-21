@@ -7,10 +7,10 @@ const load = () => loadSrc(['src/a1_params.js', 'src/a2_pnl.js'], NAMES);
 const P = load();
 const zero = { entry: 0, ptSessions: 0, ptCash: 0, rentals: 0 };
 
-test('base month ÷ 30.4 gives about NT$4,794 EBITDA a day', () => {
+test('base month ÷ 30.4 gives about NT$3,940 EBITDA a day (the parameter map\'s 4,794 less the 2 coaches\' retainers, balance 2026-11-20)', () => {
   const r = P.dailyPnl({ entry: 17184, ptSessions: 130 / 30.4, ptCash: 0, rentals: 493 }, 1);
-  assert.ok(Math.abs(r.ebitda - 4794) < 3, String(r.ebitda));
-  assert.ok(Math.abs(r.fixed - 471650 / 30.4) < 0.01);
+  assert.ok(Math.abs(r.ebitda - (4794 - 25952 / 30.4)) < 3, String(r.ebitda));
+  assert.ok(Math.abs(r.fixed - (471650 + 25952) / 30.4) < 0.01);
 });
 
 test('VAT is taken out of tax-inclusive gross', () => {
@@ -72,10 +72,10 @@ test('belowEbitda loss', () => {
   assert.ok(Number.isFinite(r.netProfit) && r.netProfit < 0);
 });
 
-test('monthArithmetic base matches the parameter map (≈ NT$150.7k EBITDA)', () => {
+test('monthArithmetic base matches the parameter map less the coaches\' retainers (≈ NT$150.7k − 26k EBITDA)', () => {
   const Q = loadSrc(['src/a1_params.js', 'src/a2_pnl.js'], ['MONTH_BASE', 'monthArithmetic']);
   const r = Q.monthArithmetic(Q.MONTH_BASE);
-  assert.ok(Math.abs(r.ebitda - 150700) < 300, String(r.ebitda));
+  assert.ok(Math.abs(r.ebitda - (150700 - 26000)) < 300, String(r.ebitda));
   assert.ok(Math.abs(r.entry - 522400) < 1500, String(r.entry));
 });
 
@@ -95,12 +95,12 @@ test('itemiseFixed sums to the fixed costs and splits rent, management and staff
   const r = baseDay(), it = Q.itemiseFixed(r), t = it.totals;
   assert.ok(Math.abs(t.premises + t.staff + t.floor + t.compliance - r.fixed) < 1e-6);
   assert.ok(Math.abs(it.premises.rent / it.premises.mgmt - 1100 / 70) < 1e-9);
-  assert.ok(Math.abs(it.staff.manager - r.staff * 43000 / 184000) < 1e-9);
+  assert.ok(Math.abs(it.staff.manager - r.staff * 43000 / 209952) < 1e-9);
 });
 
 test('cost line bases add up to the parameter book totals', () => {
   const sum = (rows) => rows.reduce((s, [, v]) => s + v, 0);
-  assert.equal(sum(Q.COST_LINES.staff), 184000);
+  assert.equal(sum(Q.COST_LINES.staff), 209952);   /* the sample roster with its 2 coaches' retainers (balance 2026-11-20) */
   assert.equal(sum(Q.COST_LINES.premises.filter(([k]) => k === 'water')) + sum(Q.COST_LINES.floor) + sum(Q.COST_LINES.compliance), 87100);
 });
 

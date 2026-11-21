@@ -2,6 +2,31 @@
 
 Notable changes to gym-sim, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). All money is in NT dollars.
 
+## [Unreleased]
+
+### Added
+- For a week after you change a price, the pass or the roster, the day card says what the change did so far: visits and earnings a day, sign-ups and leavers a night, each day against the same weekday the week before.
+- A day that sells monthly passes says so on the day card: the cash came in today and is earned over 30 days.
+
+### Changed
+- The members goal asks for 65% of the gym's full membership, above what an untouched gym reaches.
+- The month card leads with one result; cash, loan, tax and wear sit under one tap.
+- The desk has a job: desk hours below what the floor needs cost sign-ups and members, and hours above help half as much. The Staff tab and the receptionist say so with numbers.
+- A hall that outgrows its cleaning loses members. The receptionist keeps up with 220 visits a day and each cleaner with 200 more.
+- A monthly pass is cash the day it is sold and is earned a day at a time over its 30 days, so the day's result no longer jumps on sale days.
+- A new gym's members come more often in its first 60 days, so the hall is busier at the opening.
+- The money step opens with a loan sized to the gym (about six months of running costs); a short start is said plainly, in orange, with a one-tap way out.
+- The HUD has a Skip to closing button. Start over sits apart from the skip buttons. The model's dials are behind one Advanced disclosure.
+- Month card: comparisons are per day or per 30 days, each change lists only what it can cause, the break-even count says why it moved, and one line carries the result down to net profit. The Year view adds the same up.
+- The desk always keeps one full-timer; the Staff tab gives the smallest desk's true cost and effect, and says what cleaners do.
+- Chinese: open cards follow a language switch, one word each for staff terms, the Year table counts in 萬.
+
+### Fixed
+- A closed month's stamp shows the whole month's result. A closed day's stamp and verdict give one figure.
+- Day and week pops draw above the books and the sheet; the day card and toasts wait for them. Skipped days raise no PR toasts.
+- Undo on the price list no longer cancels a list already published.
+- The large hall fits a phone's width at opening.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

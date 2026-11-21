@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSrc } from './load.mjs';
 
-const NAMES = ['POP_TIMES', 'DEMAND_RESP', 'blendedPrice', 'priceVisitMult', 'peakShiftWeights', 'staffAdj', 'churnMonthly', 'balkProb', 'dayShape'];
+const NAMES = ['POP_TIMES', 'DEMAND_RESP', 'blendedPrice', 'priceVisitMult', 'peakShiftWeights', 'deskEffect', 'grubby', 'cleanCap', 'buzzMult', 'churnMonthly', 'balkProb', 'dayShape'];
 const P = loadSrc(['src/a1_params.js'], NAMES);
 const near = (a, b, tol = 1e-9) => Math.abs(a - b) < tol;
 
@@ -33,11 +33,16 @@ test('a bigger premium moves evening demand on weekdays only', () => {
   assert.ok(P.peakShiftWeights(tue, 'Tue', -1).every(v => v >= 0));
 });
 
-test('staffAdj floors at 0 and tops out at the lean roster', () => {
-  assert.equal(P.staffAdj(184000), 0);
-  assert.ok(near(P.staffAdj(133000), 0.3));
-  assert.equal(P.staffAdj(250000), 0);
-  assert.ok(near(P.staffAdj(100000), 0.3));
+test('the desk: hours short cost sign-ups and members, hours over help half as much up to a quarter more', () => {
+  assert.equal(P.deskEffect(1).join, 1); assert.equal(P.deskEffect(1).churn, 1);
+  assert.ok(near(P.deskEffect(0.6).join, 0.8)); assert.ok(near(P.deskEffect(0.6).churn, 1.2));
+  assert.ok(near(P.deskEffect(0).join, 0.5)); assert.ok(near(P.deskEffect(1.2).join, 1.05));
+  assert.ok(near(P.deskEffect(3).join, 1.0625)); assert.ok(near(P.deskEffect(3).churn, 0.9375));
+});
+test('a clean hall and the opening buzz', () => {
+  assert.equal(P.cleanCap(0), 220); assert.equal(P.cleanCap(2), 620);
+  assert.equal(P.grubby(220, 0), 0); assert.ok(near(P.grubby(275, 0), 0.5)); assert.equal(P.grubby(900, 0), 1); assert.equal(P.grubby(400, 1), 0);
+  assert.equal(P.buzzMult(0), 1.6); assert.ok(near(P.buzzMult(30), 1.3)); assert.equal(P.buzzMult(60), 1); assert.equal(P.buzzMult(500), 1);
 });
 
 test('bad visits add churn points, capped at twice the base', () => {

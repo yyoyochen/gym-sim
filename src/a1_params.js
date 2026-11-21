@@ -97,8 +97,63 @@ function peakShiftWeights(weights, dow, premium) {
   for (const i of [9, 10, 15]) w[i] = Math.max(0, w[i] + mv / 3);
   return w;
 }
-function staffAdj(staff) { const d = DEMAND_RESP; return d.leanAdj * Math.min(1, Math.max(0, (d.staffBase - staff) / (d.staffBase - d.staffLean))); }
+// rules round 2026-11-21: the desk has a job. Desk hours a week against what this floor needs (cover = hours / need): every 10% short costs 5% of
+// sign-ups and makes every member 5% more likely to leave; hours above the need help half as much, up to a quarter more (invented, tuned on the sweep)
+const DESK = { slope: 0.5, over: 0.5, max: 1.25 };
+function deskEffect(cover) { const c = Math.min(DESK.max, Math.max(0, cover)), g = c < 1 ? -DESK.slope * (1 - c) : DESK.slope * DESK.over * (c - 1); return { join: 1 + g, churn: 1 - g }; }
+// a clean hall: the receptionist keeps up with CLEAN.desk visits a day between check-ins, each cleaner with CLEAN.each more. Past that the hall gets
+// grubby: up to CLEAN.join fewer sign-ups and members up to CLEAN.churn more likely to leave, reached at CLEAN.span over the limit (invented, tuned on the sweep)
+const CLEAN = { desk: 220, each: 200, churn: 0.3, join: 0.15, span: 0.5 };   /* 220: the 115-ping sample gym (about 195 visits a day) runs clean on its receptionist alone */
+function cleanCap(cleaners) { return CLEAN.desk + CLEAN.each * Math.max(0, cleaners || 0); }
+function grubby(visitsDay, cleaners) { return Math.min(1, Math.max(0, (visitsDay / cleanCap(cleaners) - 1) / CLEAN.span)); }
+// opening buzz: for the first BUZZ.days days of a new gym its members come more often (up to 1 + BUZZ.up at the opening, fading in a straight line)
+const BUZZ = { up: 0.6, days: 60 };
+function buzzMult(daysOpen) { return 1 + BUZZ.up * Math.max(0, 1 - Math.max(0, daysOpen) / BUZZ.days); }
 function balkProb(waitMin) { return 1 - Math.exp(-Math.max(0, waitMin) / DEMAND_RESP.balkScale); }
-// new build: share of steady-state demand reached m months after opening (opens at 15%, time constant 6.4 months: P4.13, P4.16)
-const RAMP = { open: 0.15, tau: 6.4 };
+// new build: share of steady-state demand reached m months after opening (opens at 25%, time constant 6.4 months: P4.13, P4.16)
+// owner 2026-11-20 (research): 15% suits a gym with no pre-sale; with a pre-opening campaign 20-30% is defensible, so a built gym opens at 25%
+const RAMP = { open: 0.25, tau: 6.4 };
 function rampLevel(m) { return 1 - (1 - RAMP.open) * Math.exp(-Math.max(0, m) / RAMP.tau); }
+// ================================================================ pricing mix (owner 2026-11-20): an adjustable PT session price and an optional monthly pass
+// PT: the price of one session in the pack of 8; the packs of 16 and 24 are $100 and $200 a session cheaper, paid in instalments of 8 sessions
+// (the first at the full price, each later one $200 a session cheaper). At PT_BASE this is the price list of 2026-11. ePrice: invented, unit elastic.
+const PT_BASE = 1690, PT_E_PRICE = -1;
+function ptPacks(p = PT_BASE) {
+  return [{ n: 8, price: 8 * p, parts: [8 * p] }, { n: 16, price: 16 * (p - 100), parts: [8 * p, 8 * (p - 200)] }, { n: 24, price: 24 * (p - 200), parts: [8 * p, 8 * (p - 200), 8 * (p - 400)] }];
+}
+function ptDemandMult(p) { return p === PT_BASE ? 1 : Math.pow(Math.max(100, p) / PT_BASE, PT_E_PRICE); }
+// Monthly pass: unlimited visits for 30 days. pr: { off, peak, cap, perMinOn, monthlyOn, monthly }
+// Next to the minute price, a member takes the pass when it costs less than bias x their month of visits by the minute: people expect to come more
+// than they do (DellaVigna and Malmendier 2006, "Paying not to go to the gym", found about 1.7 times the per-visit price paid on a flat rate; 1.5 here).
+// In a pass-only gym a member buys it up to stay x their month and otherwise stops coming. stay was set by the balance runs of 2026-11-20 so that
+// pass-only earns about what the minute price does from fewer, keener members (2.1 lost a quarter of the entry money at every size).
+// Personal taste moves either limit by ±25% (invented). Pass holders come 25% more often (the next visit is free; invented).
+const PASS = { price: 1000,   /* no-contract gyms in Taipei sell a month at about 880-1,088 (research 2026-11-20) */ visitUp: 1.25, taste: 0.25, days: 30, typicalVisits: 6, bias: 1.5, stay: 2.6 };
+function payPerUseMonth(vpu, off, peak, cap, stay = DEMAND.stay) { return vpu * Math.min(cap, Math.round(stay * blendedPrice(off, peak))); }
+function memberTaste(id) { let x = Math.imul(id + 1, 2654435761) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x = (x ^ (x >>> 13)) >>> 0; return x / 2147483648 - 1; }
+function wantsPass(vpu, id, pr) {
+  if (!pr.monthlyOn) return false;
+  return pr.monthly < payPerUseMonth(vpu, pr.off, pr.peak, pr.cap) * (pr.perMinOn ? PASS.bias : PASS.stay) * (1 + PASS.taste * memberTaste(id));
+}
+// the per-minute price a newcomer effectively faces (feeds the join elasticity): a typical newcomer makes 6 visits a month. A pass cheaper than that
+// month pulls people in; a dearer one never pushes the price up, because a pass-only gym turns away, one by one, the newcomers who would not buy it
+function joinPrice(pr) {
+  const b = blendedPrice(pr.off, pr.peak); if (!pr.monthlyOn) return b;
+  return b * Math.min(1, pr.monthly / payPerUseMonth(PASS.typicalVisits, pr.off, pr.peak, pr.cap));
+}
+// the share of the people around the gym who would buy the pass in a pass-only gym (1 when the minute price is offered): visits a month are
+// spread as in the member pool (mean 6, log-normal, sigma 0.6) and taste evenly over ±1. A pass-only gym grows towards this share of its steady crowd
+function passMarket(pr) {
+  if (!pr.monthlyOn || pr.perMinOn) return 1;
+  let w = 0, s = 0;
+  for (let z = -3; z <= 3.0001; z += 0.1) { const f = Math.exp(-z * z / 2), worth = payPerUseMonth(6 * Math.exp(0.6 * z - 0.18), pr.off, pr.peak, pr.cap) * PASS.stay;
+    w += f; s += f * Math.min(1, Math.max(0, (1 - (pr.monthly / Math.max(1, worth) - 1) / PASS.taste) / 2)); }
+  return s / w;
+}
+// coaching sold per visit, against the researched rate (2 coaches at a 35-person peak): a gym with fewer coaches than its crowd needs sells in
+// proportion; extra coaches share the same members, so twice the coaches sell only about a quarter more (invented)
+function coachSell(coaches, peak) { const x = Math.max(0, coaches) / (2 * peak / DEMAND.peak); return x <= 1 ? x : Math.pow(x, 0.3); }
+// owner 2026-11-20 (research): the crowd follows the floor. 35 at the weekly peak and room for 60 are the 115-ping sample's figures
+// (about 8 m2 of net floor each when busy, about 5 m2 when full); other sizes scale with the area: 80 ping about 24, 160 about 49, 320 about 97
+function peakForPing(ping) { return Math.round(DEMAND.peak * ping / 115); }
+function capForPing(ping) { return Math.round(60 * ping / 115); }

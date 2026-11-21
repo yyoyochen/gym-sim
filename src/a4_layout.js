@@ -123,6 +123,18 @@ function autoBuild(Wc, Dc, counts, opts = {}) {
   for (const k of want) if (!addPiece(L, k, Wc, Dc)) refused.push(k);
   L.refused = refused; if (opts.turfFirst) L.turfFirst = true; return L;
 }
+// equipment trace 2026-11-20: what a layout's members will miss. A member whose programme calls for a station the gym does not have drops that
+// exercise, leaves sooner and pays less by the minute, so a hall packed with racks and no cable tower earns less than a balanced one
+function kitGaps(L) { const c = countsOf(L), k = kitOf(L), out = Object.keys(c).filter(q => !c[q]); if (!k.dumbbells) out.push('dumbbells'); if (!k.cable) out.push('cable'); if (!k.pullup) out.push('pullup'); if (!k.mats) out.push('mat'); return out; }
+// the kit a preset opens with: the sample's counts scaled to the floor, trimmed in steps of 5% until the hall holds every piece asked for together
+// with the cable tower, the pull-up station and at least 2 mats (the small hall was asked for more than it holds)
+function presetKit(w, d, opts = {}) {
+  const base = presetCounts(w, d); let best = base;
+  for (let k = 1; k >= 0.5; k -= 0.05) { const c = {}; for (const q in base) c[q] = Math.max(1, Math.round(base[q] * k));
+    const L = autoBuild(w, d, c, opts); best = c;
+    if (L.refused.every(q => q === 'turf' || q === 'mat') && L.pieces.filter(p => p.kind === 'mat').length >= 2) break; }
+  return best;
+}
 // ---------------------------------------------------------------- Plan 12: what a rearrange changes, what it costs, and where a dropped piece goes
 const REARRANGE = { mover: 3000, resale: 0.4, heavyPerDay: 4 };
 function diffLayouts(a, b) {
